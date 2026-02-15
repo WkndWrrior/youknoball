@@ -1,6 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import type { User } from "@supabase/supabase-js";
+
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 type AnswerOption = "A" | "B" | "C" | "D";
 
@@ -60,6 +64,8 @@ function getOptionText(question: ChallengeQuestion, option: AnswerOption) {
 }
 
 export default function PlayPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [data, setData] = useState<ChallengeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,6 +74,32 @@ export default function PlayPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<SubmittedAttempt | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadSession() {
+      const { data: sessionData } = await supabaseBrowser().auth.getSession();
+      if (mounted) {
+        setUser(sessionData.session?.user ?? null);
+        setAuthLoading(false);
+      }
+    }
+
+    loadSession();
+
+    const {
+      data: { subscription },
+    } = supabaseBrowser().auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -127,6 +159,10 @@ export default function PlayPage() {
   }, [answers, data]);
 
   const canSubmit = useMemo(() => {
+    if (!user) {
+      return false;
+    }
+
     return Boolean(
       data &&
         data.questions.length === 5 &&
@@ -136,7 +172,7 @@ export default function PlayPage() {
         !submitting &&
         !result,
     );
-  }, [answeredCount, data, error, loading, result, submitting]);
+  }, [answeredCount, data, error, loading, result, submitting, user]);
 
   const resultByQuestionId = useMemo(() => {
     const map = new Map<string, AttemptResult>();
@@ -279,6 +315,16 @@ export default function PlayPage() {
           </section>
         ) : null}
 
+        {!authLoading && !user ? (
+          <section className="rounded-xl border border-indigo-300 bg-indigo-50 p-4 text-sm text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100">
+            Sign in to save streaks & leaderboard (optional).{" "}
+            <Link className="font-semibold underline" href="/login">
+              Go to login
+            </Link>
+            .
+          </section>
+        ) : null}
+
         {!loading && !error && data ? (
           <section className="space-y-4">
             {data.questions.map((question, index) => (
@@ -328,7 +374,7 @@ export default function PlayPage() {
           </section>
         ) : null}
 
-        {!loading && !error && data ? (
+        {!loading && !error && data && user ? (
           <section className="rounded-xl border border-slate-300 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
               Answered {answeredCount}/5

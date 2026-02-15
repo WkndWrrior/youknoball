@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
+
+import { AuthButton } from "@/components/AuthButton";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,9 +27,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <header className="border-b border-slate-200 bg-white/85 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
+          <div className="mx-auto flex w-full max-w-5xl items-center justify-between">
+            <Link className="text-sm font-semibold tracking-wide" href="/">
+              YouKnoBall
+            </Link>
+            <AuthButton />
+          </div>
+        </header>
         {children}
       </body>
     </html>
