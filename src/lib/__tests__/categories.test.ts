@@ -40,6 +40,16 @@ describe("sportsCategories", () => {
     expect(ranked.map((category) => category.slug)).toEqual(["nfl", "nba", "nhl", "cbb"]);
   });
 
+  it("breaks equal-accuracy and equal-sample ties by newer recency", () => {
+    const ranked = rankSportsCategoriesByPerformance(sportsCategories, [
+      { slug: "nba", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-01" },
+      { slug: "nfl", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
+      { slug: "nhl", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-02" },
+    ]);
+
+    expect(ranked.map((category) => category.slug)).toEqual(["nfl", "nhl", "nba", "cbb"]);
+  });
+
   it("falls back to default order when accuracy, sample size, and recency tie", () => {
     const ranked = rankSportsCategoriesByPerformance(sportsCategories, [
       { slug: "nhl", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
