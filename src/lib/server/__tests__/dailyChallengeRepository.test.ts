@@ -240,81 +240,113 @@ describe("getPlayerSportCategoryPerformance", () => {
   });
 
   it("derives signed-in player sport performance from canonical attempts", async () => {
+    const attemptsQuery = createThenableQuery({
+      data: [
+        {
+          daily_challenge_id: "challenge_1",
+          challenge_date: "2026-05-01",
+          answers: {
+            question_nba: "A",
+            question_nfl: "B",
+            question_nhl: "C",
+            question_mlb: "A",
+          },
+        },
+        {
+          daily_challenge_id: "challenge_2",
+          challenge_date: "2026-05-02",
+          answers: {
+            question_nfl_2: "A",
+          },
+        },
+      ],
+      error: null,
+    });
+    const itemsQuery = createThenableQuery({
+      data: [
+        {
+          daily_challenge_id: "challenge_1",
+          question_id: "question_nba",
+          question_snapshot: {
+            id: "question_nba",
+            question_text: "NBA",
+            option_a: "A",
+            option_b: "B",
+            option_c: "C",
+            option_d: "D",
+            correct_option: "A",
+            sport: { slug: "nba", name: "NBA" },
+          },
+        },
+        {
+          daily_challenge_id: "challenge_1",
+          question_id: "question_nfl",
+          question_snapshot: {
+            id: "question_nfl",
+            question_text: "NFL",
+            option_a: "A",
+            option_b: "B",
+            option_c: "C",
+            option_d: "D",
+            correct_option: "C",
+            sport: { slug: "nfl", name: "NFL" },
+          },
+        },
+        {
+          daily_challenge_id: "challenge_1",
+          question_id: "question_mlb",
+          question_snapshot: {
+            id: "question_mlb",
+            question_text: "MLB",
+            option_a: "A",
+            option_b: "B",
+            option_c: "C",
+            option_d: "D",
+            correct_option: "A",
+            sport: { slug: "mlb", name: "MLB" },
+          },
+        },
+        {
+          daily_challenge_id: "challenge_2",
+          question_id: "question_nfl_2",
+          question_snapshot: {
+            id: "question_nfl_2",
+            question_text: "NFL 2",
+            option_a: "A",
+            option_b: "B",
+            option_c: "C",
+            option_d: "D",
+            correct_option: "A",
+            sport: { slug: "nfl", name: "NFL" },
+          },
+        },
+      ],
+      error: null,
+    });
     const adminClient = createClientMock({
-      daily_attempts: createThenableQuery({
-        data: [
-          {
-            daily_challenge_id: "challenge_1",
-            challenge_date: "2026-05-01",
-            answers: {
-              question_nba: "A",
-              question_nfl: "B",
-              question_nhl: "C",
-            },
-          },
-          {
-            daily_challenge_id: "challenge_2",
-            challenge_date: "2026-05-02",
-            answers: {
-              question_nfl_2: "A",
-            },
-          },
-        ],
-        error: null,
-      }),
-      daily_challenge_items: createThenableQuery({
-        data: [
-          {
-            daily_challenge_id: "challenge_1",
-            question_id: "question_nba",
-            question_snapshot: {
-              id: "question_nba",
-              question_text: "NBA",
-              option_a: "A",
-              option_b: "B",
-              option_c: "C",
-              option_d: "D",
-              correct_option: "A",
-              sport: { slug: "nba", name: "NBA" },
-            },
-          },
-          {
-            daily_challenge_id: "challenge_1",
-            question_id: "question_nfl",
-            question_snapshot: {
-              id: "question_nfl",
-              question_text: "NFL",
-              option_a: "A",
-              option_b: "B",
-              option_c: "C",
-              option_d: "D",
-              correct_option: "C",
-              sport: { slug: "nfl", name: "NFL" },
-            },
-          },
-          {
-            daily_challenge_id: "challenge_2",
-            question_id: "question_nfl_2",
-            question_snapshot: {
-              id: "question_nfl_2",
-              question_text: "NFL 2",
-              option_a: "A",
-              option_b: "B",
-              option_c: "C",
-              option_d: "D",
-              correct_option: "A",
-              sport: { slug: "nfl", name: "NFL" },
-            },
-          },
-        ],
-        error: null,
-      }),
+      daily_attempts: attemptsQuery,
+      daily_challenge_items: itemsQuery,
     });
     supabaseAdmin.mockReturnValue(adminClient);
 
     await expect(getPlayerSportCategoryPerformance("user_1")).resolves.toEqual([
       { slug: "nba", answeredCount: 1, correctCount: 1, lastAnsweredAt: "2026-05-01" },
       { slug: "nfl", answeredCount: 2, correctCount: 1, lastAnsweredAt: "2026-05-02" },
+    ]);
+    expect(attemptsQuery.select).toHaveBeenCalledWith(
+      "daily_challenge_id,challenge_date,answers",
+    );
+    expect(attemptsQuery.eq).toHaveBeenCalledWith("user_id", "user_1");
+    expect(attemptsQuery.order).toHaveBeenCalledWith("challenge_date", {
+      ascending: false,
+    });
+    expect(attemptsQuery.limit).toHaveBeenCalledWith(50);
+    expect(itemsQuery.select).toHaveBeenCalledWith(
+      "daily_challenge_id,question_id,question_snapshot",
+    );
+    expect(itemsQuery.in).toHaveBeenCalledWith("daily_challenge_id", [
+      "challenge_1",
+      "challenge_2",
     ]);
   });
 });
