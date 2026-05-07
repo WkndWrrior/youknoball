@@ -35,7 +35,7 @@ export const sportsCategories: CategoryCard[] = [
 export type SportCategorySlug = CategoryCard["slug"];
 
 export type SportCategoryPerformance = {
-  slug: string;
+  slug: SportCategorySlug;
   answeredCount: number;
   correctCount: number;
   lastAnsweredAt: string | null;

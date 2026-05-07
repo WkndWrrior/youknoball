@@ -30,13 +30,23 @@ describe("sportsCategories", () => {
     expect(ranked.map((category) => category.slug)).toEqual(["nfl", "nhl", "nba", "cbb"]);
   });
 
-  it("breaks strength ties by sample size, recency, then default order", () => {
+  it("breaks equal-accuracy ties by larger sample size", () => {
     const ranked = rankSportsCategoriesByPerformance(sportsCategories, [
-      { slug: "nba", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-01" },
-      { slug: "nfl", answeredCount: 6, correctCount: 4, lastAnsweredAt: "2026-05-02" },
-      { slug: "nhl", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
+      { slug: "nba", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
+      { slug: "nfl", answeredCount: 8, correctCount: 6, lastAnsweredAt: "2026-05-01" },
+      { slug: "nhl", answeredCount: 6, correctCount: 3, lastAnsweredAt: "2026-05-02" },
     ]);
 
-    expect(ranked.map((category) => category.slug)).toEqual(["nhl", "nba", "nfl", "cbb"]);
+    expect(ranked.map((category) => category.slug)).toEqual(["nfl", "nba", "nhl", "cbb"]);
+  });
+
+  it("falls back to default order when accuracy, sample size, and recency tie", () => {
+    const ranked = rankSportsCategoriesByPerformance(sportsCategories, [
+      { slug: "nhl", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
+      { slug: "nfl", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
+      { slug: "nba", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
+    ]);
+
+    expect(ranked.map((category) => category.slug)).toEqual(["nba", "nfl", "nhl", "cbb"]);
   });
 });
