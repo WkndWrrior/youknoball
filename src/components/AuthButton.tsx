@@ -39,14 +39,14 @@ export function AuthButton() {
 
   async function onSignOut() {
     setSigningOut(true);
-    await supabaseBrowser().auth.signOut();
+    await supabaseBrowser().auth.signOut({ scope: "local" });
     setUser(null);
     setSigningOut(false);
   }
 
   if (loading) {
     return (
-      <span className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-300">
+      <span className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[0.7rem] uppercase tracking-[0.25em] text-white/45">
         Checking auth...
       </span>
     );
@@ -56,7 +56,7 @@ export function AuthButton() {
     return (
       <Link
         href="/login"
-        className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500"
+        className="rounded-full border border-[#ff7a18] bg-[#ff7a18] px-4 py-2 text-sm font-semibold text-black transition hover:bg-[#ff8c36]"
       >
         Sign in
       </Link>
@@ -64,16 +64,18 @@ export function AuthButton() {
   }
 
   return (
-    <div className="flex items-center gap-3">
-      <span className="text-xs text-slate-600 dark:text-slate-300">{user.email}</span>
+    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2 py-2">
+      <span className="hidden max-w-40 truncate px-2 text-xs text-white/70 sm:block">
+        {user.email}
+      </span>
       <button
         type="button"
         onClick={onSignOut}
         disabled={signingOut}
-        className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+        className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${
           signingOut
-            ? "cursor-not-allowed bg-slate-300 text-slate-500 dark:bg-slate-700 dark:text-slate-400"
-            : "bg-slate-900 text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+            ? "cursor-not-allowed bg-white/10 text-white/35"
+            : "bg-white text-black hover:bg-[#ffede0]"
         }`}
       >
         {signingOut ? "Signing out..." : "Sign out"}

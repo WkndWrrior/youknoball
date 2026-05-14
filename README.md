@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# YouKnowBall
 
-## Getting Started
+YouKnowBall is a Next.js + Supabase trivia app for the daily sports challenge, player attempts, and leaderboard tracking.
 
-First, run the development server:
+## Local Development
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Install dependencies with `npm install`
+- Start the app with `npm run dev`
+- Run the test suite with `npm test`
+
+## Database Migrations
+
+Schema changes live in `supabase/migrations/`.
+
+Task 5 backfills the legacy `public.daily_challenge_questions` table into the new reusable content model:
+
+- `sports`
+- `questions`
+- `daily_challenges`
+- `daily_challenge_items`
+
+The first deployment keeps the legacy table in place so rollback stays possible while the new rows are populated and verified.
+
+## Task 5 Manual Verification Checklist
+
+Use this checklist on a staging copy of the database before cutting traffic over to the new schema.
+
+- [ ] Explain the mapping from legacy rows to the new schema: `daily_challenge_questions.sport` seeds `sports.slug` and `sports.name`; `daily_challenge_questions.id` becomes `questions.id` and `daily_challenge_items.question_id`; `daily_challenge_questions.challenge_date` becomes `daily_challenges.challenge_date`; `daily_challenge_questions.slot` becomes `daily_challenge_items.slot`; `daily_attempts.daily_challenge_id` is backfilled by matching `challenge_date` to `daily_challenges.challenge_date`; `questions.difficulty` is derived from slot during backfill: `1-2 = easy`, `3 = medium`, `4-5 = hard`
+- [ ] Confirm each challenge date still has exactly five rows before and after the backfill.
+- [ ] Confirm the legacy and canonical question sets reconcile for each historical `challenge_date`; the canonical daily should represent the same five-question set, in the same slot order, for that date.
+- [ ] Confirm each `daily_challenges` row has exactly five `daily_challenge_items` rows after the backfill.
+- [ ] Confirm `question_snapshot` on each item reflects the legacy question content at backfill time.
+- [ ] Capture leaderboard output before migration, run the migration, then confirm `public.daily_leaderboard` returns the same `average_score`, `total_plays`, and `last_played_at` values for the same staging data set.
+- [ ] Confirm no signed-in attempt is orphaned: every row in `public.daily_attempts` with a non-null `daily_challenge_id` joins to a `daily_challenges` row for the same `challenge_date`.
+- [ ] Leave `public.daily_challenge_questions` in place for the first deployment window so rollback remains possible.
+
+Suggested reconciliation query:
+
+```sql
+select
+  legacy.challenge_date,
+  array_agg(legacy.id order by legacy.slot) as legacy_question_ids,
+  array_agg(canonical.question_id order by canonical.slot) as canonical_question_ids
+from public.daily_challenge_questions legacy
+join public.daily_challenges challenge
+  on challenge.challenge_date = legacy.challenge_date
+join public.daily_challenge_items canonical
+  on canonical.daily_challenge_id = challenge.id
+ and canonical.slot = legacy.slot
+group by legacy.challenge_date
+order by legacy.challenge_date;
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Assumptions Used By The Backfill
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Backfilled reusable questions are marked `status = 'ready'`, `eligible_for_daily = true`, and `eligible_for_sport_quiz = true`.
+- Backfilled daily challenges use `status = 'published'`, `generation_method = 'manual'`, and a legacy-specific rules version marker.
+- Legacy timestamps are preserved where practical during backfill; the migration uses the earliest legacy timestamp for the challenge date.

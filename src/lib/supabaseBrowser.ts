@@ -9,14 +9,6 @@ import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl) {
-  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
-}
-
-if (!supabaseAnonKey) {
-  throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
-}
-
 let client: SupabaseClient | null = null;
 
 function readCookie(name: string) {
@@ -70,6 +62,14 @@ const cookieStorage: SupportedStorage = {
 export function supabaseBrowser() {
   if (typeof window === "undefined") {
     throw new Error("supabaseBrowser must only be used in the browser");
+  }
+
+  if (!supabaseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+  }
+
+  if (!supabaseAnonKey) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
   }
 
   if (!client) {
