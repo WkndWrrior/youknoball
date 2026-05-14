@@ -5,7 +5,10 @@ import {
   sportsCategories,
 } from "@/lib/categories";
 import { getPlayerSportCategoryPerformance } from "@/lib/server/dailyChallengeRepository";
-import { getSupabaseSessionFromRequest } from "@/lib/server/supabaseServer";
+import {
+  createSessionSupabaseServerClient,
+  getSupabaseSessionFromRequest,
+} from "@/lib/server/supabaseServer";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +24,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const performance = await getPlayerSportCategoryPerformance(session.user.id);
+    const sessionClient = createSessionSupabaseServerClient(session.accessToken);
+    const {
+      data: { user },
+      error,
+    } = await sessionClient.auth.getUser();
+
+    if (error || !user?.id) {
+      return NextResponse.json({ slugs: defaultSlugs() });
+    }
+
+    const performance = await getPlayerSportCategoryPerformance(user.id);
     const categories = rankSportsCategoriesByPerformance(sportsCategories, performance);
 
     return NextResponse.json({

@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getPlayerSportCategoryPerformance = vi.fn();
 const getSupabaseSessionFromRequest = vi.fn();
+const createSessionSupabaseServerClient = vi.fn();
+const getUser = vi.fn();
 
 vi.mock("@/lib/server/dailyChallengeRepository", () => ({
   getPlayerSportCategoryPerformance,
 }));
 
 vi.mock("@/lib/server/supabaseServer", () => ({
+  createSessionSupabaseServerClient,
   getSupabaseSessionFromRequest,
 }));
 
@@ -21,6 +24,19 @@ describe("GET /api/sport-cards/order", () => {
     vi.clearAllMocks();
     vi.resetModules();
     getSupabaseSessionFromRequest.mockReturnValue(null);
+    createSessionSupabaseServerClient.mockReturnValue({
+      auth: {
+        getUser,
+      },
+    });
+    getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "verified-user",
+        },
+      },
+      error: null,
+    });
   });
 
   it("returns default sport slugs when there is no session", async () => {
@@ -34,10 +50,11 @@ describe("GET /api/sport-cards/order", () => {
     });
   });
 
-  it("returns signed-in sport slugs ranked by player performance", async () => {
+  it("returns signed-in sport slugs ranked by verified player performance", async () => {
     getSupabaseSessionFromRequest.mockReturnValue({
+      accessToken: "access-token",
       user: {
-        id: "user-123",
+        id: "forged-cookie-user",
       },
     });
     getPlayerSportCategoryPerformance.mockResolvedValue([
@@ -65,16 +82,61 @@ describe("GET /api/sport-cards/order", () => {
     const response = await GET(buildRequest());
 
     expect(response.status).toBe(200);
-    expect(getPlayerSportCategoryPerformance).toHaveBeenCalledWith("user-123");
+    expect(createSessionSupabaseServerClient).toHaveBeenCalledWith("access-token");
+    expect(getUser).toHaveBeenCalled();
+    expect(getPlayerSportCategoryPerformance).toHaveBeenCalledWith("verified-user");
     await expect(response.json()).resolves.toEqual({
       slugs: ["nfl", "cbb", "nba", "nhl"],
     });
   });
 
+  it.each([
+    [
+      "token verification errors",
+      {
+        data: {
+          user: {
+            id: "verified-user",
+          },
+        },
+        error: new Error("invalid token"),
+      },
+    ],
+    [
+      "token verification returns no user",
+      {
+        data: {
+          user: null,
+        },
+        error: null,
+      },
+    ],
+  ])("returns default sport slugs when %s", async (_description, getUserResult) => {
+    getSupabaseSessionFromRequest.mockReturnValue({
+      accessToken: "access-token",
+      user: {
+        id: "forged-cookie-user",
+      },
+    });
+    getUser.mockResolvedValue(getUserResult);
+
+    const { GET } = await import("@/app/api/sport-cards/order/route");
+    const response = await GET(buildRequest());
+
+    expect(response.status).toBe(200);
+    expect(createSessionSupabaseServerClient).toHaveBeenCalledWith("access-token");
+    expect(getUser).toHaveBeenCalled();
+    expect(getPlayerSportCategoryPerformance).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      slugs: ["nba", "cbb", "nfl", "nhl"],
+    });
+  });
+
   it("returns default sport slugs when player performance cannot be loaded", async () => {
     getSupabaseSessionFromRequest.mockReturnValue({
+      accessToken: "access-token",
       user: {
-        id: "user-123",
+        id: "forged-cookie-user",
       },
     });
     getPlayerSportCategoryPerformance.mockRejectedValue(new Error("repository failed"));
@@ -83,7 +145,9 @@ describe("GET /api/sport-cards/order", () => {
     const response = await GET(buildRequest());
 
     expect(response.status).toBe(200);
-    expect(getPlayerSportCategoryPerformance).toHaveBeenCalledWith("user-123");
+    expect(createSessionSupabaseServerClient).toHaveBeenCalledWith("access-token");
+    expect(getUser).toHaveBeenCalled();
+    expect(getPlayerSportCategoryPerformance).toHaveBeenCalledWith("verified-user");
     await expect(response.json()).resolves.toEqual({
       slugs: ["nba", "cbb", "nfl", "nhl"],
     });
