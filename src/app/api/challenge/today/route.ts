@@ -1,119 +1,78 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-
-type ChallengeQuestion = {
-  id: string | number;
-  sport: string | null;
-  question_text: string;
-  option_a: string;
-  option_b: string;
-  option_c: string;
-  option_d: string;
-  created_at?: string;
-};
-
-type ChallengeSource = "scheduled" | "fallback_recent";
-
-const QUESTION_COLUMNS =
-  "id,sport,question_text,option_a,option_b,option_c,option_d,created_at";
-
-const SCHEDULED_DATE_COLUMNS = [
-  "challenge_date",
-  "scheduled_date",
-  "scheduled_for",
-  "date",
-] as const;
-
-const SCHEDULED_TABLES = ["questions", "challenge_questions"] as const;
+import {
+  getRemainingTimerMs,
+  leaderboardTimerLimitMs,
+} from "@/lib/challengeTimer";
+import { getTodayIsoDate } from "@/lib/date";
+import { toPlayerQuestion } from "@/lib/dailyChallenge";
+import {
+  getChallengeResolutionForDate,
+  getOrCreateDailyAttemptStart,
+} from "@/lib/server/dailyChallengeRepository";
+import {
+  createPublicSupabaseServerClient,
+  createSessionSupabaseServerClient,
+  getSupabaseSessionFromRequest,
+} from "@/lib/server/supabaseServer";
 
 export const dynamic = "force-dynamic";
 
-function getTodayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function sanitizeQuestions(rows: ChallengeQuestion[]) {
-  return rows.map(
-    ({ id, sport, question_text, option_a, option_b, option_c, option_d }) => ({
-      id,
-      sport,
-      question_text,
-      option_a,
-      option_b,
-      option_c,
-      option_d,
-    }),
-  );
-}
-
-async function getScheduledQuestionsForToday(date: string) {
-  const admin = supabaseAdmin();
-
-  for (const table of SCHEDULED_TABLES) {
-    for (const dateColumn of SCHEDULED_DATE_COLUMNS) {
-      const query = admin
-        .from(table)
-        .select(QUESTION_COLUMNS)
-        .eq(dateColumn, date)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      const { data, error } = await query;
-      if (error || !data?.length) {
-        continue;
-      }
-
-      return data as ChallengeQuestion[];
-    }
-  }
-
-  return [];
-}
-
-async function getFallbackRecentQuestions() {
-  const admin = supabaseAdmin();
-  const { data, error } = await admin
-    .from("questions")
-    .select(QUESTION_COLUMNS)
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  if (error) {
-    throw new Error("Failed to fetch recent questions.");
-  }
-
-  return (data ?? []) as ChallengeQuestion[];
-}
-
-export async function GET() {
+export async function GET(request?: NextRequest) {
   const date = getTodayIsoDate();
 
   try {
-    const scheduled = await getScheduledQuestionsForToday(date);
-    if (scheduled.length > 0) {
+    const client = createPublicSupabaseServerClient();
+    const { questions, dailyChallengeId } = await getChallengeResolutionForDate(
+      client,
+      date,
+    );
+
+    if (questions.length !== 5) {
       return NextResponse.json({
+        status: "unavailable" as const,
         date,
-        source: "scheduled" as ChallengeSource,
-        questions: sanitizeQuestions(scheduled),
+        message: "Today's challenge is not live yet. Check back soon.",
       });
     }
 
-    const fallback = await getFallbackRecentQuestions();
+    let timer = null;
+    const session = request ? getSupabaseSessionFromRequest(request) : null;
+    if (session) {
+      try {
+        const sessionClient = createSessionSupabaseServerClient(session.accessToken);
+        const attemptStart = await getOrCreateDailyAttemptStart(sessionClient, {
+          userId: session.user.id,
+          challengeDate: date,
+          dailyChallengeId,
+        });
+
+        if (attemptStart) {
+          timer = {
+            startedAt: attemptStart.started_at,
+            durationLimitMs: leaderboardTimerLimitMs,
+            remainingMs: getRemainingTimerMs(attemptStart.started_at, new Date()),
+          };
+        }
+      } catch {
+        timer = null;
+      }
+    }
+
     return NextResponse.json({
+      status: "ready" as const,
       date,
-      source: "fallback_recent" as ChallengeSource,
-      questions: sanitizeQuestions(fallback),
+      questions: questions.map(toPlayerQuestion),
+      timer,
     });
   } catch {
     return NextResponse.json(
       {
+        status: "unavailable" as const,
         date,
-        source: "fallback_recent" as ChallengeSource,
-        questions: [],
-        error: "Unable to load today's challenge.",
+        message: "Today's challenge is not live yet. Check back soon.",
       },
-      { status: 500 },
+      { status: 200 },
     );
   }
 }

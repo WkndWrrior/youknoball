@@ -4,84 +4,117 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
+import {
+  formatTimer,
+  getRemainingTimerMs,
+} from "@/lib/challengeTimer";
+import {
+  clearPendingGuestAttemptClaim,
+  getStoredAttemptKey,
+  readPendingGuestAttemptClaim,
+  shouldAutoClaimPendingGuestAttempt,
+  type AnswerOption,
+  type AttemptSubmitResponse,
+  type DailyChallengeQuestionForPlayer,
+  type DailyChallengeResponse,
+  writePendingGuestAttemptClaim,
+} from "@/lib/dailyChallenge";
+import { formatChallengeDate } from "@/lib/date";
+import {
+  buildFacebookShareUrl,
+  buildNativeShareData,
+  buildShareMessage,
+  buildShareUrl,
+  buildXShareUrl,
+} from "@/lib/shareLinks";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
-type AnswerOption = "A" | "B" | "C" | "D";
+const optionKeys: AnswerOption[] = ["A", "B", "C", "D"];
+type AttemptQuestionResult = AttemptSubmitResponse["attempt"]["results"][number];
 
-type ChallengeQuestion = {
-  id: string | number;
-  sport: string | null;
-  question_text: string;
-  option_a: string;
-  option_b: string;
-  option_c: string;
-  option_d: string;
-};
-
-type ChallengeResponse = {
-  date: string;
-  source: "scheduled" | "fallback_recent";
-  questions: ChallengeQuestion[];
-  error?: string;
-};
-
-type AttemptResult = {
-  question_id: string;
-  chosen_option: AnswerOption;
-  is_correct: boolean;
-};
-
-type SubmittedAttempt = {
-  id: string;
-  date: string;
-  created_at: string;
-  score: number;
-  total: number;
-  results: AttemptResult[];
-};
-
-type SubmitSuccessResponse = {
-  message: string;
-  attempt: SubmittedAttempt;
-};
-
-type SubmitConflictResponse = {
-  message: string;
-  existing_attempt: SubmittedAttempt;
-};
-
-type SubmitErrorResponse = {
-  message: string;
-};
-
-const OPTION_KEYS: AnswerOption[] = ["A", "B", "C", "D"];
-
-function getOptionText(question: ChallengeQuestion, option: AnswerOption) {
+function getOptionText(question: DailyChallengeQuestionForPlayer, option: AnswerOption) {
   if (option === "A") return question.option_a;
   if (option === "B") return question.option_b;
   if (option === "C") return question.option_c;
   return question.option_d;
 }
 
+function readStoredAttempt(date: string) {
+  const storage = getBrowserStorage();
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    const rawValue = storage.getItem(getStoredAttemptKey(date));
+    if (!rawValue) {
+      return null;
+    }
+
+    return JSON.parse(rawValue) as AttemptSubmitResponse;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredAttempt(result: AttemptSubmitResponse) {
+  const storage = getBrowserStorage();
+  if (!storage) {
+    return;
+  }
+
+  storage.setItem(getStoredAttemptKey(result.attempt.date), JSON.stringify(result));
+}
+
+function getBrowserStorage() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage;
+}
+
+function getShareSiteUrl() {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (configuredSiteUrl) {
+    return configuredSiteUrl;
+  }
+
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  return "https://youknoball.com";
+}
+
 export default function PlayPage() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [data, setData] = useState<ChallengeResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<DailyChallengeResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, AnswerOption>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [result, setResult] = useState<SubmittedAttempt | null>(null);
+  const [result, setResult] = useState<AttemptSubmitResponse | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
+  const [displayNameMessage, setDisplayNameMessage] = useState<string | null>(null);
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
+  const [claimingGuestAttempt, setClaimingGuestAttempt] = useState(false);
+  const [guestClaimMessage, setGuestClaimMessage] = useState<string | null>(null);
+  const [guestClaimError, setGuestClaimError] = useState<string | null>(null);
+  const [claimAttemptedDate, setClaimAttemptedDate] = useState<string | null>(null);
+  const [timerNowMs, setTimerNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     let mounted = true;
 
     async function loadSession() {
-      const { data: sessionData } = await supabaseBrowser().auth.getSession();
+      const { data } = await supabaseBrowser().auth.getSession();
       if (mounted) {
-        setUser(sessionData.session?.user ?? null);
+        setUser(data.session?.user ?? null);
         setAuthLoading(false);
       }
     }
@@ -102,34 +135,48 @@ export default function PlayPage() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
 
     async function loadChallenge() {
       try {
         setLoading(true);
-        const response = await fetch("/api/challenge/today", { cache: "no-store" });
-        const payload = (await response.json()) as ChallengeResponse;
+
+        const response = await fetch("/api/challenge/today", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as DailyChallengeResponse;
 
         if (!response.ok) {
-          throw new Error(payload.error ?? "Unable to load today's challenge.");
+          throw new Error("Unable to load today's challenge.");
         }
 
-        if (isMounted) {
-          setData(payload);
-          setError(null);
-          setAnswers({});
-          setResult(null);
-          setSubmitError(null);
-          setCopyMessage(null);
+        if (!mounted) {
+          return;
         }
-      } catch (err) {
-        if (isMounted) {
+
+        setChallenge(payload);
+        setError(null);
+        setAnswers({});
+        setSubmitError(null);
+        setCopyMessage(null);
+        setDisplayNameError(null);
+        setDisplayNameMessage(null);
+        setGuestClaimMessage(null);
+        setGuestClaimError(null);
+        setClaimAttemptedDate(null);
+
+        const storedResult = readStoredAttempt(payload.date);
+        setResult(storedResult);
+      } catch (loadError) {
+        if (mounted) {
           setError(
-            err instanceof Error ? err.message : "Unable to load today's challenge.",
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load today's challenge.",
           );
         }
       } finally {
-        if (isMounted) {
+        if (mounted) {
           setLoading(false);
         }
       }
@@ -138,295 +185,757 @@ export default function PlayPage() {
     loadChallenge();
 
     return () => {
-      isMounted = false;
+      mounted = false;
     };
   }, []);
 
-  const questionCount = data?.questions.length ?? 0;
-  const showNotEnoughQuestionsNotice = useMemo(
-    () => !loading && !error && data !== null && questionCount < 5,
-    [data, error, loading, questionCount],
-  );
+  useEffect(() => {
+    if (result) {
+      writeStoredAttempt(result);
+    }
+  }, [result]);
+
+  const readyChallenge = challenge?.status === "ready" ? challenge : null;
+
+  useEffect(() => {
+    if (!readyChallenge?.timer || result) {
+      return;
+    }
+
+    setTimerNowMs(Date.now());
+    const timerId = window.setInterval(() => {
+      setTimerNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [readyChallenge?.timer, result]);
+
+  useEffect(() => {
+    const storage = getBrowserStorage();
+    const pendingClaim = readPendingGuestAttemptClaim(storage);
+
+    if (readyChallenge && result?.saved && pendingClaim?.date === readyChallenge.date) {
+      clearPendingGuestAttemptClaim(storage);
+      return;
+    }
+
+    if (
+      !readyChallenge ||
+      !pendingClaim ||
+      claimAttemptedDate === pendingClaim.date ||
+      !shouldAutoClaimPendingGuestAttempt({
+        userId: user?.id ?? null,
+        challengeDate: readyChallenge.date,
+        pendingClaim,
+        hasSavedResult: Boolean(result?.saved),
+        claimInFlight: claimingGuestAttempt,
+      })
+    ) {
+      return;
+    }
+
+    let mounted = true;
+    setClaimAttemptedDate(pendingClaim.date);
+
+    async function claimGuestAttempt() {
+      setClaimingGuestAttempt(true);
+      setGuestClaimError(null);
+      setGuestClaimMessage(null);
+
+      try {
+        const response = await fetch("/api/attempt/submit", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(pendingClaim),
+        });
+
+        const payload = (await response.json()) as
+          | AttemptSubmitResponse
+          | { message?: string };
+
+        if ((!response.ok && response.status !== 409) || !("attempt" in payload)) {
+          throw new Error(payload.message ?? "Unable to save your guest result.");
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        clearPendingGuestAttemptClaim(storage);
+        setResult(payload);
+        setGuestClaimMessage("Guest result saved to your account.");
+      } catch (claimError) {
+        if (!mounted) {
+          return;
+        }
+
+        setGuestClaimError(
+          claimError instanceof Error
+            ? claimError.message
+            : "Unable to save your guest result.",
+        );
+      } finally {
+        if (mounted) {
+          setClaimingGuestAttempt(false);
+        }
+      }
+    }
+
+    void claimGuestAttempt();
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    claimAttemptedDate,
+    claimingGuestAttempt,
+    readyChallenge,
+    result?.saved,
+    user?.id,
+  ]);
 
   const answeredCount = useMemo(() => {
-    if (!data) {
+    if (!readyChallenge) {
       return 0;
     }
 
-    return data.questions.reduce((count, question) => {
-      return answers[String(question.id)] ? count + 1 : count;
+    return readyChallenge.questions.reduce((count, question) => {
+      return answers[question.id] ? count + 1 : count;
     }, 0);
-  }, [answers, data]);
-
-  const canSubmit = useMemo(() => {
-    if (!user) {
-      return false;
-    }
-
-    return Boolean(
-      data &&
-        data.questions.length === 5 &&
-        answeredCount === 5 &&
-        !loading &&
-        !error &&
-        !submitting &&
-        !result,
-    );
-  }, [answeredCount, data, error, loading, result, submitting, user]);
+  }, [answers, readyChallenge]);
 
   const resultByQuestionId = useMemo(() => {
-    const map = new Map<string, AttemptResult>();
-    if (!result) {
-      return map;
-    }
+    const map = new Map<string, AttemptQuestionResult>();
 
-    for (const item of result.results) {
+    for (const item of result?.attempt.results ?? []) {
       map.set(item.question_id, item);
     }
+
     return map;
   }, [result]);
 
-  const emojiBar = useMemo(() => {
-    if (!result || !data) {
+  const canSubmit = Boolean(
+    readyChallenge &&
+      answeredCount === 5 &&
+      !submitting &&
+      !result &&
+      !loading &&
+      !error,
+  );
+
+  const shareUrl = useMemo(() => buildShareUrl(getShareSiteUrl()), []);
+  const shareMessage = useMemo(() => {
+    if (!result?.shareText) {
       return "";
     }
 
-    return data.questions
-      .map((question) => {
-        const questionResult = resultByQuestionId.get(String(question.id));
-        return questionResult?.is_correct ? "🟩" : "⬜";
-      })
-      .join("");
-  }, [data, result, resultByQuestionId]);
-
-  const shareText = useMemo(() => {
-    if (!result) {
+    return buildShareMessage(result.shareText, shareUrl);
+  }, [result?.shareText, shareUrl]);
+  const xShareUrl = useMemo(() => {
+    if (!result?.shareText) {
       return "";
     }
 
-    return `I scored ${result.score}/${result.total} on YouKnoBall?\n${emojiBar}`;
-  }, [emojiBar, result]);
+    return buildXShareUrl(result.shareText, shareUrl);
+  }, [result?.shareText, shareUrl]);
+  const facebookShareUrl = useMemo(() => buildFacebookShareUrl(shareUrl), [shareUrl]);
+  const timerRemainingMs = readyChallenge?.timer
+    ? getRemainingTimerMs(
+        readyChallenge.timer.startedAt,
+        new Date(timerNowMs),
+        readyChallenge.timer.durationLimitMs,
+      )
+    : null;
+  const timerDisplay = timerRemainingMs === null ? null : formatTimer(timerRemainingMs);
+  const timerExpired = timerRemainingMs === 0;
 
   function selectAnswer(questionId: string, option: AnswerOption) {
     setAnswers((current) => ({
       ...current,
       [questionId]: option,
     }));
+    setSubmitError(null);
     setCopyMessage(null);
   }
 
-  async function onSubmit() {
-    if (!data || !canSubmit) {
+  async function submitAttempt() {
+    if (!readyChallenge || !canSubmit) {
       return;
     }
 
     setSubmitting(true);
     setSubmitError(null);
-    setCopyMessage(null);
+    setDisplayNameError(null);
+    setDisplayNameMessage(null);
 
     try {
       const payloadAnswers: Record<string, AnswerOption> = {};
-      for (const question of data.questions) {
-        const questionId = String(question.id);
-        const choice = answers[questionId];
-        if (!choice) {
+      const storage = getBrowserStorage();
+
+      for (const question of readyChallenge.questions) {
+        const selectedOption = answers[question.id];
+        if (!selectedOption) {
           throw new Error("Please answer all 5 questions before submitting.");
         }
-        payloadAnswers[questionId] = choice;
+
+        payloadAnswers[question.id] = selectedOption;
       }
 
       const response = await fetch("/api/attempt/submit", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "content-type": "application/json",
         },
         body: JSON.stringify({
-          date: data.date,
+          date: readyChallenge.date,
           answers: payloadAnswers,
         }),
       });
 
+      const payload = (await response.json()) as
+        | AttemptSubmitResponse
+        | { message?: string };
+
       if (response.status === 409) {
-        const conflictPayload = (await response.json()) as SubmitConflictResponse;
-        setSubmitError(conflictPayload.message);
-        if (conflictPayload.existing_attempt) {
-          setResult(conflictPayload.existing_attempt);
+        setSubmitError(payload.message ?? "You've already played today's challenge.");
+        if ("attempt" in payload) {
+          if (payload.saved) {
+            clearPendingGuestAttemptClaim(storage);
+          }
+          setResult(payload);
         }
         return;
       }
 
-      if (!response.ok) {
-        const failurePayload = (await response.json()) as SubmitErrorResponse;
-        throw new Error(failurePayload.message ?? "Unable to submit attempt.");
+      if (!response.ok || !("attempt" in payload)) {
+        throw new Error(payload.message ?? "Unable to submit attempt.");
       }
 
-      const successPayload = (await response.json()) as SubmitSuccessResponse;
-      setResult(successPayload.attempt);
-      setSubmitError(null);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Unable to submit attempt.");
+      if (payload.saved) {
+        clearPendingGuestAttemptClaim(storage);
+      } else {
+        writePendingGuestAttemptClaim(storage, {
+          date: readyChallenge.date,
+          answers: payloadAnswers,
+        });
+      }
+
+      setResult(payload);
+    } catch (submissionError) {
+      setSubmitError(
+        submissionError instanceof Error
+          ? submissionError.message
+          : "Unable to submit attempt.",
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function copyShareText() {
-    if (!shareText) {
+  async function copyShareText(successMessage = "Copied to clipboard.") {
+    if (!shareMessage) {
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(shareText);
-      setCopyMessage("Copied to clipboard.");
+      await navigator.clipboard.writeText(shareMessage);
+      setCopyMessage(successMessage);
     } catch {
       setCopyMessage("Copy failed. Please copy manually.");
     }
   }
 
+  async function shareResult() {
+    if (!result?.shareText) {
+      return;
+    }
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share(buildNativeShareData(result.shareText, shareUrl));
+        setCopyMessage("Share sheet opened.");
+        return;
+      } catch (shareError) {
+        if (shareError instanceof DOMException && shareError.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    await copyShareText("Copied result for sharing.");
+  }
+
+  async function saveDisplayName(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!result?.saved || result.leaderboardEligible) {
+      return;
+    }
+
+    setSavingDisplayName(true);
+    setDisplayNameError(null);
+    setDisplayNameMessage(null);
+
+    try {
+      const response = await fetch("/api/profile/display-name", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          displayName,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        message?: string;
+        leaderboardEligible?: boolean;
+        displayName?: string | null;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.message ?? "Unable to save display name.");
+      }
+
+      setResult((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          leaderboardEligible: Boolean(payload.leaderboardEligible),
+          leaderboardStatus: payload.leaderboardEligible
+            ? "eligible"
+            : current.leaderboardStatus,
+        };
+      });
+      setDisplayNameMessage(payload.message ?? "Display name saved.");
+      setDisplayName(payload.displayName ?? displayName);
+    } catch (saveError) {
+      setDisplayNameError(
+        saveError instanceof Error ? saveError.message : "Unable to save display name.",
+      );
+    } finally {
+      setSavingDisplayName(false);
+    }
+  }
+
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-10 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <div className="mx-auto w-full max-w-3xl space-y-6">
-        <header className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">Today&apos;s Challenge</h1>
-          {!loading && data ? (
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              Date: {data.date} | Source:{" "}
-              {data.source === "scheduled" ? "Scheduled challenge" : "Recent fallback"}
-            </p>
-          ) : null}
-        </header>
+    <main className="px-4 py-10 sm:px-6">
+      <div className="mx-auto w-full max-w-5xl space-y-6">
+        <section className="rounded-[2.25rem] border border-white/10 bg-white/[0.05] p-8 shadow-[0_24px_100px_rgba(0,0,0,0.45)]">
+          <p className="text-xs uppercase tracking-[0.35em] text-[#ffb067]">
+            Daily challenge
+          </p>
+          <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h1 className="font-display text-5xl leading-none text-white sm:text-6xl">
+                Today&apos;s run.
+              </h1>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
+                Five all-sports questions, one score, and a shareable result card when
+                you&apos;re done.
+              </p>
+            </div>
+            {challenge ? (
+              <div className="rounded-[1.5rem] border border-white/10 bg-black/35 px-5 py-4">
+                <p className="text-xs uppercase tracking-[0.25em] text-white/45">Date</p>
+                <p className="mt-2 text-lg font-semibold text-white">
+                  {formatChallengeDate(challenge.date)}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </section>
 
         {loading ? (
-          <section className="rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-            Loading challenge...
+          <section className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5 text-sm text-white/70">
+            Loading today&apos;s challenge...
           </section>
         ) : null}
 
         {!loading && error ? (
-          <section className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+          <section className="rounded-[1.75rem] border border-red-500/30 bg-red-500/10 p-5 text-sm text-red-200">
             {error}
           </section>
         ) : null}
 
-        {showNotEnoughQuestionsNotice ? (
-          <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
-            Only {questionCount} question{questionCount === 1 ? "" : "s"} found. Add more
-            questions in Supabase to reach a full 5-question challenge.
+        {!loading && !error && challenge?.status === "unavailable" ? (
+          <section className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-8">
+            <p className="text-xs uppercase tracking-[0.3em] text-[#ffb067]">Status</p>
+            <h2 className="mt-3 font-display text-4xl leading-none text-white">
+              Not live yet.
+            </h2>
+            <p className="mt-4 max-w-xl text-base leading-7 text-white/70">
+              {challenge.message}
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/"
+                className="inline-flex items-center justify-center rounded-full bg-[#ff7a18] px-5 py-3 text-sm font-semibold text-black hover:bg-[#ff8c36]"
+              >
+                Back to the hub
+              </Link>
+              <Link
+                href="/leaderboard"
+                className="inline-flex items-center justify-center rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white hover:border-white/30 hover:bg-white/5"
+              >
+                View leaderboard
+              </Link>
+            </div>
           </section>
         ) : null}
 
         {!authLoading && !user ? (
-          <section className="rounded-xl border border-indigo-300 bg-indigo-50 p-4 text-sm text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100">
-            Sign in to save streaks & leaderboard (optional).{" "}
-            <Link className="font-semibold underline" href="/login">
-              Go to login
-            </Link>
-            .
+          <section className="rounded-[1.75rem] border border-white/10 bg-black/35 p-5 text-sm leading-6 text-white/72">
+            Play right now as a guest.{" "}
+            <Link className="font-semibold text-[#ffb067] underline" href="/login">
+              Sign in
+            </Link>{" "}
+            only if you want this score counted toward your average and the leaderboard.
           </section>
         ) : null}
 
-        {!loading && !error && data ? (
-          <section className="space-y-4">
-            {data.questions.map((question, index) => (
-              <article
-                key={question.id}
-                className="rounded-xl border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900"
-              >
-                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Question {index + 1}
-                  {question.sport ? ` | ${question.sport}` : ""}
+        {readyChallenge ? (
+          <>
+            <section className="grid gap-4 lg:grid-cols-[1fr_16rem_16rem]">
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-white/45">
+                  Difficulty curve
                 </p>
-                <h2 className="mb-4 text-lg font-medium">{question.question_text}</h2>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {OPTION_KEYS.map((option) => {
-                    const selected = answers[String(question.id)] === option;
-                    return (
-                      <button
-                        key={`${question.id}-${option}`}
-                        type="button"
-                        onClick={() => selectAnswer(String(question.id), option)}
-                        className={`rounded-md border px-3 py-2 text-left text-sm transition ${
-                          selected
-                            ? "border-sky-500 bg-sky-100 text-sky-900 dark:border-sky-400 dark:bg-sky-900/40 dark:text-sky-100"
-                            : "border-slate-200 bg-white hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-500"
-                        }`}
-                      >
-                        <span className="font-semibold">{option}.</span>{" "}
-                        {getOptionText(question, option)}
-                      </button>
-                    );
-                  })}
+                <p className="mt-3 text-sm leading-6 text-white/72">
+                  Questions 1 through 3 are meant to be gettable. Questions 4 and 5
+                  are the heat check.
+                </p>
+              </div>
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-white/45">
+                  Progress
+                </p>
+                <p className="mt-2 font-display text-4xl text-white">{answeredCount}/5</p>
+                <p className="mt-3 text-sm text-white/65">
+                  {result
+                    ? "This browser already has a result saved for today."
+                  : "Lock in every answer before you submit."}
+                </p>
+              </div>
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-white/45">
+                  Timed leaderboard
+                </p>
+                <p className="mt-2 font-display text-4xl text-white">
+                  {timerDisplay ?? "--:--"}
+                </p>
+                <p className="mt-3 text-sm text-white/65">
+                  {readyChallenge.timer
+                    ? timerExpired
+                      ? "Timed leaderboard window closed."
+                      : "Finish before zero to rank."
+                    : "Guest runs are casual. Sign in before playing to rank."}
+                </p>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              {readyChallenge.questions.map((question) => {
+                const selectedOption = answers[question.id];
+                const questionResult = resultByQuestionId.get(question.id);
+
+                return (
+                  <article
+                    key={question.id}
+                    className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#ffb067]">
+                          Question {question.slot}
+                        </p>
+                        <p className="mt-2 text-sm uppercase tracking-[0.2em] text-white/45">
+                          {question.sport} · {question.difficulty === "pro" ? "Real fan" : "Accessible"}
+                        </p>
+                      </div>
+                      {questionResult ? (
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] ${
+                            questionResult.is_correct
+                              ? "bg-emerald-500/15 text-emerald-200"
+                              : "bg-red-500/15 text-red-200"
+                          }`}
+                        >
+                          {questionResult.is_correct ? "Correct" : "Miss"}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <h2 className="mt-5 text-xl font-semibold leading-8 text-white">
+                      {question.question_text}
+                    </h2>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-2">
+                      {optionKeys.map((option) => {
+                        const isSelected = selectedOption === option;
+                        const isSubmittedChoice = questionResult?.chosen_option === option;
+                        const isCorrectChoice = result && questionResult?.is_correct && isSubmittedChoice;
+
+                        return (
+                          <button
+                            key={`${question.id}-${option}`}
+                            type="button"
+                            onClick={() => selectAnswer(question.id, option)}
+                            disabled={Boolean(result)}
+                            className={`rounded-[1.25rem] border px-4 py-4 text-left text-sm transition ${
+                              isCorrectChoice
+                                ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
+                                : result && isSubmittedChoice
+                                  ? "border-red-400/50 bg-red-500/10 text-red-100"
+                                  : isSelected
+                                    ? "border-[#ff7a18] bg-[#ff7a18]/10 text-white"
+                                    : "border-white/10 bg-black/30 text-white/82 hover:border-white/25 hover:bg-black/45"
+                            }`}
+                          >
+                            <span className="mr-2 font-semibold text-[#ffb067]">{option}</span>
+                            {getOptionText(question, option)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+
+            {!result ? (
+              <section className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-6">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-[#ffb067]">
+                      Submit
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-white/70">
+                      Guests can submit and share right away. Signed-in players also
+                      save stats and leaderboard eligibility.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={submitAttempt}
+                    disabled={!canSubmit}
+                    className={`rounded-full px-6 py-3 text-sm font-semibold transition ${
+                      canSubmit
+                        ? "bg-[#ff7a18] text-black hover:bg-[#ff8c36]"
+                        : "cursor-not-allowed bg-white/10 text-white/35"
+                    }`}
+                  >
+                    {submitting ? "Scoring..." : "Submit answers"}
+                  </button>
                 </div>
-                {result ? (
-                  <p className="mt-3 text-sm font-medium">
-                    {resultByQuestionId.get(String(question.id))?.is_correct
-                      ? "Correct"
-                      : "Incorrect"}{" "}
-                    {resultByQuestionId.get(String(question.id))
-                      ? `(You chose ${
-                          resultByQuestionId.get(String(question.id))?.chosen_option
-                        })`
-                      : ""}
+                {submitError ? (
+                  <p className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    {submitError}
                   </p>
                 ) : null}
-              </article>
-            ))}
-          </section>
-        ) : null}
-
-        {!loading && !error && data && user ? (
-          <section className="rounded-xl border border-slate-300 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
-              Answered {answeredCount}/5
-            </p>
-            <button
-              type="button"
-              disabled={!canSubmit}
-              onClick={onSubmit}
-              className={`w-full rounded-md px-4 py-2 text-sm font-medium ${
-                canSubmit
-                  ? "bg-sky-600 text-white hover:bg-sky-500"
-                  : "cursor-not-allowed bg-slate-300 text-slate-500 dark:bg-slate-700 dark:text-slate-400"
-              }`}
-            >
-              {submitting ? "Submitting..." : "Submit"}
-            </button>
-            {!canSubmit && !result && data.questions.length === 5 ? (
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Submit unlocks once all 5 questions are answered.
-              </p>
+              </section>
             ) : null}
-            {submitError ? (
-              <p className="mt-3 text-sm text-red-700 dark:text-red-300">{submitError}</p>
-            ) : null}
-          </section>
+          </>
         ) : null}
 
         {result ? (
-          <section className="space-y-4 rounded-xl border border-emerald-300 bg-emerald-50 p-5 dark:border-emerald-900 dark:bg-emerald-950/40">
-            <div className="space-y-1">
-              <h3 className="text-xl font-semibold">Your Result</h3>
-              <p className="text-sm">
-                Score: {result.score}/{result.total}
-              </p>
+          <section className="rounded-[2.25rem] border border-[#ff7a18]/30 bg-[#ff7a18]/8 p-8 shadow-[0_24px_100px_rgba(0,0,0,0.45)]">
+            <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-[#ffb067]">Result</p>
+                <h2 className="mt-4 font-display text-5xl leading-none text-white">
+                  {result.attempt.score}/{result.attempt.total}
+                </h2>
+                <p className="mt-4 max-w-xl text-base leading-7 text-white/72">
+                  {result.saved
+                    ? "This run is saved to your account."
+                    : user
+                      ? "This run is still only in this browser until we finish attaching it to your account."
+                      : "This run is saved in this browser only. Sign in now to attach this score to your account."}
+                </p>
+                {!user && !result.saved ? (
+                  <Link
+                    className="mt-4 inline-flex rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white hover:border-white/30 hover:bg-white/5"
+                    href="/login"
+                  >
+                    Sign in to save this run
+                  </Link>
+                ) : null}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {result.stats ? (
+                  <>
+                    <div className="rounded-[1.5rem] border border-white/10 bg-black/35 p-4">
+                      <p className="text-xs uppercase tracking-[0.25em] text-white/45">
+                        Average score
+                      </p>
+                      <p className="mt-2 font-display text-4xl text-white">
+                        {result.stats.averageScore.toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="rounded-[1.5rem] border border-white/10 bg-black/35 p-4">
+                      <p className="text-xs uppercase tracking-[0.25em] text-white/45">
+                        Total plays
+                      </p>
+                      <p className="mt-2 font-display text-4xl text-white">
+                        {result.stats.totalPlays}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-[1.5rem] border border-white/10 bg-black/35 p-4 sm:col-span-2">
+                    <p className="text-xs uppercase tracking-[0.25em] text-white/45">
+                      Guest run
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-white/70">
+                      Guest results are shareable, but they do not count toward saved
+                      stats or leaderboard rank.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="rounded-md border border-emerald-300 bg-white p-3 dark:border-emerald-800 dark:bg-slate-900">
-              <p className="text-sm font-medium">Share</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm">{shareText}</p>
-              <button
-                type="button"
-                onClick={copyShareText}
-                className="mt-3 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-              >
-                Copy
-              </button>
+            <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-black/35 p-5">
+              <p className="text-xs uppercase tracking-[0.25em] text-white/45">Share</p>
+              <pre className="mt-3 whitespace-pre-wrap font-sans text-sm leading-7 text-white/82">
+                {shareMessage}
+              </pre>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={shareResult}
+                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-[#ffede0]"
+                >
+                  Share
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void copyShareText()}
+                  className="rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white hover:border-white/30 hover:bg-white/5"
+                >
+                  Copy result
+                </button>
+                <a
+                  href={xShareUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white hover:border-white/30 hover:bg-white/5"
+                >
+                  X
+                </a>
+                <a
+                  href={facebookShareUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white hover:border-white/30 hover:bg-white/5"
+                >
+                  Facebook
+                </a>
+              </div>
               {copyMessage ? (
-                <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                <p className="mt-3 text-xs uppercase tracking-[0.25em] text-white/55">
                   {copyMessage}
                 </p>
               ) : null}
             </div>
+
+            {claimingGuestAttempt ? (
+              <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-black/35 p-5 text-sm leading-6 text-white/72">
+                Saving this guest run to your account...
+              </div>
+            ) : null}
+
+            {guestClaimMessage ? (
+              <div className="mt-6 rounded-[1.75rem] border border-emerald-500/25 bg-emerald-500/10 p-5 text-sm leading-6 text-emerald-100">
+                {guestClaimMessage}
+              </div>
+            ) : null}
+
+            {guestClaimError ? (
+              <div className="mt-6 rounded-[1.75rem] border border-red-500/30 bg-red-500/10 p-5 text-sm leading-6 text-red-200">
+                {guestClaimError}
+              </div>
+            ) : null}
+
+            {result.leaderboardStatus === "timed_out" ? (
+              <div className="mt-6 rounded-[1.75rem] border border-[#ff7a18]/25 bg-[#ff7a18]/10 p-5 text-sm leading-6 text-[#ffd2b3]">
+                Saved and shareable, but this run finished outside the timed leaderboard window.
+              </div>
+            ) : null}
+
+            {result.leaderboardStatus === "timer_unavailable" ? (
+              <div className="mt-6 rounded-[1.75rem] border border-[#ff7a18]/25 bg-[#ff7a18]/10 p-5 text-sm leading-6 text-[#ffd2b3]">
+                Saved and shareable, but timed leaderboard eligibility could not be verified for this run.
+              </div>
+            ) : null}
+
+            {result.leaderboardStatus === "casual" ? (
+              <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-black/35 p-5 text-sm leading-6 text-white/72">
+                Guest runs are casual. Sign in before playing to rank on the timed leaderboard.
+              </div>
+            ) : null}
+
+            {result.saved && result.leaderboardStatus === "needs_display_name" ? (
+              <form
+                onSubmit={saveDisplayName}
+                className="mt-6 rounded-[1.75rem] border border-white/10 bg-black/35 p-5"
+              >
+                <p className="text-xs uppercase tracking-[0.25em] text-[#ffb067]">
+                  Leaderboard name
+                </p>
+                <h3 className="mt-3 font-display text-3xl text-white">
+                  Claim your public name.
+                </h3>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-white/70">
+                  Your score is saved, but you will not appear on the leaderboard until
+                  you pick a display name.
+                </p>
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                  <input
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    placeholder="Pick a display name"
+                    className="w-full rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#ff7a18]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={savingDisplayName}
+                    className={`rounded-full px-5 py-3 text-sm font-semibold transition ${
+                      savingDisplayName
+                        ? "cursor-not-allowed bg-white/10 text-white/35"
+                        : "bg-[#ff7a18] text-black hover:bg-[#ff8c36]"
+                    }`}
+                  >
+                    {savingDisplayName ? "Saving..." : "Save name"}
+                  </button>
+                </div>
+                {displayNameError ? (
+                  <p className="mt-4 text-sm text-red-200">{displayNameError}</p>
+                ) : null}
+                {displayNameMessage ? (
+                  <p className="mt-4 text-sm text-emerald-200">{displayNameMessage}</p>
+                ) : null}
+              </form>
+            ) : null}
+
+            {result.saved && result.leaderboardStatus === "eligible" ? (
+              <div className="mt-6 rounded-[1.75rem] border border-emerald-500/25 bg-emerald-500/10 p-5 text-sm leading-6 text-emerald-100">
+                This score is eligible for the leaderboard.
+                <Link className="ml-2 font-semibold underline" href="/leaderboard">
+                  See the board
+                </Link>
+                .
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>

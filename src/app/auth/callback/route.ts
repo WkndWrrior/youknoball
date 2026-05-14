@@ -34,6 +34,20 @@ function getOtpType(raw: string | null) {
   return allowed.includes(value as EmailOtpType) ? (value as EmailOtpType) : null;
 }
 
+function getRedirectPath(otpType: EmailOtpType | null) {
+  return otpType === "recovery" ? "/reset-password" : "/play";
+}
+
+function getInvalidLinkError(otpType: EmailOtpType | null) {
+  return otpType === "recovery"
+    ? "Invalid or expired recovery link."
+    : "Invalid or expired verification link.";
+}
+
+function getProfileUpsertErrorMessage() {
+  return "Unable to complete sign-in. Try again.";
+}
+
 function applyAuthCookies(response: NextResponse, mutations: Map<string, string | null>) {
   for (const [name, value] of mutations) {
     if (value === null) {
@@ -56,8 +70,12 @@ function applyAuthCookies(response: NextResponse, mutations: Map<string, string 
 }
 
 export async function GET(request: NextRequest) {
-  const redirectUrl = new URL("/play", request.url);
   const loginUrl = new URL("/login", request.url);
+  const { searchParams } = new URL(request.url);
+  const code = searchParams.get("code");
+  const tokenHash = searchParams.get("token_hash");
+  const otpType = getOtpType(searchParams.get("type"));
+  const redirectUrl = new URL(getRedirectPath(otpType), request.url);
   const config = getSupabasePublicConfig();
 
   if (!config) {
@@ -93,11 +111,6 @@ export async function GET(request: NextRequest) {
   });
 
   try {
-    const { searchParams } = new URL(request.url);
-    const code = searchParams.get("code");
-    const tokenHash = searchParams.get("token_hash");
-    const otpType = getOtpType(searchParams.get("type"));
-
     let userId: string | null = null;
 
     if (code) {
@@ -116,19 +129,28 @@ export async function GET(request: NextRequest) {
       }
       userId = data.user?.id ?? null;
     } else {
-      loginUrl.searchParams.set("error", "Invalid or expired magic link.");
+      loginUrl.searchParams.set("error", getInvalidLinkError(otpType));
       return NextResponse.redirect(loginUrl);
     }
 
     if (userId) {
-      await supabaseAdmin().from("profiles").upsert({ id: userId }, { onConflict: "id" });
+      const { error: profileUpsertError } = await supabaseAdmin()
+        .from("profiles")
+        .upsert({ id: userId }, { onConflict: "id" });
+
+      if (profileUpsertError) {
+        loginUrl.searchParams.set("error", getProfileUpsertErrorMessage());
+        const response = NextResponse.redirect(loginUrl);
+        applyAuthCookies(response, cookieMutations);
+        return response;
+      }
     }
 
     const response = NextResponse.redirect(redirectUrl);
     applyAuthCookies(response, cookieMutations);
     return response;
   } catch {
-    loginUrl.searchParams.set("error", "Unable to complete sign-in. Try again.");
+    loginUrl.searchParams.set("error", getInvalidLinkError(otpType));
     const response = NextResponse.redirect(loginUrl);
     applyAuthCookies(response, cookieMutations);
     return response;

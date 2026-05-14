@@ -21,7 +21,7 @@ export function supabaseAdmin() {
   }
 
   if (!adminClient) {
-    adminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    adminClient = createClient(supabaseUrl, supabaseServiceRoleKey!, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
