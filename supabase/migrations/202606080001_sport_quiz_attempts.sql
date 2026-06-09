@@ -20,6 +20,9 @@ create table if not exists public.sport_quiz_attempt_items (
 create index if not exists sport_quiz_attempts_user_id_idx
   on public.sport_quiz_attempts (user_id);
 
+create index if not exists sport_quiz_attempts_user_id_created_at_idx
+  on public.sport_quiz_attempts (user_id, created_at desc);
+
 create index if not exists sport_quiz_attempts_sport_id_idx
   on public.sport_quiz_attempts (sport_id);
 

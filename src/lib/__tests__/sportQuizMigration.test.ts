@@ -46,6 +46,10 @@ describe("sport quiz attempt migration", () => {
       "create index if not exists sport_quiz_attempts_user_id_idx",
     );
     expect(migration).toContain(
+      "create index if not exists sport_quiz_attempts_user_id_created_at_idx",
+    );
+    expect(migration).toContain("on public.sport_quiz_attempts (user_id, created_at desc)");
+    expect(migration).toContain(
       "create index if not exists sport_quiz_attempts_sport_id_idx",
     );
     expect(migration).toContain(
