@@ -59,15 +59,31 @@ function readRecentQuestionIds(slug: string) {
   }
 }
 
+export function promoteRecentQuestionIds(
+  existingQuestionIds: readonly string[],
+  completedQuestionIds: readonly string[],
+) {
+  const completedIds = parseSportQuizRecentQuestionIds(completedQuestionIds);
+  const completedIdSet = new Set(completedIds);
+  const retainedIds = parseSportQuizRecentQuestionIds(existingQuestionIds).filter(
+    (questionId) => !completedIdSet.has(questionId),
+  );
+
+  return [...retainedIds, ...completedIds].slice(
+    -MAX_SPORT_QUIZ_RECENT_QUESTION_IDS,
+  );
+}
+
 function rememberCompletedQuestions(slug: string, questionIds: string[]) {
   const storage = getBrowserStorage();
   if (!storage) {
     return;
   }
 
-  const recentQuestionIds = [
-    ...new Set([...readRecentQuestionIds(slug), ...questionIds]),
-  ].slice(-MAX_SPORT_QUIZ_RECENT_QUESTION_IDS);
+  const recentQuestionIds = promoteRecentQuestionIds(
+    readRecentQuestionIds(slug),
+    questionIds,
+  );
 
   storage.setItem(getHistoryKey(slug), JSON.stringify(recentQuestionIds));
 }
@@ -343,18 +359,24 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
                     </span>
                   </legend>
 
-                  {questionResult ? (
+                  <div className="mt-4 min-h-6">
                     <p
-                      className={`mt-4 text-xs font-semibold uppercase tracking-[0.25em] ${
-                        questionResult.is_correct
-                          ? "text-emerald-200"
-                          : "text-red-200"
+                      aria-hidden={!questionResult}
+                      className={`block min-h-6 break-words text-xs font-semibold uppercase tracking-[0.25em] ${
+                        questionResult
+                          ? questionResult.is_correct
+                            ? "text-emerald-200"
+                            : "text-red-200"
+                          : "invisible"
                       }`}
                     >
-                      {questionResult.is_correct ? "Correct" : "Miss"} · Your answer:{" "}
-                      {questionResult.chosen_option}
+                      {questionResult
+                        ? `${
+                            questionResult.is_correct ? "Correct" : "Miss"
+                          } · Your answer: ${questionResult.chosen_option}`
+                        : "Answer feedback"}
                     </p>
-                  ) : null}
+                  </div>
 
                   <div className="mt-5 grid gap-3 md:grid-cols-2">
                     {optionKeys.map((option) => {

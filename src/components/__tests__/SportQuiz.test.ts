@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { promoteRecentQuestionIds } from "@/components/SportQuiz";
+
 describe("SportQuiz", () => {
   async function readSource() {
     return readFile(
@@ -51,6 +53,9 @@ describe("SportQuiz", () => {
     expect(source).toContain("Question {question.slot}");
     expect(source).toContain('questionResult.is_correct ? "Correct" : "Miss"');
     expect(source).toContain("{result.score}/{result.total}");
+    expect(source).toContain('className="mt-4 min-h-6"');
+    expect(source).toContain("block min-h-6 break-words");
+    expect(source).toContain("min-h-14 min-w-0");
     expect(source).not.toMatch(/timer/i);
     expect(source).not.toMatch(/leaderboard/i);
     expect(source).not.toMatch(/share/i);
@@ -63,8 +68,32 @@ describe("SportQuiz", () => {
     expect(source).toContain("`${SPORT_QUIZ_HISTORY_KEY_PREFIX}:${slug}`");
     expect(source).toContain("window.localStorage");
     expect(source).toContain("MAX_SPORT_QUIZ_RECENT_QUESTION_IDS");
-    expect(source).toContain(".slice(-MAX_SPORT_QUIZ_RECENT_QUESTION_IDS)");
+    expect(source).toContain(".slice(");
+    expect(source).toContain("-MAX_SPORT_QUIZ_RECENT_QUESTION_IDS");
     expect(source).toContain("new Set");
     expect(source).toContain("void loadQuiz()");
+  });
+
+  it("promotes every completed question to the newest history positions", () => {
+    const existingQuestionIds = Array.from(
+      { length: 25 },
+      (_, index) => `question-${index + 1}`,
+    );
+    const completedQuestionIds = [
+      "question-1",
+      "question-2",
+      "question-26",
+      "question-27",
+      "question-28",
+    ];
+
+    const recentQuestionIds = promoteRecentQuestionIds(
+      existingQuestionIds,
+      completedQuestionIds,
+    );
+
+    expect(recentQuestionIds).toHaveLength(25);
+    expect(new Set(recentQuestionIds).size).toBe(25);
+    expect(recentQuestionIds.slice(-5)).toEqual(completedQuestionIds);
   });
 });
