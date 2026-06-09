@@ -326,6 +326,10 @@ describe("getPlayerSportCategoryPerformance", () => {
     const adminClient = createClientMock({
       daily_attempts: attemptsQuery,
       daily_challenge_items: itemsQuery,
+      sport_quiz_attempts: createThenableQuery({
+        data: [],
+        error: null,
+      }),
     });
     supabaseAdmin.mockReturnValue(adminClient);
 
@@ -348,6 +352,296 @@ describe("getPlayerSportCategoryPerformance", () => {
       "challenge_1",
       "challenge_2",
     ]);
+  });
+
+  it("combines daily and side-game performance for the same sport using the latest timestamp", async () => {
+    const sportQuizAttemptsQuery = createThenableQuery({
+      data: [
+        {
+          sport_id: "sport_nba",
+          score: 4,
+          total_questions: 5,
+          created_at: "2026-05-03T12:00:00Z",
+        },
+      ],
+      error: null,
+    });
+    const sportsQuery = createThenableQuery({
+      data: [{ id: "sport_nba", slug: "nba" }],
+      error: null,
+    });
+    const adminClient = createClientMock({
+      daily_attempts: createThenableQuery({
+        data: [
+          {
+            daily_challenge_id: "challenge_1",
+            challenge_date: "2026-05-01",
+            answers: { question_nba: "A" },
+          },
+        ],
+        error: null,
+      }),
+      sport_quiz_attempts: sportQuizAttemptsQuery,
+      daily_challenge_items: createThenableQuery({
+        data: [
+          {
+            daily_challenge_id: "challenge_1",
+            question_id: "question_nba",
+            question_snapshot: {
+              id: "question_nba",
+              question_text: "NBA",
+              option_a: "A",
+              option_b: "B",
+              option_c: "C",
+              option_d: "D",
+              correct_option: "A",
+              sport: { slug: "nba", name: "NBA" },
+            },
+          },
+        ],
+        error: null,
+      }),
+      sports: sportsQuery,
+    });
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(getPlayerSportCategoryPerformance("user_1")).resolves.toEqual([
+      {
+        slug: "nba",
+        answeredCount: 6,
+        correctCount: 5,
+        lastAnsweredAt: "2026-05-03T12:00:00Z",
+      },
+    ]);
+
+    expect(sportQuizAttemptsQuery.select).toHaveBeenCalledWith(
+      "sport_id,score,total_questions,created_at",
+    );
+    expect(sportQuizAttemptsQuery.eq).toHaveBeenCalledWith("user_id", "user_1");
+    expect(sportQuizAttemptsQuery.order).toHaveBeenCalledWith("created_at", {
+      ascending: false,
+    });
+    expect(sportQuizAttemptsQuery.limit).toHaveBeenCalledWith(100);
+    expect(sportsQuery.select).toHaveBeenCalledWith("id,slug");
+    expect(sportsQuery.in).toHaveBeenCalledWith("id", ["sport_nba"]);
+  });
+
+  it("includes side-game-only supported sports and excludes unsupported sports", async () => {
+    const adminClient = createClientMock({
+      daily_attempts: createThenableQuery({
+        data: [],
+        error: null,
+      }),
+      sport_quiz_attempts: createThenableQuery({
+        data: [
+          {
+            sport_id: "sport_cfb",
+            score: 3,
+            total_questions: 5,
+            created_at: "2026-05-04T12:00:00Z",
+          },
+          {
+            sport_id: "sport_mlb",
+            score: 5,
+            total_questions: 5,
+            created_at: "2026-05-05T12:00:00Z",
+          },
+        ],
+        error: null,
+      }),
+      sports: createThenableQuery({
+        data: [
+          { id: "sport_cfb", slug: "cfb" },
+          { id: "sport_mlb", slug: "mlb" },
+        ],
+        error: null,
+      }),
+    });
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(getPlayerSportCategoryPerformance("user_1")).resolves.toEqual([
+      {
+        slug: "cfb",
+        answeredCount: 5,
+        correctCount: 3,
+        lastAnsweredAt: "2026-05-04T12:00:00Z",
+      },
+    ]);
+
+    expect(adminClient.from).not.toHaveBeenCalledWith("daily_challenge_items");
+  });
+
+  it("uses the chronologically latest side-game timestamp across timezone offsets", async () => {
+    const adminClient = createClientMock({
+      daily_attempts: createThenableQuery({
+        data: [],
+        error: null,
+      }),
+      sport_quiz_attempts: createThenableQuery({
+        data: [
+          {
+            sport_id: "sport_nfl",
+            score: 4,
+            total_questions: 5,
+            created_at: "2026-05-03T01:00:00-05:00",
+          },
+          {
+            sport_id: "sport_nfl",
+            score: 2,
+            total_questions: 5,
+            created_at: "2026-05-03T05:30:00Z",
+          },
+        ],
+        error: null,
+      }),
+      sports: createThenableQuery({
+        data: [{ id: "sport_nfl", slug: "nfl" }],
+        error: null,
+      }),
+    });
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(getPlayerSportCategoryPerformance("user_1")).resolves.toEqual([
+      {
+        slug: "nfl",
+        answeredCount: 10,
+        correctCount: 6,
+        lastAnsweredAt: "2026-05-03T01:00:00-05:00",
+      },
+    ]);
+  });
+
+  it("excludes malformed side-game attempts and sport rows", async () => {
+    const adminClient = createClientMock({
+      daily_attempts: createThenableQuery({
+        data: [],
+        error: null,
+      }),
+      sport_quiz_attempts: createThenableQuery({
+        data: [
+          {
+            sport_id: "sport_nfl",
+            score: 4,
+            total_questions: 5,
+            created_at: "2026-05-04T12:00:00Z",
+          },
+          {
+            sport_id: "sport_missing_score",
+            total_questions: 5,
+            created_at: "2026-05-05T12:00:00Z",
+          },
+          {
+            sport_id: "sport_bad_total",
+            score: 6,
+            total_questions: 5,
+            created_at: "2026-05-06T12:00:00Z",
+          },
+          {
+            sport_id: "sport_bad_date",
+            score: 1,
+            total_questions: 5,
+            created_at: "not-a-date",
+          },
+          {
+            sport_id: "",
+            score: 1,
+            total_questions: 5,
+            created_at: "2026-05-06T13:00:00Z",
+          },
+          {
+            sport_id: "sport_unsupported",
+            score: 5,
+            total_questions: 5,
+            created_at: "2026-05-07T12:00:00Z",
+          },
+          {
+            sport_id: "sport_missing_slug",
+            score: 5,
+            total_questions: 5,
+            created_at: "2026-05-08T12:00:00Z",
+          },
+          null,
+        ],
+        error: null,
+      }),
+      sports: createThenableQuery({
+        data: [
+          { id: "sport_nfl", slug: "nfl" },
+          { id: "sport_unsupported", slug: "mlb" },
+          { id: "sport_missing_slug" },
+        ],
+        error: null,
+      }),
+    });
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(getPlayerSportCategoryPerformance("user_1")).resolves.toEqual([
+      {
+        slug: "nfl",
+        answeredCount: 5,
+        correctCount: 4,
+        lastAnsweredAt: "2026-05-04T12:00:00Z",
+      },
+    ]);
+
+    const sportsQuery = adminClient.from.mock.results.find(
+      (result) => result.value?.select.mock.calls[0]?.[0] === "id,slug",
+    )?.value;
+    expect(sportsQuery.in).toHaveBeenCalledWith("id", [
+      "sport_nfl",
+      "sport_unsupported",
+      "sport_missing_slug",
+    ]);
+  });
+
+  it("preserves daily performance when the side-game attempt table is unavailable", async () => {
+    const adminClient = createClientMock({
+      daily_attempts: createThenableQuery({
+        data: [
+          {
+            daily_challenge_id: "challenge_1",
+            challenge_date: "2026-05-01",
+            answers: { question_nhl: "B" },
+          },
+        ],
+        error: null,
+      }),
+      sport_quiz_attempts: createThenableQuery({
+        data: null,
+        error: { code: "42P01", message: "relation does not exist" },
+      }),
+      daily_challenge_items: createThenableQuery({
+        data: [
+          {
+            daily_challenge_id: "challenge_1",
+            question_id: "question_nhl",
+            question_snapshot: {
+              id: "question_nhl",
+              question_text: "NHL",
+              option_a: "A",
+              option_b: "B",
+              option_c: "C",
+              option_d: "D",
+              correct_option: "B",
+              sport: { slug: "nhl", name: "NHL" },
+            },
+          },
+        ],
+        error: null,
+      }),
+    });
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(getPlayerSportCategoryPerformance("user_1")).resolves.toEqual([
+      {
+        slug: "nhl",
+        answeredCount: 1,
+        correctCount: 1,
+        lastAnsweredAt: "2026-05-01",
+      },
+    ]);
+
+    expect(adminClient.from).not.toHaveBeenCalledWith("sports");
   });
 });
 

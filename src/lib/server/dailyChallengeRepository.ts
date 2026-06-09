@@ -151,6 +151,18 @@ type PlayerSportPerformanceItemRow = {
   question_snapshot: QuestionSnapshot;
 };
 
+type PlayerSportQuizAttemptRow = {
+  sport_id: string;
+  score: number;
+  total_questions: number;
+  created_at: string;
+};
+
+type PlayerSportRow = {
+  id: string;
+  slug: SportCategorySlug;
+};
+
 const DAILY_ATTEMPT_COLUMNS =
   "id,daily_challenge_id,challenge_date,created_at,score,total_questions,duration_ms,leaderboard_eligible,answers";
 
@@ -194,6 +206,10 @@ export type ServeableChallengeForDate = {
 
 function isCanonicalStoreUnavailableError(error: PostgrestError | null) {
   return Boolean(error);
+}
+
+function isSportQuizStoreUnavailableError(error: PostgrestError | null) {
+  return error?.code === "42P01" || error?.code === "PGRST205";
 }
 
 function isConflictError(error: PostgrestError | null) {
@@ -356,6 +372,47 @@ function normalizePlayerSportPerformanceItem(
   };
 }
 
+function normalizePlayerSportQuizAttempt(
+  value: unknown,
+): PlayerSportQuizAttemptRow | null {
+  if (
+    !isRecord(value) ||
+    typeof value.sport_id !== "string" ||
+    value.sport_id.trim().length === 0 ||
+    typeof value.score !== "number" ||
+    typeof value.total_questions !== "number" ||
+    !Number.isInteger(value.score) ||
+    !Number.isInteger(value.total_questions) ||
+    value.score < 0 ||
+    value.total_questions <= 0 ||
+    value.score > value.total_questions ||
+    typeof value.created_at !== "string" ||
+    Number.isNaN(Date.parse(value.created_at))
+  ) {
+    return null;
+  }
+
+  return {
+    sport_id: value.sport_id,
+    score: value.score,
+    total_questions: value.total_questions,
+    created_at: value.created_at,
+  };
+}
+
+function normalizePlayerSport(value: unknown): PlayerSportRow | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    value.id.trim().length === 0
+  ) {
+    return null;
+  }
+
+  const slug = toSupportedSportCategorySlug(value.slug);
+  return slug ? { id: value.id, slug } : null;
+}
+
 function toSupportedSportCategorySlug(value: unknown): SportCategorySlug | null {
   if (typeof value !== "string") {
     return null;
@@ -363,6 +420,20 @@ function toSupportedSportCategorySlug(value: unknown): SportCategorySlug | null 
 
   const slug = value.trim().toLowerCase() as SportCategorySlug;
   return supportedSportCategorySlugs.has(slug) ? slug : null;
+}
+
+function isLaterAnsweredAt(candidate: string, current: string | null) {
+  if (current === null) {
+    return true;
+  }
+
+  const candidateTime = Date.parse(candidate);
+  const currentTime = Date.parse(current);
+  if (!Number.isNaN(candidateTime) && !Number.isNaN(currentTime)) {
+    return candidateTime > currentTime;
+  }
+
+  return candidate > current;
 }
 
 function hasCanonicalSnapshotShape(value: unknown): value is QuestionSnapshot {
@@ -1111,12 +1182,23 @@ export async function getPlayerSportCategoryPerformance(
   userId: string,
 ): Promise<SportCategoryPerformance[]> {
   const adminClient = supabaseAdmin();
-  const { data: attemptData, error: attemptError } = await adminClient
-    .from("daily_attempts")
-    .select("daily_challenge_id,challenge_date,answers")
-    .eq("user_id", userId)
-    .order("challenge_date", { ascending: false })
-    .limit(50);
+  const [
+    { data: attemptData, error: attemptError },
+    { data: sportQuizAttemptData, error: sportQuizAttemptError },
+  ] = await Promise.all([
+    adminClient
+      .from("daily_attempts")
+      .select("daily_challenge_id,challenge_date,answers")
+      .eq("user_id", userId)
+      .order("challenge_date", { ascending: false })
+      .limit(50),
+    adminClient
+      .from("sport_quiz_attempts")
+      .select("sport_id,score,total_questions,created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+  ]);
 
   throwIfError(attemptError, "Unable to load player sport performance.");
 
@@ -1124,19 +1206,47 @@ export async function getPlayerSportCategoryPerformance(
     .map(normalizePlayerSportPerformanceAttempt)
     .filter((attempt): attempt is PlayerSportPerformanceAttemptRow => attempt !== null);
 
+  if (
+    sportQuizAttemptError &&
+    !isSportQuizStoreUnavailableError(sportQuizAttemptError)
+  ) {
+    throwIfError(
+      sportQuizAttemptError,
+      "Unable to load player sport performance.",
+    );
+  }
+
+  const sportQuizAttempts = sportQuizAttemptError
+    ? []
+    : (Array.isArray(sportQuizAttemptData) ? sportQuizAttemptData : [])
+        .map(normalizePlayerSportQuizAttempt)
+        .filter(
+          (attempt): attempt is PlayerSportQuizAttemptRow => attempt !== null,
+        );
+
   const challengeIds = Array.from(
     new Set(attempts.map((attempt) => attempt.daily_challenge_id)),
   );
-  if (challengeIds.length === 0) {
-    return [];
-  }
-
-  const { data: itemData, error: itemError } = await adminClient
-    .from("daily_challenge_items")
-    .select("daily_challenge_id,question_id,question_snapshot")
-    .in("daily_challenge_id", challengeIds);
+  const sportIds = Array.from(
+    new Set(sportQuizAttempts.map((attempt) => attempt.sport_id)),
+  );
+  const [
+    { data: itemData, error: itemError },
+    { data: sportData, error: sportError },
+  ] = await Promise.all([
+    challengeIds.length > 0
+      ? adminClient
+          .from("daily_challenge_items")
+          .select("daily_challenge_id,question_id,question_snapshot")
+          .in("daily_challenge_id", challengeIds)
+      : Promise.resolve({ data: [], error: null }),
+    sportIds.length > 0
+      ? adminClient.from("sports").select("id,slug").in("id", sportIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
   throwIfError(itemError, "Unable to load player sport performance.");
+  throwIfError(sportError, "Unable to load player sport performance.");
 
   const itemsByChallengeId = new Map<string, PlayerSportPerformanceItemRow[]>();
   for (const item of (Array.isArray(itemData) ? itemData : [])
@@ -1146,6 +1256,13 @@ export async function getPlayerSportCategoryPerformance(
     challengeItems.push(item);
     itemsByChallengeId.set(item.daily_challenge_id, challengeItems);
   }
+
+  const sportSlugById = new Map(
+    (Array.isArray(sportData) ? sportData : [])
+      .map(normalizePlayerSport)
+      .filter((sport): sport is PlayerSportRow => sport !== null)
+      .map((sport) => [sport.id, sport.slug]),
+  );
 
   const performanceBySlug = new Map<SportCategorySlug, SportCategoryPerformance>();
   for (const attempt of attempts) {
@@ -1172,15 +1289,34 @@ export async function getPlayerSportCategoryPerformance(
       if (submittedAnswer === item.question_snapshot.correct_option) {
         existing.correctCount += 1;
       }
-      if (
-        existing.lastAnsweredAt === null ||
-        attempt.challenge_date > existing.lastAnsweredAt
-      ) {
+      if (isLaterAnsweredAt(attempt.challenge_date, existing.lastAnsweredAt)) {
         existing.lastAnsweredAt = attempt.challenge_date;
       }
 
       performanceBySlug.set(slug, existing);
     }
+  }
+
+  for (const attempt of sportQuizAttempts) {
+    const slug = sportSlugById.get(attempt.sport_id);
+    if (!slug) {
+      continue;
+    }
+
+    const existing = performanceBySlug.get(slug) ?? {
+      slug,
+      answeredCount: 0,
+      correctCount: 0,
+      lastAnsweredAt: null,
+    };
+
+    existing.answeredCount += attempt.total_questions;
+    existing.correctCount += attempt.score;
+    if (isLaterAnsweredAt(attempt.created_at, existing.lastAnsweredAt)) {
+      existing.lastAnsweredAt = attempt.created_at;
+    }
+
+    performanceBySlug.set(slug, existing);
   }
 
   return Array.from(performanceBySlug.values()).sort((left, right) =>
