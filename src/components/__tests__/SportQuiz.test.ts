@@ -3,7 +3,26 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { promoteRecentQuestionIds } from "@/components/SportQuiz";
+import {
+  parseSportQuizSubmitResponse,
+  promoteRecentQuestionIds,
+  writeSportQuizHistory,
+} from "@/components/SportQuiz";
+
+const questionIds = ["q1", "q2", "q3", "q4", "q5"];
+
+const validSubmitResponse = {
+  saved: true,
+  score: 3,
+  total: 5,
+  results: [
+    { question_id: "q1", chosen_option: "A", is_correct: true },
+    { question_id: "q2", chosen_option: "B", is_correct: false },
+    { question_id: "q3", chosen_option: "C", is_correct: true },
+    { question_id: "q4", chosen_option: "D", is_correct: false },
+    { question_id: "q5", chosen_option: "A", is_correct: true },
+  ],
+};
 
 describe("SportQuiz", () => {
   async function readSource() {
@@ -23,6 +42,14 @@ describe("SportQuiz", () => {
     expect(source).toContain("JSON.stringify({ answers: payloadAnswers })");
     expect(source).toContain("questions.length !== SPORT_QUIZ_QUESTION_COUNT");
     expect(source).toContain("answeredCount === SPORT_QUIZ_QUESTION_COUNT");
+    expect(source).toContain("new AbortController()");
+    expect(source).toContain("signal: controller.signal");
+    expect(source).toContain("requestIdRef");
+    expect(source).toContain(".abort()");
+    expect(source).toContain("return () =>");
+    expect(source).toContain("isAbortError");
+    expect(source.match(/requestId !== requestIdRef\.current/g)).toHaveLength(5);
+    expect(source.match(/isAbortError\((load|submit)Error\)/g)).toHaveLength(2);
   });
 
   it("supports every quiz state and the required player actions", async () => {
@@ -49,13 +76,23 @@ describe("SportQuiz", () => {
     expect(source).toContain('const optionKeys: AnswerOption[] = ["A", "B", "C", "D"]');
     expect(source).toContain("<fieldset");
     expect(source).toContain("<legend");
-    expect(source).toContain("aria-pressed={isSelected}");
+    expect(source).toContain('type="radio"');
+    expect(source).toContain("name={`sport-quiz-${slug}-${question.id}`}");
+    expect(source).toContain("checked={isSelected}");
+    expect(source).toContain("onChange={() => selectAnswer(question.id, option)}");
+    expect(source).toContain("focus-within:ring-2");
+    expect(source).not.toContain("aria-pressed={isSelected}");
     expect(source).toContain("Question {question.slot}");
     expect(source).toContain('questionResult.is_correct ? "Correct" : "Miss"');
     expect(source).toContain("{result.score}/{result.total}");
     expect(source).toContain('className="mt-4 min-h-6"');
     expect(source).toContain("block min-h-6 break-words");
     expect(source).toContain("min-h-14 min-w-0");
+    expect(source).toContain('role="status"');
+    expect(source).toContain('aria-live="polite"');
+    expect(source).toContain("resultSummaryRef");
+    expect(source).toContain("resultSummaryRef.current?.focus()");
+    expect(source).toContain("tabIndex={-1}");
     expect(source).not.toMatch(/timer/i);
     expect(source).not.toMatch(/leaderboard/i);
     expect(source).not.toMatch(/share/i);
@@ -67,6 +104,8 @@ describe("SportQuiz", () => {
     expect(source).toContain('const SPORT_QUIZ_HISTORY_KEY_PREFIX = "ykb_sport_quiz_recent"');
     expect(source).toContain("`${SPORT_QUIZ_HISTORY_KEY_PREFIX}:${slug}`");
     expect(source).toContain("window.localStorage");
+    expect(source).toContain("return window.localStorage;");
+    expect(source).toContain("catch");
     expect(source).toContain("MAX_SPORT_QUIZ_RECENT_QUESTION_IDS");
     expect(source).toContain(".slice(");
     expect(source).toContain("-MAX_SPORT_QUIZ_RECENT_QUESTION_IDS");
@@ -95,5 +134,91 @@ describe("SportQuiz", () => {
     expect(recentQuestionIds).toHaveLength(25);
     expect(new Set(recentQuestionIds).size).toBe(25);
     expect(recentQuestionIds.slice(-5)).toEqual(completedQuestionIds);
+  });
+
+  it("treats local history writes as best-effort", () => {
+    const storage = {
+      getItem: () => JSON.stringify(["old-question"]),
+      setItem: () => {
+        throw new Error("storage quota exceeded");
+      },
+    };
+
+    expect(
+      writeSportQuizHistory(storage, "cfb", questionIds),
+    ).toBe(false);
+  });
+
+  it("strictly validates a complete submit response for the current run", () => {
+    expect(parseSportQuizSubmitResponse(validSubmitResponse, questionIds)).toEqual(
+      validSubmitResponse,
+    );
+  });
+
+  it.each([
+    ["wrong total", { ...validSubmitResponse, total: 4 }],
+    ["invalid score", { ...validSubmitResponse, score: 6 }],
+    ["non-integer score", { ...validSubmitResponse, score: 2.5 }],
+    ["score does not match results", { ...validSubmitResponse, score: 2 }],
+    [
+      "fewer than five results",
+      { ...validSubmitResponse, results: validSubmitResponse.results.slice(0, 4) },
+    ],
+    [
+      "wrong question IDs",
+      {
+        ...validSubmitResponse,
+        results: validSubmitResponse.results.map((result, index) =>
+          index === 4 ? { ...result, question_id: "other-question" } : result,
+        ),
+      },
+    ],
+    [
+      "duplicate question IDs",
+      {
+        ...validSubmitResponse,
+        results: validSubmitResponse.results.map((result, index) =>
+          index === 4 ? { ...result, question_id: "q1" } : result,
+        ),
+      },
+    ],
+    [
+      "invalid chosen option",
+      {
+        ...validSubmitResponse,
+        results: validSubmitResponse.results.map((result, index) =>
+          index === 4 ? { ...result, chosen_option: "E" } : result,
+        ),
+      },
+    ],
+    [
+      "invalid correctness value",
+      {
+        ...validSubmitResponse,
+        results: validSubmitResponse.results.map((result, index) =>
+          index === 4 ? { ...result, is_correct: "yes" } : result,
+        ),
+      },
+    ],
+    ["invalid saved value", { ...validSubmitResponse, saved: "yes" }],
+  ])("rejects a submit response with %s", (_description, payload) => {
+    expect(parseSportQuizSubmitResponse(payload, questionIds)).toBeNull();
+  });
+
+  it("uses the generic retryable error before any history write for invalid responses", async () => {
+    const source = await readSource();
+    const validationIndex = source.indexOf("parseSportQuizSubmitResponse(");
+    const genericErrorIndex = source.indexOf(
+      'throw new Error("Unable to score this quiz.")',
+      validationIndex,
+    );
+    const submitCatchIndex = source.indexOf("} catch (submitError)", genericErrorIndex);
+    const historyWriteIndex = source.indexOf("writeSportQuizHistory(", validationIndex);
+
+    expect(validationIndex).toBeGreaterThanOrEqual(0);
+    expect(genericErrorIndex).toBeGreaterThan(validationIndex);
+    expect(submitCatchIndex).toBeGreaterThan(genericErrorIndex);
+    expect(historyWriteIndex).toBeGreaterThan(submitCatchIndex);
+    expect(historyWriteIndex).toBeGreaterThan(genericErrorIndex);
   });
 });

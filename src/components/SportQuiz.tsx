@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AnswerOption, SubmittedAnswers } from "@/lib/dailyChallenge";
 import {
@@ -32,6 +32,25 @@ type SportQuizProps = {
   title: string;
 };
 
+type SportQuizHistoryStorage = Pick<Storage, "getItem" | "setItem">;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isAnswerOption(value: unknown): value is AnswerOption {
+  return (
+    value === "A" ||
+    value === "B" ||
+    value === "C" ||
+    value === "D"
+  );
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 function getHistoryKey(slug: string) {
   return `${SPORT_QUIZ_HISTORY_KEY_PREFIX}:${slug}`;
 }
@@ -41,11 +60,17 @@ function getBrowserStorage() {
     return null;
   }
 
-  return window.localStorage;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
-function readRecentQuestionIds(slug: string) {
-  const storage = getBrowserStorage();
+function readRecentQuestionIdsFromStorage(
+  storage: SportQuizHistoryStorage | null,
+  slug: string,
+) {
   if (!storage) {
     return [];
   }
@@ -57,6 +82,10 @@ function readRecentQuestionIds(slug: string) {
   } catch {
     return [];
   }
+}
+
+function readRecentQuestionIds(slug: string) {
+  return readRecentQuestionIdsFromStorage(getBrowserStorage(), slug);
 }
 
 export function promoteRecentQuestionIds(
@@ -74,18 +103,87 @@ export function promoteRecentQuestionIds(
   );
 }
 
-function rememberCompletedQuestions(slug: string, questionIds: string[]) {
-  const storage = getBrowserStorage();
+export function writeSportQuizHistory(
+  storage: SportQuizHistoryStorage | null,
+  slug: string,
+  questionIds: readonly string[],
+) {
   if (!storage) {
-    return;
+    return false;
   }
 
-  const recentQuestionIds = promoteRecentQuestionIds(
-    readRecentQuestionIds(slug),
-    questionIds,
-  );
+  try {
+    const recentQuestionIds = promoteRecentQuestionIds(
+      readRecentQuestionIdsFromStorage(storage, slug),
+      questionIds,
+    );
 
-  storage.setItem(getHistoryKey(slug), JSON.stringify(recentQuestionIds));
+    storage.setItem(getHistoryKey(slug), JSON.stringify(recentQuestionIds));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function parseSportQuizSubmitResponse(
+  raw: unknown,
+  expectedQuestionIds: readonly string[],
+): SportQuizSubmitResponse | null {
+  if (
+    !isRecord(raw) ||
+    typeof raw.saved !== "boolean" ||
+    typeof raw.score !== "number" ||
+    !Number.isInteger(raw.score) ||
+    raw.score < 0 ||
+    raw.score > SPORT_QUIZ_QUESTION_COUNT ||
+    raw.total !== SPORT_QUIZ_QUESTION_COUNT ||
+    !Array.isArray(raw.results) ||
+    raw.results.length !== SPORT_QUIZ_QUESTION_COUNT
+  ) {
+    return null;
+  }
+
+  const expectedIds = new Set(expectedQuestionIds);
+  if (expectedIds.size !== SPORT_QUIZ_QUESTION_COUNT) {
+    return null;
+  }
+
+  const seenIds = new Set<string>();
+  const results: SportQuizSubmitResponse["results"] = [];
+
+  for (const rawResult of raw.results) {
+    if (
+      !isRecord(rawResult) ||
+      typeof rawResult.question_id !== "string" ||
+      !expectedIds.has(rawResult.question_id) ||
+      seenIds.has(rawResult.question_id) ||
+      !isAnswerOption(rawResult.chosen_option) ||
+      typeof rawResult.is_correct !== "boolean"
+    ) {
+      return null;
+    }
+
+    seenIds.add(rawResult.question_id);
+    results.push({
+      question_id: rawResult.question_id,
+      chosen_option: rawResult.chosen_option,
+      is_correct: rawResult.is_correct,
+    });
+  }
+
+  if (
+    seenIds.size !== expectedIds.size ||
+    results.filter((result) => result.is_correct).length !== raw.score
+  ) {
+    return null;
+  }
+
+  return {
+    saved: raw.saved,
+    score: raw.score,
+    total: SPORT_QUIZ_QUESTION_COUNT,
+    results,
+  };
 }
 
 function getOptionText(question: SportQuizPlayerQuestion, option: AnswerOption) {
@@ -115,8 +213,19 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
   const [result, setResult] = useState<SportQuizSubmitResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorAction, setErrorAction] = useState<ErrorAction>("load");
+  const requestIdRef = useRef(0);
+  const loadControllerRef = useRef<AbortController | null>(null);
+  const submitControllerRef = useRef<AbortController | null>(null);
+  const resultSummaryRef = useRef<HTMLDivElement | null>(null);
 
   const loadQuiz = useCallback(async () => {
+    loadControllerRef.current?.abort();
+    submitControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    loadControllerRef.current = controller;
+
     setViewState("loading");
     setQuiz(null);
     setAnswers({});
@@ -132,10 +241,15 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
           "content-type": "application/json",
         },
         body: JSON.stringify({ recentQuestionIds }),
+        signal: controller.signal,
       });
       const payload = (await response.json()) as SportQuizStartResponse | {
         message?: string;
       };
+
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(getResponseMessage(payload, "Unable to load this quiz."));
@@ -159,16 +273,36 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
       setQuiz(payload);
       setViewState("playing");
     } catch (loadError) {
+      if (isAbortError(loadError) || requestId !== requestIdRef.current) {
+        return;
+      }
+
       setMessage(
         loadError instanceof Error ? loadError.message : "Unable to load this quiz.",
       );
       setViewState("error");
+    } finally {
+      if (loadControllerRef.current === controller) {
+        loadControllerRef.current = null;
+      }
     }
   }, [slug, title]);
 
   useEffect(() => {
     void loadQuiz();
+
+    return () => {
+      requestIdRef.current += 1;
+      loadControllerRef.current?.abort();
+      submitControllerRef.current?.abort();
+    };
   }, [loadQuiz]);
+
+  useEffect(() => {
+    if (viewState === "results" && result) {
+      resultSummaryRef.current?.focus();
+    }
+  }, [result, viewState]);
 
   const answeredCount = useMemo(() => {
     if (!quiz) {
@@ -214,6 +348,14 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
     setMessage(null);
     setErrorAction("submit");
 
+    loadControllerRef.current?.abort();
+    submitControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    submitControllerRef.current = controller;
+    let completedResult: SportQuizSubmitResponse | null = null;
+
     try {
       const payloadAnswers: SubmittedAnswers = {};
       for (const question of quiz.questions) {
@@ -230,31 +372,52 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
           "content-type": "application/json",
         },
         body: JSON.stringify({ answers: payloadAnswers }),
+        signal: controller.signal,
       });
-      const payload = (await response.json()) as SportQuizSubmitResponse | {
-        message?: string;
-      };
+      const payload = (await response.json()) as unknown;
 
-      if (
-        !response.ok ||
-        !("results" in payload) ||
-        payload.results.length !== SPORT_QUIZ_QUESTION_COUNT
-      ) {
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      if (!response.ok) {
         throw new Error(getResponseMessage(payload, "Unable to score this quiz."));
       }
 
-      rememberCompletedQuestions(
-        slug,
+      completedResult = parseSportQuizSubmitResponse(
+        payload,
         quiz.questions.map((question) => question.id),
       );
-      setResult(payload);
-      setViewState("results");
+      if (!completedResult) {
+        throw new Error("Unable to score this quiz.");
+      }
     } catch (submitError) {
+      if (isAbortError(submitError) || requestId !== requestIdRef.current) {
+        return;
+      }
+
       setMessage(
         submitError instanceof Error ? submitError.message : "Unable to score this quiz.",
       );
       setViewState("error");
+      return;
+    } finally {
+      if (submitControllerRef.current === controller) {
+        submitControllerRef.current = null;
+      }
     }
+
+    if (!completedResult || requestId !== requestIdRef.current) {
+      return;
+    }
+
+    setResult(completedResult);
+    setViewState("results");
+    writeSportQuizHistory(
+      getBrowserStorage(),
+      slug,
+      quiz.questions.map((question) => question.id),
+    );
   }
 
   function retry() {
@@ -385,13 +548,9 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
                         questionResult?.chosen_option === option;
 
                       return (
-                        <button
+                        <label
                           key={`${question.id}-${option}`}
-                          type="button"
-                          aria-pressed={isSelected}
-                          onClick={() => selectAnswer(question.id, option)}
-                          disabled={viewState !== "playing"}
-                          className={`min-h-14 min-w-0 rounded-[1rem] border px-4 py-4 text-left text-sm leading-6 ${
+                          className={`flex min-h-14 min-w-0 cursor-pointer items-center rounded-[1rem] border px-4 py-4 text-left text-sm leading-6 focus-within:ring-2 focus-within:ring-[#ff7a18] ${
                             questionResult && isSubmittedChoice
                               ? questionResult.is_correct
                                 ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
@@ -401,13 +560,22 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
                                 : "border-white/10 bg-black/30 text-white/82 hover:border-white/25 hover:bg-black/45"
                           }`}
                         >
+                          <input
+                            type="radio"
+                            name={`sport-quiz-${slug}-${question.id}`}
+                            value={option}
+                            checked={isSelected}
+                            onChange={() => selectAnswer(question.id, option)}
+                            disabled={viewState !== "playing"}
+                            className="sr-only"
+                          />
                           <span className="mr-2 font-semibold text-[#ffb067]">
                             {option}
                           </span>
                           <span className="break-words">
                             {getOptionText(question, option)}
                           </span>
-                        </button>
+                        </label>
                       );
                     })}
                   </div>
@@ -441,7 +609,13 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
       ) : null}
 
       {viewState === "results" && result ? (
-        <div className="mt-5 border-y border-[#ff7a18]/30 bg-[#ff7a18]/8 px-5 py-7 sm:px-6">
+        <div
+          ref={resultSummaryRef}
+          role="status"
+          aria-live="polite"
+          tabIndex={-1}
+          className="mt-5 border-y border-[#ff7a18]/30 bg-[#ff7a18]/8 px-5 py-7 outline-none focus-visible:ring-2 focus-visible:ring-[#ff7a18] sm:px-6"
+        >
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#ffb067]">
             Final score
           </p>
