@@ -1,12 +1,14 @@
 import type { QuestionSnapshot } from "@/lib/dailyChallenge";
 
-export const DAILY_CHALLENGE_SLOT_DIFFICULTIES = [
+export const FIVE_QUESTION_DIFFICULTY_MIX = [
   "easy",
   "easy",
   "medium",
   "hard",
   "hard",
 ] as const;
+
+export const DAILY_CHALLENGE_SLOT_DIFFICULTIES = FIVE_QUESTION_DIFFICULTY_MIX;
 
 export type DailyChallengeGeneratorCandidate = QuestionSnapshot;
 
