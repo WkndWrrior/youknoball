@@ -142,6 +142,7 @@ type PlayerStatsAttemptRow = {
 type PlayerSportPerformanceAttemptRow = {
   daily_challenge_id: string;
   challenge_date: string;
+  created_at: string | null;
   answers: Record<string, unknown>;
 };
 
@@ -348,6 +349,11 @@ function normalizePlayerSportPerformanceAttempt(
     ? {
         daily_challenge_id: value.daily_challenge_id,
         challenge_date: value.challenge_date,
+        created_at:
+          typeof value.created_at === "string" &&
+          !Number.isNaN(Date.parse(value.created_at))
+            ? value.created_at
+            : null,
         answers: value.answers,
       }
     : null;
@@ -1188,7 +1194,7 @@ export async function getPlayerSportCategoryPerformance(
   ] = await Promise.all([
     adminClient
       .from("daily_attempts")
-      .select("daily_challenge_id,challenge_date,answers")
+      .select("daily_challenge_id,challenge_date,created_at,answers")
       .eq("user_id", userId)
       .order("challenge_date", { ascending: false })
       .limit(50),
@@ -1289,8 +1295,9 @@ export async function getPlayerSportCategoryPerformance(
       if (submittedAnswer === item.question_snapshot.correct_option) {
         existing.correctCount += 1;
       }
-      if (isLaterAnsweredAt(attempt.challenge_date, existing.lastAnsweredAt)) {
-        existing.lastAnsweredAt = attempt.challenge_date;
+      const answeredAt = attempt.created_at ?? attempt.challenge_date;
+      if (isLaterAnsweredAt(answeredAt, existing.lastAnsweredAt)) {
+        existing.lastAnsweredAt = answeredAt;
       }
 
       performanceBySlug.set(slug, existing);

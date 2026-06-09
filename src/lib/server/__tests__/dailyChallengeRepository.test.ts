@@ -255,6 +255,7 @@ describe("getPlayerSportCategoryPerformance", () => {
         {
           daily_challenge_id: "challenge_2",
           challenge_date: "2026-05-02",
+          created_at: "not-a-date",
           answers: {
             question_nfl_2: "A",
           },
@@ -338,7 +339,7 @@ describe("getPlayerSportCategoryPerformance", () => {
       { slug: "nfl", answeredCount: 2, correctCount: 1, lastAnsweredAt: "2026-05-02" },
     ]);
     expect(attemptsQuery.select).toHaveBeenCalledWith(
-      "daily_challenge_id,challenge_date,answers",
+      "daily_challenge_id,challenge_date,created_at,answers",
     );
     expect(attemptsQuery.eq).toHaveBeenCalledWith("user_id", "user_1");
     expect(attemptsQuery.order).toHaveBeenCalledWith("challenge_date", {
@@ -424,6 +425,98 @@ describe("getPlayerSportCategoryPerformance", () => {
     expect(sportQuizAttemptsQuery.limit).toHaveBeenCalledWith(100);
     expect(sportsQuery.select).toHaveBeenCalledWith("id,slug");
     expect(sportsQuery.in).toHaveBeenCalledWith("id", ["sport_nba"]);
+  });
+
+  it("compares precise daily and side-game timestamps on the same day", async () => {
+    const adminClient = createClientMock({
+      daily_attempts: createThenableQuery({
+        data: [
+          {
+            daily_challenge_id: "challenge_1",
+            challenge_date: "2026-05-03",
+            created_at: "2026-05-03T18:00:00Z",
+            answers: {
+              question_nba: "A",
+              question_nfl: "A",
+            },
+          },
+        ],
+        error: null,
+      }),
+      sport_quiz_attempts: createThenableQuery({
+        data: [
+          {
+            sport_id: "sport_nba",
+            score: 4,
+            total_questions: 5,
+            created_at: "2026-05-03T17:00:00Z",
+          },
+          {
+            sport_id: "sport_nfl",
+            score: 4,
+            total_questions: 5,
+            created_at: "2026-05-03T19:00:00Z",
+          },
+        ],
+        error: null,
+      }),
+      daily_challenge_items: createThenableQuery({
+        data: [
+          {
+            daily_challenge_id: "challenge_1",
+            question_id: "question_nba",
+            question_snapshot: {
+              id: "question_nba",
+              question_text: "NBA",
+              option_a: "A",
+              option_b: "B",
+              option_c: "C",
+              option_d: "D",
+              correct_option: "A",
+              sport: { slug: "nba", name: "NBA" },
+            },
+          },
+          {
+            daily_challenge_id: "challenge_1",
+            question_id: "question_nfl",
+            question_snapshot: {
+              id: "question_nfl",
+              question_text: "NFL",
+              option_a: "A",
+              option_b: "B",
+              option_c: "C",
+              option_d: "D",
+              correct_option: "A",
+              sport: { slug: "nfl", name: "NFL" },
+            },
+          },
+        ],
+        error: null,
+      }),
+      sports: createThenableQuery({
+        data: [
+          { id: "sport_nba", slug: "nba" },
+          { id: "sport_nfl", slug: "nfl" },
+        ],
+        error: null,
+      }),
+    });
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(getPlayerSportCategoryPerformance("user_1")).resolves.toEqual([
+      {
+        slug: "nba",
+        answeredCount: 6,
+        correctCount: 5,
+        lastAnsweredAt: "2026-05-03T18:00:00Z",
+      },
+      {
+        slug: "nfl",
+        answeredCount: 6,
+        correctCount: 5,
+        lastAnsweredAt: "2026-05-03T19:00:00Z",
+      },
+    ]);
   });
 
   it("includes side-game-only supported sports and excludes unsupported sports", async () => {
@@ -594,7 +687,13 @@ describe("getPlayerSportCategoryPerformance", () => {
     ]);
   });
 
-  it("preserves daily performance when the side-game attempt table is unavailable", async () => {
+  it.each([
+    { code: "42P01", message: "relation does not exist" },
+    { code: "PGRST205", message: "table is not in the schema cache" },
+  ])("preserves daily performance when the side-game attempt table is unavailable ($code)", async ({
+    code,
+    message,
+  }) => {
     const adminClient = createClientMock({
       daily_attempts: createThenableQuery({
         data: [
@@ -608,7 +707,7 @@ describe("getPlayerSportCategoryPerformance", () => {
       }),
       sport_quiz_attempts: createThenableQuery({
         data: null,
-        error: { code: "42P01", message: "relation does not exist" },
+        error: { code, message },
       }),
       daily_challenge_items: createThenableQuery({
         data: [
