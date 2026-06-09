@@ -73,8 +73,24 @@ function createClientMock(
   };
 }
 
+function uuid(index: number) {
+  return `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`;
+}
+
+const ids = {
+  cfbSport: uuid(1),
+  nflSport: uuid(2),
+  question1: uuid(101),
+  question2: uuid(102),
+  question3: uuid(103),
+  question4: uuid(104),
+  question5: uuid(105),
+  attempt1: uuid(201),
+  attempt2: uuid(202),
+};
+
 const cfbSport: SportRecord = {
-  id: "sport-cfb",
+  id: ids.cfbSport,
   slug: "cfb",
   name: "CFB",
   is_active: true,
@@ -84,7 +100,7 @@ const cfbSport: SportRecord = {
 
 const nflSport: SportRecord = {
   ...cfbSport,
-  id: "sport-nfl",
+  id: ids.nflSport,
   slug: "nfl",
   name: "NFL",
 };
@@ -117,11 +133,11 @@ function makeQuestion(
 }
 
 const questionRows = [
-  makeQuestion("q1", "easy", { correct_option: "A" }),
-  makeQuestion("q2", "easy", { correct_option: "B" }),
-  makeQuestion("q3", "medium", { correct_option: "C" }),
-  makeQuestion("q4", "hard", { correct_option: "D" }),
-  makeQuestion("q5", "hard", { correct_option: "A" }),
+  makeQuestion(ids.question1, "easy", { correct_option: "A" }),
+  makeQuestion(ids.question2, "easy", { correct_option: "B" }),
+  makeQuestion(ids.question3, "medium", { correct_option: "C" }),
+  makeQuestion(ids.question4, "hard", { correct_option: "D" }),
+  makeQuestion(ids.question5, "hard", { correct_option: "A" }),
 ];
 
 function toSnapshot(
@@ -143,11 +159,11 @@ function generatedQuestions(
 }
 
 const validAnswers = {
-  q1: "A",
-  q2: "A",
-  q3: "C",
-  q4: "D",
-  q5: "B",
+  [ids.question1]: "A",
+  [ids.question2]: "A",
+  [ids.question3]: "C",
+  [ids.question4]: "D",
+  [ids.question5]: "B",
 };
 
 function sportQuery(sport: SportRecord | null = cfbSport) {
@@ -193,23 +209,28 @@ describe("getSportQuizForPlayer", () => {
       status: "ready",
       sport: { slug: "cfb", name: "CFB" },
       questions: expect.arrayContaining([
-        expect.objectContaining({ id: "q1", sport: "CFB", slot: 1 }),
+        expect.objectContaining({ id: ids.question1, sport: "CFB", slot: 1 }),
       ]),
     });
     expect(result).not.toHaveProperty("questions.0.correct_option");
     expect(result).not.toHaveProperty("questions.0.status");
   });
 
-  it("combines recent signed-in history with capped client question IDs", async () => {
+  it("prefers the most recent signed-in items before capping and combining client IDs", async () => {
     const attempts = createThenableQuery({
-      data: [{ id: "attempt-2" }, { id: "attempt-1" }],
+      data: [{ id: ids.attempt2 }, { id: ids.attempt1 }],
       error: null,
     });
+    const recentServerQuestionIds = Array.from({ length: 30 }, (_, index) =>
+      uuid(300 + index),
+    );
     const items = createThenableQuery({
-      data: [
-        { question_id: "server-recent-1" },
-        { question_id: "server-recent-2" },
-      ],
+      data: recentServerQuestionIds.map((questionId, index) => ({
+        question_id: questionId,
+        created_at: new Date(
+          Date.UTC(2026, 5, 8, 12, 0, 0) - index * 1000,
+        ).toISOString(),
+      })),
       error: null,
     });
     const client = createClientMock({
@@ -236,16 +257,21 @@ describe("getSportQuizForPlayer", () => {
       ascending: false,
     });
     expect(items.in).toHaveBeenCalledWith("attempt_id", [
-      "attempt-2",
-      "attempt-1",
+      ids.attempt2,
+      ids.attempt1,
     ]);
+    expect(items.select).toHaveBeenCalledWith("question_id,created_at");
+    expect(items.order).toHaveBeenCalledWith("created_at", {
+      ascending: false,
+    });
+    expect(items.limit).toHaveBeenCalledWith(25);
 
     const recentQuestionIds = generateSportQuizQuestions.mock.calls[0][0]
       .recentQuestionIds as string[];
-    expect(recentQuestionIds.slice(0, 2)).toEqual([
-      "server-recent-1",
-      "server-recent-2",
-    ]);
+    expect(recentQuestionIds.slice(0, 25)).toEqual(
+      recentServerQuestionIds.slice(0, 25),
+    );
+    expect(recentQuestionIds).not.toContain(recentServerQuestionIds[25]);
     expect(recentQuestionIds.filter((id) => id.startsWith("client-"))).toHaveLength(
       25,
     );
@@ -316,10 +342,29 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "cfb",
         userId: null,
-        answers: { q1: "A" },
+        answers: { [ids.question1]: "A" },
       }),
     ).rejects.toThrow("exactly five valid answers");
     expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed question UUIDs before querying or writing", async () => {
+    const malformedAnswers = {
+      [ids.question2]: "A",
+      [ids.question3]: "C",
+      [ids.question4]: "D",
+      [ids.question5]: "B",
+      "not-a-uuid": "A",
+    };
+
+    await expect(
+      submitSportQuizAttempt({
+        slug: "cfb",
+        userId: "user-1",
+        answers: malformedAnswers,
+      }),
+    ).rejects.toThrow("Invalid sport quiz submission");
+    expect(supabaseAdmin).not.toHaveBeenCalled();
   });
 
   it("rejects missing, duplicate, inactive, ineligible, and cross-sport questions", async () => {
@@ -392,11 +437,11 @@ describe("submitSportQuizAttempt", () => {
       score: 3,
       total: 5,
       results: [
-        { question_id: "q1", chosen_option: "A", is_correct: true },
-        { question_id: "q2", chosen_option: "A", is_correct: false },
-        { question_id: "q3", chosen_option: "C", is_correct: true },
-        { question_id: "q4", chosen_option: "D", is_correct: true },
-        { question_id: "q5", chosen_option: "B", is_correct: false },
+        { question_id: ids.question1, chosen_option: "A", is_correct: true },
+        { question_id: ids.question2, chosen_option: "A", is_correct: false },
+        { question_id: ids.question3, chosen_option: "C", is_correct: true },
+        { question_id: ids.question4, chosen_option: "D", is_correct: true },
+        { question_id: ids.question5, chosen_option: "B", is_correct: false },
       ],
     });
     expect(client.from).not.toHaveBeenCalledWith("sport_quiz_attempts");
@@ -405,7 +450,7 @@ describe("submitSportQuizAttempt", () => {
 
   it("persists one attempt and five item rows for a signed-in player", async () => {
     const attemptInsert = createThenableQuery({
-      data: { id: "attempt-1" },
+      data: { id: ids.attempt1 },
       error: null,
     });
     const itemInsert = createThenableQuery({ data: null, error: null });
@@ -433,32 +478,32 @@ describe("submitSportQuizAttempt", () => {
     });
     expect(itemInsert.insert).toHaveBeenCalledWith([
       {
-        attempt_id: "attempt-1",
-        question_id: "q1",
+        attempt_id: ids.attempt1,
+        question_id: ids.question1,
         chosen_option: "A",
         is_correct: true,
       },
       {
-        attempt_id: "attempt-1",
-        question_id: "q2",
+        attempt_id: ids.attempt1,
+        question_id: ids.question2,
         chosen_option: "A",
         is_correct: false,
       },
       {
-        attempt_id: "attempt-1",
-        question_id: "q3",
+        attempt_id: ids.attempt1,
+        question_id: ids.question3,
         chosen_option: "C",
         is_correct: true,
       },
       {
-        attempt_id: "attempt-1",
-        question_id: "q4",
+        attempt_id: ids.attempt1,
+        question_id: ids.question4,
         chosen_option: "D",
         is_correct: true,
       },
       {
-        attempt_id: "attempt-1",
-        question_id: "q5",
+        attempt_id: ids.attempt1,
+        question_id: ids.question5,
         chosen_option: "B",
         is_correct: false,
       },
@@ -467,7 +512,7 @@ describe("submitSportQuizAttempt", () => {
 
   it("deletes an incomplete attempt when item insertion fails", async () => {
     const attemptInsert = createThenableQuery({
-      data: { id: "attempt-1" },
+      data: { id: ids.attempt1 },
       error: null,
     });
     const cleanup = createThenableQuery({ data: null, error: null });
@@ -491,6 +536,60 @@ describe("submitSportQuizAttempt", () => {
       }),
     ).rejects.toThrow("Unable to save sport quiz attempt items");
     expect(cleanup.delete).toHaveBeenCalledTimes(1);
-    expect(cleanup.eq).toHaveBeenCalledWith("id", "attempt-1");
+    expect(cleanup.eq).toHaveBeenCalledWith("id", ids.attempt1);
+  });
+
+  it("surfaces incomplete-attempt risk when cleanup deletion fails", async () => {
+    const attemptInsert = createThenableQuery({
+      data: { id: ids.attempt1 },
+      error: null,
+    });
+    const cleanup = createThenableQuery({
+      data: null,
+      error: { code: "42501", message: "cleanup failed" },
+    });
+    const itemInsert = createThenableQuery({
+      data: null,
+      error: { code: "23503", message: "item insert failed" },
+    });
+    const client = createClientMock({
+      sports: sportQuery(),
+      questions: questionsQuery(),
+      sport_quiz_attempts: [attemptInsert, cleanup],
+      sport_quiz_attempt_items: itemInsert,
+    });
+    supabaseAdmin.mockReturnValue(client);
+
+    await expect(
+      submitSportQuizAttempt({
+        slug: "cfb",
+        userId: "user-1",
+        answers: validAnswers,
+      }),
+    ).rejects.toThrow(
+      "Unable to clean up incomplete sport quiz attempt; manual cleanup may be required",
+    );
+  });
+
+  it("rejects a malformed inserted parent ID before inserting item rows", async () => {
+    const attemptInsert = createThenableQuery({
+      data: { id: "not-a-uuid" },
+      error: null,
+    });
+    const client = createClientMock({
+      sports: sportQuery(),
+      questions: questionsQuery(),
+      sport_quiz_attempts: attemptInsert,
+    });
+    supabaseAdmin.mockReturnValue(client);
+
+    await expect(
+      submitSportQuizAttempt({
+        slug: "cfb",
+        userId: "user-1",
+        answers: validAnswers,
+      }),
+    ).rejects.toThrow("Unable to save sport quiz attempt");
+    expect(client.from).not.toHaveBeenCalledWith("sport_quiz_attempt_items");
   });
 });

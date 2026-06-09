@@ -9,6 +9,7 @@ import {
 } from "@/lib/dailyChallenge";
 import {
   gradeSportQuizAttempt,
+  MAX_SPORT_QUIZ_RECENT_QUESTION_IDS,
   parseSportQuizRecentQuestionIds,
   parseSportQuizSubmittedAnswers,
   SPORT_QUIZ_QUESTION_COUNT,
@@ -42,6 +43,8 @@ const QUESTION_COLUMNS = [
 ].join(",");
 const RECENT_ATTEMPT_LIMIT = 20;
 const UNAVAILABLE_MESSAGE = "This sport quiz is not available yet.";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -51,6 +54,10 @@ function throwIfError(error: unknown, message: string): asserts error is null {
   if (error) {
     throw Object.assign(new Error(message), { cause: error });
   }
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
 function normalizeSupportedSlug(value: unknown): SportCategorySlug | null {
@@ -223,8 +230,10 @@ async function loadRecentQuestionIds(
 
   const { data: itemData, error: itemError } = await adminClient
     .from("sport_quiz_attempt_items")
-    .select("question_id")
-    .in("attempt_id", attemptIds);
+    .select("question_id,created_at")
+    .in("attempt_id", attemptIds)
+    .order("created_at", { ascending: false })
+    .limit(MAX_SPORT_QUIZ_RECENT_QUESTION_IDS);
 
   throwIfError(itemError, "Unable to load recent sport quiz history.");
 
@@ -329,6 +338,10 @@ export async function submitSportQuizAttempt(input: {
   }
 
   const questionIds = Object.keys(answers);
+  if (!questionIds.every(isUuid)) {
+    throw new Error("Invalid sport quiz submission.");
+  }
+
   const adminClient = supabaseAdmin();
   const sport = await loadActiveSport(adminClient, slug);
   if (!sport) {
@@ -385,7 +398,7 @@ export async function submitSportQuizAttempt(input: {
   throwIfError(attemptError, "Unable to save sport quiz attempt.");
 
   const attemptId =
-    isRecord(attemptData) && typeof attemptData.id === "string"
+    isRecord(attemptData) && isUuid(attemptData.id)
       ? attemptData.id
       : null;
   if (!attemptId) {
@@ -404,7 +417,23 @@ export async function submitSportQuizAttempt(input: {
     );
 
   if (itemError) {
-    await adminClient.from("sport_quiz_attempts").delete().eq("id", attemptId);
+    const { error: cleanupError } = await adminClient
+      .from("sport_quiz_attempts")
+      .delete()
+      .eq("id", attemptId);
+
+    if (cleanupError) {
+      throw Object.assign(
+        new Error(
+          "Unable to clean up incomplete sport quiz attempt; manual cleanup may be required.",
+        ),
+        {
+          cause: cleanupError,
+          itemInsertError: itemError,
+        },
+      );
+    }
+
     throw Object.assign(new Error("Unable to save sport quiz attempt items."), {
       cause: itemError,
     });
