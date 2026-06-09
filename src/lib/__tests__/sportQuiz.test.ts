@@ -163,4 +163,16 @@ describe("gradeSportQuizAttempt", () => {
       ],
     });
   });
+
+  it.each([
+    [{ q1: "A", q2: "B", q4: "D", q5: "A" }, "q3"],
+    [{ q1: "A", q2: "B", q3: "E", q4: "D", q5: "A" }, "q3"],
+  ])("throws clearly when an answer is missing or invalid", (answers, questionId) => {
+    expect(() =>
+      gradeSportQuizAttempt(
+        questions,
+        answers as unknown as Parameters<typeof gradeSportQuizAttempt>[1],
+      ),
+    ).toThrow(`Missing or invalid answer for question ${questionId}`);
+  });
 });

@@ -1,8 +1,8 @@
-import type {
-  AnswerOption,
-  QuestionResult,
-  QuestionSnapshot,
-  SubmittedAnswers,
+import {
+  normalizeAnswerOption,
+  type QuestionResult,
+  type QuestionSnapshot,
+  type SubmittedAnswers,
 } from "@/lib/dailyChallenge";
 
 export const MAX_SPORT_QUIZ_RECENT_QUESTION_IDS = 25;
@@ -51,24 +51,6 @@ export type SportQuizGradedAttempt = {
 export type SportQuizSubmitResponse = SportQuizGradedAttempt & {
   saved: boolean;
 };
-
-function normalizeAnswerOption(value: unknown): AnswerOption | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const normalized = value.trim().toUpperCase();
-  if (
-    normalized === "A" ||
-    normalized === "B" ||
-    normalized === "C" ||
-    normalized === "D"
-  ) {
-    return normalized;
-  }
-
-  return null;
-}
 
 export function parseSportQuizRecentQuestionIds(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.some((value) => typeof value !== "string")) {
@@ -161,7 +143,10 @@ export function gradeSportQuizAttempt(
 ): SportQuizGradedAttempt {
   const orderedQuestions = [...questions].sort((left, right) => left.slot - right.slot);
   const results = orderedQuestions.map((question) => {
-    const chosenOption = answers[question.id];
+    const chosenOption = normalizeAnswerOption(answers?.[question.id]);
+    if (!chosenOption) {
+      throw new Error(`Missing or invalid answer for question ${question.id}`);
+    }
 
     return {
       question_id: question.id,
