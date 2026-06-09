@@ -12,22 +12,57 @@ describe("sportsCategories", () => {
     );
   });
 
+  it("includes college football with approved copy", () => {
+    expect(sportsCategories.find((category) => category.slug === "cfb")).toMatchObject({
+      title: "CFB",
+      eyebrow: "Campus Gameday",
+      description:
+        "Campus football trivia for fans who know rivalries, rankings, bowl chaos, and November stakes.",
+    });
+  });
+
   it("keeps the default order when no sport has enough history", () => {
     const ranked = rankSportsCategoriesByPerformance(sportsCategories, [
       { slug: "nfl", answeredCount: 2, correctCount: 2, lastAnsweredAt: "2026-05-01" },
     ]);
 
-    expect(ranked.map((category) => category.slug)).toEqual(["nba", "cbb", "nfl", "nhl"]);
+    expect(ranked.map((category) => category.slug)).toEqual([
+      "nba",
+      "cbb",
+      "nfl",
+      "cfb",
+      "nhl",
+    ]);
   });
 
-  it("moves enough-history strongest sports ahead of the default order", () => {
+  it("puts the second strongest sport first and the strongest sport second", () => {
     const ranked = rankSportsCategoriesByPerformance(sportsCategories, [
       { slug: "nba", answeredCount: 5, correctCount: 3, lastAnsweredAt: "2026-05-01" },
       { slug: "nfl", answeredCount: 4, correctCount: 4, lastAnsweredAt: "2026-05-02" },
       { slug: "nhl", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
     ]);
 
-    expect(ranked.map((category) => category.slug)).toEqual(["nfl", "nhl", "nba", "cbb"]);
+    expect(ranked.map((category) => category.slug)).toEqual([
+      "nhl",
+      "nfl",
+      "nba",
+      "cbb",
+      "cfb",
+    ]);
+  });
+
+  it("moves a single qualified strongest sport into the second position", () => {
+    const ranked = rankSportsCategoriesByPerformance(sportsCategories, [
+      { slug: "nfl", answeredCount: 3, correctCount: 3, lastAnsweredAt: "2026-05-02" },
+    ]);
+
+    expect(ranked.map((category) => category.slug)).toEqual([
+      "nba",
+      "nfl",
+      "cbb",
+      "cfb",
+      "nhl",
+    ]);
   });
 
   it("breaks equal-accuracy ties by larger sample size", () => {
@@ -37,7 +72,13 @@ describe("sportsCategories", () => {
       { slug: "nhl", answeredCount: 6, correctCount: 3, lastAnsweredAt: "2026-05-02" },
     ]);
 
-    expect(ranked.map((category) => category.slug)).toEqual(["nfl", "nba", "nhl", "cbb"]);
+    expect(ranked.map((category) => category.slug)).toEqual([
+      "nba",
+      "nfl",
+      "nhl",
+      "cbb",
+      "cfb",
+    ]);
   });
 
   it("breaks equal-accuracy and equal-sample ties by newer recency", () => {
@@ -47,7 +88,13 @@ describe("sportsCategories", () => {
       { slug: "nhl", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-02" },
     ]);
 
-    expect(ranked.map((category) => category.slug)).toEqual(["nfl", "nhl", "nba", "cbb"]);
+    expect(ranked.map((category) => category.slug)).toEqual([
+      "nhl",
+      "nfl",
+      "nba",
+      "cbb",
+      "cfb",
+    ]);
   });
 
   it("falls back to default order when accuracy, sample size, and recency tie", () => {
@@ -57,6 +104,12 @@ describe("sportsCategories", () => {
       { slug: "nba", answeredCount: 4, correctCount: 3, lastAnsweredAt: "2026-05-03" },
     ]);
 
-    expect(ranked.map((category) => category.slug)).toEqual(["nba", "nfl", "nhl", "cbb"]);
+    expect(ranked.map((category) => category.slug)).toEqual([
+      "nfl",
+      "nba",
+      "nhl",
+      "cbb",
+      "cfb",
+    ]);
   });
 });

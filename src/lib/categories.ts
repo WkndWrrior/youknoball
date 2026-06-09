@@ -1,5 +1,5 @@
 export type CategoryCard = {
-  slug: "nba" | "cbb" | "nfl" | "nhl";
+  slug: "nba" | "cbb" | "nfl" | "cfb" | "nhl";
   title: string;
   eyebrow: string;
   description: string;
@@ -23,6 +23,13 @@ export const sportsCategories: CategoryCard[] = [
     title: "NFL",
     eyebrow: "Sunday tape",
     description: "You been watching film huh? That's cool, watch this",
+  },
+  {
+    slug: "cfb",
+    title: "CFB",
+    eyebrow: "Campus Gameday",
+    description:
+      "Campus football trivia for fans who know rivalries, rankings, bowl chaos, and November stakes.",
   },
   {
     slug: "nhl",
@@ -62,7 +69,7 @@ export function rankSportsCategoriesByPerformance(
     performanceRows.map((row) => [row.slug.trim().toLowerCase(), row]),
   );
 
-  return [...categories].sort((left, right) => {
+  const rankedCategories = [...categories].sort((left, right) => {
     const leftPerformance = performanceBySlug.get(left.slug);
     const rightPerformance = performanceBySlug.get(right.slug);
     const leftEligible =
@@ -90,6 +97,20 @@ export function rankSportsCategoriesByPerformance(
 
     return (defaultRank.get(left.slug) ?? 0) - (defaultRank.get(right.slug) ?? 0);
   });
+
+  const hasQualifiedSport = rankedCategories.some((category) => {
+    const performance = performanceBySlug.get(category.slug);
+    return Boolean(performance) && performance!.answeredCount >= sportCardMinimumAnsweredQuestions;
+  });
+
+  if (hasQualifiedSport && rankedCategories.length > 1) {
+    [rankedCategories[0], rankedCategories[1]] = [
+      rankedCategories[1],
+      rankedCategories[0],
+    ];
+  }
+
+  return rankedCategories;
 }
 
 export function getCategoryBySlug(slug: string) {
