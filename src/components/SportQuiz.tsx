@@ -8,6 +8,7 @@ import {
   MAX_SPORT_QUIZ_RECENT_QUESTION_IDS,
   SPORT_QUIZ_QUESTION_COUNT,
   parseSportQuizRecentQuestionIds,
+  parseSportQuizSubmissionId,
   type SportQuizPlayerQuestion,
   type SportQuizReadyResponse,
   type SportQuizStartResponse,
@@ -49,6 +50,25 @@ function isAnswerOption(value: unknown): value is AnswerOption {
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
+}
+
+export function createSportQuizSubmissionId(randomUUID?: () => string) {
+  const generator =
+    randomUUID ??
+    (typeof globalThis.crypto !== "undefined" &&
+    typeof globalThis.crypto.randomUUID === "function"
+      ? () => globalThis.crypto.randomUUID()
+      : null);
+
+  if (!generator) {
+    return null;
+  }
+
+  try {
+    return parseSportQuizSubmissionId(generator());
+  } catch {
+    return null;
+  }
 }
 
 function getHistoryKey(slug: string) {
@@ -211,6 +231,7 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
   const [quiz, setQuiz] = useState<SportQuizReadyResponse | null>(null);
   const [answers, setAnswers] = useState<SubmittedAnswers>({});
   const [result, setResult] = useState<SportQuizSubmitResponse | null>(null);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorAction, setErrorAction] = useState<ErrorAction>("load");
   const requestIdRef = useRef(0);
@@ -230,6 +251,7 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
     setQuiz(null);
     setAnswers({});
     setResult(null);
+    setSubmissionId(null);
     setMessage(null);
     setErrorAction("load");
 
@@ -270,6 +292,12 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
         throw new Error("This quiz does not have a complete five-question run.");
       }
 
+      const nextSubmissionId = createSportQuizSubmissionId();
+      if (!nextSubmissionId) {
+        throw new Error("Unable to start this quiz.");
+      }
+
+      setSubmissionId(nextSubmissionId);
       setQuiz(payload);
       setViewState("playing");
     } catch (loadError) {
@@ -324,7 +352,8 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
   const canSubmit =
     viewState === "playing" &&
     answeredCount === SPORT_QUIZ_QUESTION_COUNT &&
-    Boolean(quiz);
+    Boolean(quiz) &&
+    Boolean(submissionId);
 
   function selectAnswer(questionId: string, option: AnswerOption) {
     if (viewState !== "playing") {
@@ -339,7 +368,7 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
   }
 
   async function submitQuiz() {
-    if (!quiz || answeredCount !== SPORT_QUIZ_QUESTION_COUNT) {
+    if (!quiz || !submissionId || answeredCount !== SPORT_QUIZ_QUESTION_COUNT) {
       setMessage("Please answer all 5 questions before submitting.");
       return;
     }
@@ -371,7 +400,7 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ answers: payloadAnswers }),
+        body: JSON.stringify({ answers: payloadAnswers, submissionId }),
         signal: controller.signal,
       });
       const payload = (await response.json()) as unknown;

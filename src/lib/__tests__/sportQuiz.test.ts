@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   gradeSportQuizAttempt,
   parseSportQuizRecentQuestionIds,
+  parseSportQuizSubmissionId,
   parseSportQuizSubmittedAnswers,
   toSportQuizPlayerQuestion,
   type SportQuizQuestion,
@@ -120,6 +121,21 @@ describe("parseSportQuizSubmittedAnswers", () => {
       }),
     ).toBeNull();
   });
+});
+
+describe("parseSportQuizSubmissionId", () => {
+  it("accepts a canonical UUID", () => {
+    expect(
+      parseSportQuizSubmissionId("00000000-0000-4000-8000-000000000001"),
+    ).toBe("00000000-0000-4000-8000-000000000001");
+  });
+
+  it.each([null, "", "not-a-uuid", " 00000000-0000-4000-8000-000000000001 "])(
+    "rejects malformed submission IDs: %j",
+    (value) => {
+      expect(parseSportQuizSubmissionId(value)).toBeNull();
+    },
+  );
 });
 
 describe("toSportQuizPlayerQuestion", () => {

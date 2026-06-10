@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  createSportQuizSubmissionId,
   parseSportQuizSubmitResponse,
   promoteRecentQuestionIds,
   writeSportQuizHistory,
@@ -39,7 +40,13 @@ describe("SportQuiz", () => {
     expect(source).toContain("`/api/sport-quiz/${slug}`");
     expect(source).toContain("`/api/sport-quiz/${slug}/submit`");
     expect(source).toContain("recentQuestionIds");
-    expect(source).toContain("JSON.stringify({ answers: payloadAnswers })");
+    expect(source).toContain(
+      "JSON.stringify({ answers: payloadAnswers, submissionId })",
+    );
+    expect(source).toContain("const [submissionId, setSubmissionId]");
+    expect(source).toContain("createSportQuizSubmissionId()");
+    expect(source).toContain("setSubmissionId(nextSubmissionId)");
+    expect(source).toContain("setSubmissionId(null)");
     expect(source).toContain("questions.length !== SPORT_QUIZ_QUESTION_COUNT");
     expect(source).toContain("answeredCount === SPORT_QUIZ_QUESTION_COUNT");
     expect(source).toContain("new AbortController()");
@@ -50,6 +57,40 @@ describe("SportQuiz", () => {
     expect(source).toContain("isAbortError");
     expect(source.match(/requestId !== requestIdRef\.current/g)).toHaveLength(5);
     expect(source.match(/isAbortError\((load|submit)Error\)/g)).toHaveLength(2);
+  });
+
+  it("creates a validated submission ID for each loaded run", () => {
+    expect(
+      createSportQuizSubmissionId(
+        () => "00000000-0000-4000-8000-000000000001",
+      ),
+    ).toBe("00000000-0000-4000-8000-000000000001");
+    expect(createSportQuizSubmissionId(() => "not-a-uuid")).toBeNull();
+    expect(
+      createSportQuizSubmissionId(() => {
+        throw new Error("crypto unavailable");
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps one submission ID through submit retries and replaces it on reload", async () => {
+    const source = await readSource();
+    const loadStart = source.indexOf("const loadQuiz = useCallback");
+    const submitStart = source.indexOf("async function submitQuiz()");
+    const retryStart = source.indexOf("function retry()");
+    const createIdIndex = source.indexOf("createSportQuizSubmissionId()", loadStart);
+    const submitBodyIndex = source.indexOf(
+      "JSON.stringify({ answers: payloadAnswers, submissionId })",
+      submitStart,
+    );
+
+    expect(createIdIndex).toBeGreaterThan(loadStart);
+    expect(createIdIndex).toBeLessThan(submitStart);
+    expect(submitBodyIndex).toBeGreaterThan(submitStart);
+    expect(source.slice(submitStart, retryStart)).not.toContain(
+      "createSportQuizSubmissionId()",
+    );
+    expect(source.slice(retryStart)).not.toContain("setSubmissionId(");
   });
 
   it("supports every quiz state and the required player actions", async () => {

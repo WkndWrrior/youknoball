@@ -51,6 +51,7 @@ function createClientMock(
     | ReturnType<typeof createThenableQuery>
     | Array<ReturnType<typeof createThenableQuery>>
   >,
+  rpcResult?: QueryResult<unknown>,
 ) {
   const tableCallCounts = new Map<string, number>();
 
@@ -70,6 +71,13 @@ function createClientMock(
 
       return query;
     }),
+    rpc: vi.fn(async (functionName: string) => {
+      if (!rpcResult) {
+        throw new Error(`Unexpected rpc: ${functionName}`);
+      }
+
+      return rpcResult;
+    }),
   };
 }
 
@@ -87,6 +95,7 @@ const ids = {
   question5: uuid(105),
   attempt1: uuid(201),
   attempt2: uuid(202),
+  submission1: uuid(301),
 };
 
 const cfbSport: SportRecord = {
@@ -335,6 +344,7 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "baseball",
         userId: null,
+        submissionId: ids.submission1,
         answers: validAnswers,
       }),
     ).rejects.toThrow("Unsupported sport");
@@ -342,6 +352,7 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "cfb",
         userId: null,
+        submissionId: ids.submission1,
         answers: { [ids.question1]: "A" },
       }),
     ).rejects.toThrow("exactly five valid answers");
@@ -361,6 +372,7 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "cfb",
         userId: "user-1",
+        submissionId: ids.submission1,
         answers: malformedAnswers,
       }),
     ).rejects.toThrow("Invalid sport quiz submission");
@@ -393,6 +405,7 @@ describe("submitSportQuizAttempt", () => {
         submitSportQuizAttempt({
           slug: "cfb",
           userId: "user-1",
+          submissionId: ids.submission1,
           answers: validAnswers,
         }),
       ).rejects.toThrow("Invalid sport quiz questions");
@@ -414,6 +427,7 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "cfb",
         userId: "user-1",
+        submissionId: ids.submission1,
         answers: validAnswers,
       }),
     ).rejects.toThrow("Invalid sport quiz difficulty mix");
@@ -430,6 +444,7 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "cfb",
         userId: null,
+        submissionId: ids.submission1,
         answers: validAnswers,
       }),
     ).resolves.toEqual({
@@ -448,17 +463,13 @@ describe("submitSportQuizAttempt", () => {
     expect(client.from).not.toHaveBeenCalledWith("sport_quiz_attempt_items");
   });
 
-  it("persists one attempt and five item rows for a signed-in player", async () => {
-    const attemptInsert = createThenableQuery({
-      data: { id: ids.attempt1 },
-      error: null,
-    });
-    const itemInsert = createThenableQuery({ data: null, error: null });
+  it("persists a signed-in attempt atomically through the idempotent RPC", async () => {
     const client = createClientMock({
       sports: sportQuery(),
       questions: questionsQuery(),
-      sport_quiz_attempts: attemptInsert,
-      sport_quiz_attempt_items: itemInsert,
+    }, {
+      data: [{ attempt_id: ids.attempt1, created: true }],
+      error: null,
     });
     supabaseAdmin.mockReturnValue(client);
 
@@ -466,65 +477,56 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "cfb",
         userId: "user-1",
+        submissionId: ids.submission1,
         answers: validAnswers,
       }),
     ).resolves.toMatchObject({ saved: true, score: 3, total: 5 });
 
-    expect(attemptInsert.insert).toHaveBeenCalledWith({
-      user_id: "user-1",
-      sport_id: cfbSport.id,
-      score: 3,
-      total_questions: 5,
+    expect(client.rpc).toHaveBeenCalledWith("record_sport_quiz_attempt", {
+      p_user_id: "user-1",
+      p_sport_id: cfbSport.id,
+      p_submission_id: ids.submission1,
+      p_score: 3,
+      p_total_questions: 5,
+      p_items: [
+        {
+          question_id: ids.question1,
+          chosen_option: "A",
+          is_correct: true,
+        },
+        {
+          question_id: ids.question2,
+          chosen_option: "A",
+          is_correct: false,
+        },
+        {
+          question_id: ids.question3,
+          chosen_option: "C",
+          is_correct: true,
+        },
+        {
+          question_id: ids.question4,
+          chosen_option: "D",
+          is_correct: true,
+        },
+        {
+          question_id: ids.question5,
+          chosen_option: "B",
+          is_correct: false,
+        },
+      ],
     });
-    expect(itemInsert.insert).toHaveBeenCalledWith([
-      {
-        attempt_id: ids.attempt1,
-        question_id: ids.question1,
-        chosen_option: "A",
-        is_correct: true,
-      },
-      {
-        attempt_id: ids.attempt1,
-        question_id: ids.question2,
-        chosen_option: "A",
-        is_correct: false,
-      },
-      {
-        attempt_id: ids.attempt1,
-        question_id: ids.question3,
-        chosen_option: "C",
-        is_correct: true,
-      },
-      {
-        attempt_id: ids.attempt1,
-        question_id: ids.question4,
-        chosen_option: "D",
-        is_correct: true,
-      },
-      {
-        attempt_id: ids.attempt1,
-        question_id: ids.question5,
-        chosen_option: "B",
-        is_correct: false,
-      },
-    ]);
+    expect(client.from).not.toHaveBeenCalledWith("sport_quiz_attempts");
+    expect(client.from).not.toHaveBeenCalledWith("sport_quiz_attempt_items");
   });
 
-  it("deletes an incomplete attempt when item insertion fails", async () => {
-    const attemptInsert = createThenableQuery({
-      data: { id: ids.attempt1 },
-      error: null,
-    });
-    const cleanup = createThenableQuery({ data: null, error: null });
-    const itemInsert = createThenableQuery({
-      data: null,
-      error: { code: "23503", message: "item insert failed" },
-    });
+  it("accepts an existing attempt returned for a duplicate submission ID", async () => {
     const client = createClientMock({
       sports: sportQuery(),
       questions: questionsQuery(),
-      sport_quiz_attempts: [attemptInsert, cleanup],
-      sport_quiz_attempt_items: itemInsert,
+    }, {
+      data: [{ attempt_id: ids.attempt1, created: false }],
+      error: null,
     });
     supabaseAdmin.mockReturnValue(client);
 
@@ -532,54 +534,31 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "cfb",
         userId: "user-1",
+        submissionId: ids.submission1,
         answers: validAnswers,
       }),
-    ).rejects.toThrow("Unable to save sport quiz attempt items");
-    expect(cleanup.delete).toHaveBeenCalledTimes(1);
-    expect(cleanup.eq).toHaveBeenCalledWith("id", ids.attempt1);
+    ).resolves.toMatchObject({ saved: true, score: 3, total: 5 });
   });
 
-  it("surfaces incomplete-attempt risk when cleanup deletion fails", async () => {
-    const attemptInsert = createThenableQuery({
-      data: { id: ids.attempt1 },
-      error: null,
-    });
-    const cleanup = createThenableQuery({
-      data: null,
-      error: { code: "42501", message: "cleanup failed" },
-    });
-    const itemInsert = createThenableQuery({
-      data: null,
-      error: { code: "23503", message: "item insert failed" },
-    });
-    const client = createClientMock({
-      sports: sportQuery(),
-      questions: questionsQuery(),
-      sport_quiz_attempts: [attemptInsert, cleanup],
-      sport_quiz_attempt_items: itemInsert,
-    });
-    supabaseAdmin.mockReturnValue(client);
-
+  it("rejects a malformed submission ID before querying or writing", async () => {
     await expect(
       submitSportQuizAttempt({
         slug: "cfb",
         userId: "user-1",
+        submissionId: "not-a-uuid",
         answers: validAnswers,
       }),
-    ).rejects.toThrow(
-      "Unable to clean up incomplete sport quiz attempt; manual cleanup may be required",
-    );
+    ).rejects.toThrow("Invalid sport quiz submission");
+    expect(supabaseAdmin).not.toHaveBeenCalled();
   });
 
-  it("rejects a malformed inserted parent ID before inserting item rows", async () => {
-    const attemptInsert = createThenableQuery({
-      data: { id: "not-a-uuid" },
-      error: null,
-    });
+  it("surfaces atomic RPC failures without direct table cleanup", async () => {
     const client = createClientMock({
       sports: sportQuery(),
       questions: questionsQuery(),
-      sport_quiz_attempts: attemptInsert,
+    }, {
+      data: null,
+      error: { code: "23503", message: "atomic insert failed" },
     });
     supabaseAdmin.mockReturnValue(client);
 
@@ -587,9 +566,31 @@ describe("submitSportQuizAttempt", () => {
       submitSportQuizAttempt({
         slug: "cfb",
         userId: "user-1",
+        submissionId: ids.submission1,
         answers: validAnswers,
       }),
     ).rejects.toThrow("Unable to save sport quiz attempt");
+    expect(client.from).not.toHaveBeenCalledWith("sport_quiz_attempts");
     expect(client.from).not.toHaveBeenCalledWith("sport_quiz_attempt_items");
+  });
+
+  it("rejects a malformed atomic RPC response", async () => {
+    const client = createClientMock({
+      sports: sportQuery(),
+      questions: questionsQuery(),
+    }, {
+      data: [{ attempt_id: "not-a-uuid", created: true }],
+      error: null,
+    });
+    supabaseAdmin.mockReturnValue(client);
+
+    await expect(
+      submitSportQuizAttempt({
+        slug: "cfb",
+        userId: "user-1",
+        submissionId: ids.submission1,
+        answers: validAnswers,
+      }),
+    ).rejects.toThrow("Unable to save sport quiz attempt");
   });
 });

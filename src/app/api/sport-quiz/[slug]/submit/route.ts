@@ -6,7 +6,10 @@ import {
   getSupabaseSessionFromRequest,
 } from "@/lib/server/supabaseServer";
 import { submitSportQuizAttempt } from "@/lib/server/sportQuizRepository";
-import { parseSportQuizSubmittedAnswers } from "@/lib/sportQuiz";
+import {
+  parseSportQuizSubmissionId,
+  parseSportQuizSubmittedAnswers,
+} from "@/lib/sportQuiz";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +87,10 @@ export async function POST(
   const answers = parseSportQuizSubmittedAnswers(
     isRecord(body) ? body.answers : undefined,
   );
-  if (!answers) {
+  const submissionId = parseSportQuizSubmissionId(
+    isRecord(body) ? body.submissionId : undefined,
+  );
+  if (!answers || !submissionId) {
     return NextResponse.json(
       { message: "Please submit answers for all 5 questions." },
       { status: 400 },
@@ -96,6 +102,7 @@ export async function POST(
     const response = await submitSportQuizAttempt({
       slug,
       userId,
+      submissionId,
       answers,
     });
 

@@ -11,6 +11,7 @@ import {
   gradeSportQuizAttempt,
   MAX_SPORT_QUIZ_RECENT_QUESTION_IDS,
   parseSportQuizRecentQuestionIds,
+  parseSportQuizSubmissionId,
   parseSportQuizSubmittedAnswers,
   SPORT_QUIZ_QUESTION_COUNT,
   toSportQuizPlayerQuestion,
@@ -306,6 +307,23 @@ function hasExpectedDifficultyMix(questions: QuestionRecord[]) {
   return actual.every((difficulty, index) => difficulty === expected[index]);
 }
 
+function normalizeRecordedAttempt(value: unknown) {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 1 ||
+    !isRecord(value[0]) ||
+    !isUuid(value[0].attempt_id) ||
+    typeof value[0].created !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    attemptId: value[0].attempt_id,
+    created: value[0].created,
+  };
+}
+
 async function loadSubmittedQuestions(
   adminClient: ReturnType<typeof supabaseAdmin>,
   questionIds: string[],
@@ -325,11 +343,17 @@ async function loadSubmittedQuestions(
 export async function submitSportQuizAttempt(input: {
   slug: unknown;
   userId: string | null;
+  submissionId: unknown;
   answers: unknown;
 }): Promise<SportQuizSubmitResponse> {
   const slug = normalizeSupportedSlug(input.slug);
   if (!slug) {
     throw new Error("Unsupported sport.");
+  }
+
+  const submissionId = parseSportQuizSubmissionId(input.submissionId);
+  if (!submissionId) {
+    throw new Error("Invalid sport quiz submission.");
   }
 
   const answers = parseSportQuizSubmittedAnswers(input.answers);
@@ -384,59 +408,26 @@ export async function submitSportQuizAttempt(input: {
     };
   }
 
-  const { data: attemptData, error: attemptError } = await adminClient
-    .from("sport_quiz_attempts")
-    .insert({
-      user_id: input.userId,
-      sport_id: sport.id,
-      score: graded.score,
-      total_questions: graded.total,
-    })
-    .select("id")
-    .single();
-
-  throwIfError(attemptError, "Unable to save sport quiz attempt.");
-
-  const attemptId =
-    isRecord(attemptData) && isUuid(attemptData.id)
-      ? attemptData.id
-      : null;
-  if (!attemptId) {
-    throw new Error("Unable to save sport quiz attempt.");
-  }
-
-  const { error: itemError } = await adminClient
-    .from("sport_quiz_attempt_items")
-    .insert(
-      graded.results.map((result) => ({
-        attempt_id: attemptId,
+  const { data: attemptData, error: attemptError } = await adminClient.rpc(
+    "record_sport_quiz_attempt",
+    {
+      p_user_id: input.userId,
+      p_sport_id: sport.id,
+      p_submission_id: submissionId,
+      p_score: graded.score,
+      p_total_questions: graded.total,
+      p_items: graded.results.map((result) => ({
         question_id: result.question_id,
         chosen_option: result.chosen_option,
         is_correct: result.is_correct,
       })),
-    );
+    },
+  );
 
-  if (itemError) {
-    const { error: cleanupError } = await adminClient
-      .from("sport_quiz_attempts")
-      .delete()
-      .eq("id", attemptId);
+  throwIfError(attemptError, "Unable to save sport quiz attempt.");
 
-    if (cleanupError) {
-      throw Object.assign(
-        new Error(
-          "Unable to clean up incomplete sport quiz attempt; manual cleanup may be required.",
-        ),
-        {
-          cause: cleanupError,
-          itemInsertError: itemError,
-        },
-      );
-    }
-
-    throw Object.assign(new Error("Unable to save sport quiz attempt items."), {
-      cause: itemError,
-    });
+  if (!normalizeRecordedAttempt(attemptData)) {
+    throw new Error("Unable to save sport quiz attempt.");
   }
 
   return {

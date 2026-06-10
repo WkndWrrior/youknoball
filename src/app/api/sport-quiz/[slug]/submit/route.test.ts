@@ -29,6 +29,15 @@ const validAnswers = {
   q4: "D",
   q5: "A",
 };
+const validSubmissionId = "00000000-0000-4000-8000-000000000001";
+
+function validBody(overrides: Record<string, unknown> = {}) {
+  return {
+    answers: validAnswers,
+    submissionId: validSubmissionId,
+    ...overrides,
+  };
+}
 
 const gradedAttempt = {
   saved: false,
@@ -81,17 +90,19 @@ describe("POST /api/sport-quiz/[slug]/submit", () => {
   });
 
   it.each([
-    ["missing answers", {}],
-    ["incomplete answers", { answers: { q1: "A" } }],
+    ["missing answers", { submissionId: validSubmissionId }],
+    ["incomplete answers", validBody({ answers: { q1: "A" } })],
     [
       "invalid answers",
-      {
+      validBody({
         answers: {
           ...validAnswers,
           q5: "E",
         },
-      },
+      }),
     ],
+    ["missing submission ID", { answers: validAnswers }],
+    ["invalid submission ID", validBody({ submissionId: "not-a-uuid" })],
   ])("returns 400 before the repository for %s", async (_description, body) => {
     const { POST } = await import("@/app/api/sport-quiz/[slug]/submit/route");
     const response = await POST(buildRequest(body), context());
@@ -105,12 +116,13 @@ describe("POST /api/sport-quiz/[slug]/submit", () => {
 
   it("grades a guest submission without a user ID", async () => {
     const { POST } = await import("@/app/api/sport-quiz/[slug]/submit/route");
-    const response = await POST(buildRequest({ answers: validAnswers }), context());
+    const response = await POST(buildRequest(validBody()), context());
 
     expect(response.status).toBe(200);
     expect(submitSportQuizAttempt).toHaveBeenCalledWith({
       slug: "cfb",
       userId: null,
+      submissionId: validSubmissionId,
       answers: validAnswers,
     });
     await expect(response.json()).resolves.toEqual(gradedAttempt);
@@ -130,7 +142,7 @@ describe("POST /api/sport-quiz/[slug]/submit", () => {
 
     const { POST } = await import("@/app/api/sport-quiz/[slug]/submit/route");
     const response = await POST(
-      buildRequest({ answers: validAnswers }),
+      buildRequest(validBody()),
       context(" CFB "),
     );
 
@@ -140,6 +152,7 @@ describe("POST /api/sport-quiz/[slug]/submit", () => {
     expect(submitSportQuizAttempt).toHaveBeenCalledWith({
       slug: "cfb",
       userId: "verified-user",
+      submissionId: validSubmissionId,
       answers: validAnswers,
     });
     await expect(response.json()).resolves.toMatchObject({
@@ -159,19 +172,20 @@ describe("POST /api/sport-quiz/[slug]/submit", () => {
     getUser.mockRejectedValue(new Error("auth unavailable"));
 
     const { POST } = await import("@/app/api/sport-quiz/[slug]/submit/route");
-    const response = await POST(buildRequest({ answers: validAnswers }), context());
+    const response = await POST(buildRequest(validBody()), context());
 
     expect(response.status).toBe(200);
     expect(submitSportQuizAttempt).toHaveBeenCalledWith({
       slug: "cfb",
       userId: null,
+      submissionId: validSubmissionId,
       answers: validAnswers,
     });
   });
 
   it("returns 404 for an unsupported sport without calling the repository", async () => {
     const { POST } = await import("@/app/api/sport-quiz/[slug]/submit/route");
-    const response = await POST(buildRequest({ answers: validAnswers }), context("mlb"));
+    const response = await POST(buildRequest(validBody()), context("mlb"));
 
     expect(response.status).toBe(404);
     expect(submitSportQuizAttempt).not.toHaveBeenCalled();
@@ -189,7 +203,7 @@ describe("POST /api/sport-quiz/[slug]/submit", () => {
     submitSportQuizAttempt.mockRejectedValue(new Error(message));
 
     const { POST } = await import("@/app/api/sport-quiz/[slug]/submit/route");
-    const response = await POST(buildRequest({ answers: validAnswers }), context());
+    const response = await POST(buildRequest(validBody()), context());
 
     expect(response.status).toBe(status);
     await expect(response.json()).resolves.toEqual({ message });
@@ -201,7 +215,7 @@ describe("POST /api/sport-quiz/[slug]/submit", () => {
     );
 
     const { POST } = await import("@/app/api/sport-quiz/[slug]/submit/route");
-    const response = await POST(buildRequest({ answers: validAnswers }), context());
+    const response = await POST(buildRequest(validBody()), context());
 
     expect(response.status).toBe(500);
     const payload = await response.json();

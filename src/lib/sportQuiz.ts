@@ -7,6 +7,8 @@ import {
 
 export const MAX_SPORT_QUIZ_RECENT_QUESTION_IDS = 25;
 export const SPORT_QUIZ_QUESTION_COUNT = 5;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type SportQuizQuestion = QuestionSnapshot & {
   slot: number;
@@ -51,6 +53,10 @@ export type SportQuizGradedAttempt = {
 export type SportQuizSubmitResponse = SportQuizGradedAttempt & {
   saved: boolean;
 };
+
+export function parseSportQuizSubmissionId(raw: unknown): string | null {
+  return typeof raw === "string" && UUID_PATTERN.test(raw) ? raw : null;
+}
 
 export function parseSportQuizRecentQuestionIds(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.some((value) => typeof value !== "string")) {
