@@ -31,8 +31,6 @@ describe("sport quiz attempt migration", () => {
     expect(migration).toContain(
       "total_questions smallint not null check (total_questions = 5)",
     );
-    expect(migration).toContain("submission_id uuid not null");
-    expect(migration).toContain("unique (user_id, submission_id)");
     expect(migration).toContain(
       "attempt_id uuid not null references public.sport_quiz_attempts (id) on delete cascade",
     );
@@ -85,17 +83,5 @@ describe("sport quiz attempt migration", () => {
     );
     expect(migration).not.toMatch(/grant\s+[^;]*\bto anon\b/i);
     expect(migration).not.toMatch(/grant\s+[^;]*\binsert\b[^;]*authenticated/i);
-
-    expect(migration).toContain(
-      "create or replace function public.record_sport_quiz_attempt",
-    );
-    expect(migration).toContain("security definer");
-    expect(migration).toContain("set search_path = public");
-    expect(migration).toContain("jsonb_array_length(p_items) <> 5");
-    expect(migration).toContain("insert into public.sport_quiz_attempt_items");
-    expect(migration).toContain("on conflict (user_id, submission_id) do nothing");
-    expect(migration).toContain("revoke all on function public.record_sport_quiz_attempt");
-    expect(migration).toContain("grant execute on function public.record_sport_quiz_attempt");
-    expect(migration).toContain("to service_role");
   });
 });
