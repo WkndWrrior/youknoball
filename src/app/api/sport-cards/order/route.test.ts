@@ -5,6 +5,7 @@ const getPlayerSportCategoryPerformance = vi.fn();
 const getSupabaseSessionFromRequest = vi.fn();
 const createSessionSupabaseServerClient = vi.fn();
 const getUser = vi.fn();
+const defaultSportSlugs = ["nba", "cbb", "nfl", "cfb", "nhl"];
 
 vi.mock("@/lib/server/dailyChallengeRepository", () => ({
   getPlayerSportCategoryPerformance,
@@ -46,7 +47,7 @@ describe("GET /api/sport-cards/order", () => {
     expect(response.status).toBe(200);
     expect(getPlayerSportCategoryPerformance).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
-      slugs: ["nba", "cbb", "nfl", "nhl"],
+      slugs: defaultSportSlugs,
     });
   });
 
@@ -86,7 +87,7 @@ describe("GET /api/sport-cards/order", () => {
     expect(getUser).toHaveBeenCalled();
     expect(getPlayerSportCategoryPerformance).toHaveBeenCalledWith("verified-user");
     await expect(response.json()).resolves.toEqual({
-      slugs: ["nfl", "cbb", "nba", "nhl"],
+      slugs: ["cbb", "nfl", "nba", "cfb", "nhl"],
     });
   });
 
@@ -128,7 +129,7 @@ describe("GET /api/sport-cards/order", () => {
     expect(getUser).toHaveBeenCalled();
     expect(getPlayerSportCategoryPerformance).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
-      slugs: ["nba", "cbb", "nfl", "nhl"],
+      slugs: defaultSportSlugs,
     });
   });
 
@@ -149,7 +150,7 @@ describe("GET /api/sport-cards/order", () => {
     expect(getUser).toHaveBeenCalled();
     expect(getPlayerSportCategoryPerformance).toHaveBeenCalledWith("verified-user");
     await expect(response.json()).resolves.toEqual({
-      slugs: ["nba", "cbb", "nfl", "nhl"],
+      slugs: defaultSportSlugs,
     });
   });
 });
