@@ -156,7 +156,7 @@ describe("POST /api/sport-quiz/[slug]", () => {
 
   it("returns 404 for an unsupported sport without calling the repository", async () => {
     const { POST } = await import("@/app/api/sport-quiz/[slug]/route");
-    const response = await POST(buildRequest(), context("mlb"));
+    const response = await POST(buildRequest(), context("mls"));
 
     expect(response.status).toBe(404);
     expect(getSportQuizForPlayer).not.toHaveBeenCalled();

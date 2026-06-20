@@ -5,7 +5,7 @@ const getPlayerSportCategoryPerformance = vi.fn();
 const getSupabaseSessionFromRequest = vi.fn();
 const createSessionSupabaseServerClient = vi.fn();
 const getUser = vi.fn();
-const defaultSportSlugs = ["nba", "cbb", "nfl", "cfb", "nhl"];
+const defaultSportSlugs = ["nba", "cbb", "nfl", "cfb", "nhl", "mlb"];
 
 vi.mock("@/lib/server/dailyChallengeRepository", () => ({
   getPlayerSportCategoryPerformance,
@@ -87,7 +87,7 @@ describe("GET /api/sport-cards/order", () => {
     expect(getUser).toHaveBeenCalled();
     expect(getPlayerSportCategoryPerformance).toHaveBeenCalledWith("verified-user");
     await expect(response.json()).resolves.toEqual({
-      slugs: ["cbb", "nfl", "nba", "cfb", "nhl"],
+      slugs: ["cbb", "nfl", "nba", "cfb", "nhl", "mlb"],
     });
   });
 

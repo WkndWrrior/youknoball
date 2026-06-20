@@ -335,6 +335,7 @@ describe("getPlayerSportCategoryPerformance", () => {
     supabaseAdmin.mockReturnValue(adminClient);
 
     await expect(getPlayerSportCategoryPerformance("user_1")).resolves.toEqual([
+      { slug: "mlb", answeredCount: 1, correctCount: 1, lastAnsweredAt: "2026-05-01" },
       { slug: "nba", answeredCount: 1, correctCount: 1, lastAnsweredAt: "2026-05-01" },
       { slug: "nfl", answeredCount: 2, correctCount: 1, lastAnsweredAt: "2026-05-02" },
     ]);
@@ -539,6 +540,12 @@ describe("getPlayerSportCategoryPerformance", () => {
             total_questions: 5,
             created_at: "2026-05-05T12:00:00Z",
           },
+          {
+            sport_id: "sport_wnba",
+            score: 5,
+            total_questions: 5,
+            created_at: "2026-05-06T12:00:00Z",
+          },
         ],
         error: null,
       }),
@@ -546,6 +553,7 @@ describe("getPlayerSportCategoryPerformance", () => {
         data: [
           { id: "sport_cfb", slug: "cfb" },
           { id: "sport_mlb", slug: "mlb" },
+          { id: "sport_wnba", slug: "wnba" },
         ],
         error: null,
       }),
@@ -558,6 +566,12 @@ describe("getPlayerSportCategoryPerformance", () => {
         answeredCount: 5,
         correctCount: 3,
         lastAnsweredAt: "2026-05-04T12:00:00Z",
+      },
+      {
+        slug: "mlb",
+        answeredCount: 5,
+        correctCount: 5,
+        lastAnsweredAt: "2026-05-05T12:00:00Z",
       },
     ]);
 
@@ -660,7 +674,7 @@ describe("getPlayerSportCategoryPerformance", () => {
       sports: createThenableQuery({
         data: [
           { id: "sport_nfl", slug: "nfl" },
-          { id: "sport_unsupported", slug: "mlb" },
+          { id: "sport_unsupported", slug: "wnba" },
           { id: "sport_missing_slug" },
         ],
         error: null,
