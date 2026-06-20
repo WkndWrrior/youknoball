@@ -227,6 +227,43 @@ describe("generateDailyChallengeQuestions", () => {
     expect(new Set(selectedSports(result)).size).toBeGreaterThanOrEqual(3);
   });
 
+  it("can select MLB as a normal non-target variety sport", () => {
+    const result = generateDailyChallengeQuestions({
+      candidates: [
+        makeQuestion("easy_nba_1", "easy", "NBA"),
+        makeQuestion("easy_nfl_1", "easy", "NFL"),
+        makeQuestion("medium_mlb_1", "medium", "MLB"),
+        makeQuestion("medium_nba_1", "medium", "NBA"),
+        makeQuestion("hard_nba_1", "hard", "NBA"),
+        makeQuestion("hard_nfl_1", "hard", "NFL"),
+        makeQuestion("hard_cbb_1", "hard", "CBB"),
+      ],
+      recentQuestionIds: [],
+    });
+
+    expect(selectedSports(result)).toContain("MLB");
+  });
+
+  it("does not count MLB as an NBA or NFL priority target", () => {
+    const nbaMlbLineup = [
+      { ...makeQuestion("easy_nba_1", "easy", "NBA"), slot: 1 },
+      { ...makeQuestion("easy_mlb_1", "easy", "MLB"), slot: 2 },
+      { ...makeQuestion("medium_cbb_1", "medium", "CBB"), slot: 3 },
+      { ...makeQuestion("hard_nhl_1", "hard", "NHL"), slot: 4 },
+      { ...makeQuestion("hard_cfb_1", "hard", "CFB"), slot: 5 },
+    ];
+    const nbaNflLineup = [
+      { ...makeQuestion("easy_nba_1", "easy", "NBA"), slot: 1 },
+      { ...makeQuestion("easy_nfl_1", "easy", "NFL"), slot: 2 },
+      { ...makeQuestion("medium_cbb_1", "medium", "CBB"), slot: 3 },
+      { ...makeQuestion("hard_nhl_1", "hard", "NHL"), slot: 4 },
+      { ...makeQuestion("hard_cfb_1", "hard", "CFB"), slot: 5 },
+    ];
+
+    expect(scoreDailyChallengeSelection(nbaMlbLineup).targetSportCoverage).toBe(1);
+    expect(scoreDailyChallengeSelection(nbaNflLineup).targetSportCoverage).toBe(2);
+  });
+
   it("keeps no sport above two questions when possible", () => {
     const result = generateDailyChallengeQuestions({
       candidates: [
