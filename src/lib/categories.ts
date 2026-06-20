@@ -1,5 +1,5 @@
 export type CategoryCard = {
-  slug: "nba" | "cbb" | "nfl" | "cfb" | "nhl";
+  slug: "nba" | "cbb" | "nfl" | "cfb" | "nhl" | "mlb";
   title: string;
   eyebrow: string;
   description: string;
@@ -36,6 +36,13 @@ export const sportsCategories: CategoryCard[] = [
     title: "NHL",
     eyebrow: "Puck IQ",
     description: "Cold-rink knowledge for fans who care about line combos, goalie heaters, and chaos.",
+  },
+  {
+    slug: "mlb",
+    title: "MLB",
+    eyebrow: "Box score brain",
+    description:
+      "Summer baseball trivia for fans who track pennant races, record books, October swings, and bullpen chaos.",
   },
 ];
 

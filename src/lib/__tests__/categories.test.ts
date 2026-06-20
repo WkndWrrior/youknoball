@@ -21,6 +21,16 @@ describe("sportsCategories", () => {
     });
   });
 
+  it("includes MLB after NHL with general baseball copy", () => {
+    expect(sportsCategories.at(-1)).toMatchObject({
+      slug: "mlb",
+      title: "MLB",
+      eyebrow: "Box score brain",
+      description:
+        "Summer baseball trivia for fans who track pennant races, record books, October swings, and bullpen chaos.",
+    });
+  });
+
   it("keeps the default order when no sport has enough history", () => {
     const ranked = rankSportsCategoriesByPerformance(sportsCategories, [
       { slug: "nfl", answeredCount: 2, correctCount: 2, lastAnsweredAt: "2026-05-01" },
@@ -32,6 +42,7 @@ describe("sportsCategories", () => {
       "nfl",
       "cfb",
       "nhl",
+      "mlb",
     ]);
   });
 
@@ -48,6 +59,7 @@ describe("sportsCategories", () => {
       "nba",
       "cbb",
       "cfb",
+      "mlb",
     ]);
   });
 
@@ -62,6 +74,7 @@ describe("sportsCategories", () => {
       "cbb",
       "cfb",
       "nhl",
+      "mlb",
     ]);
   });
 
@@ -78,6 +91,7 @@ describe("sportsCategories", () => {
       "nhl",
       "cbb",
       "cfb",
+      "mlb",
     ]);
   });
 
@@ -94,6 +108,7 @@ describe("sportsCategories", () => {
       "nba",
       "cbb",
       "cfb",
+      "mlb",
     ]);
   });
 
@@ -110,6 +125,7 @@ describe("sportsCategories", () => {
       "nhl",
       "cbb",
       "cfb",
+      "mlb",
     ]);
   });
 });
