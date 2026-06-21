@@ -34,6 +34,8 @@ type SportQuizProps = {
 };
 
 type SportQuizHistoryStorage = Pick<Storage, "getItem" | "setItem">;
+type RandomUuidGenerator = (() => string) | null;
+type RandomValuesGenerator = ((bytes: Uint8Array) => Uint8Array) | null;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -52,20 +54,60 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
 
-export function createSportQuizSubmissionId(randomUUID?: () => string) {
-  const generator =
-    randomUUID ??
-    (typeof globalThis.crypto !== "undefined" &&
-    typeof globalThis.crypto.randomUUID === "function"
-      ? () => globalThis.crypto.randomUUID()
-      : null);
+function createSubmissionIdFromRandomValues(
+  getRandomValues: (bytes: Uint8Array) => Uint8Array,
+) {
+  const bytes = new Uint8Array(16);
+  getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
-  if (!generator) {
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join(""),
+  ].join("-");
+}
+
+export function createSportQuizSubmissionId(
+  randomUUID?: RandomUuidGenerator,
+  getRandomValues?: RandomValuesGenerator,
+) {
+  const generator =
+    randomUUID === undefined
+      ? (typeof globalThis.crypto !== "undefined" &&
+          typeof globalThis.crypto.randomUUID === "function"
+          ? () => globalThis.crypto.randomUUID()
+          : null)
+      : randomUUID;
+
+  try {
+    if (generator) {
+      return parseSportQuizSubmissionId(generator());
+    }
+  } catch {
+    return null;
+  }
+
+  const randomValuesGenerator =
+    getRandomValues === undefined
+      ? (typeof globalThis.crypto !== "undefined" &&
+          typeof globalThis.crypto.getRandomValues === "function"
+          ? (bytes: Uint8Array) => globalThis.crypto.getRandomValues(bytes)
+          : null)
+      : getRandomValues;
+
+  if (!randomValuesGenerator) {
     return null;
   }
 
   try {
-    return parseSportQuizSubmissionId(generator());
+    return parseSportQuizSubmissionId(
+      createSubmissionIdFromRandomValues(randomValuesGenerator),
+    );
   } catch {
     return null;
   }
@@ -491,7 +533,7 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
               Try Again
             </button>
             <Link
-              href="/"
+              href="/categories"
               className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-white hover:border-white/30 hover:bg-white/5"
             >
               Back to categories
@@ -542,14 +584,19 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
                   key={question.id}
                   className="min-w-0 rounded-[1.5rem] border border-white/10 bg-white/[0.05] p-5 shadow-[0_16px_50px_rgba(0,0,0,0.24)] sm:p-6"
                 >
-                  <legend className="w-full px-0">
-                    <span className="block text-xs font-semibold uppercase tracking-[0.25em] text-[#ffb067]">
-                      Question {question.slot} · {question.difficulty}
-                    </span>
-                    <span className="mt-3 block break-words text-lg font-semibold leading-7 text-white sm:text-xl sm:leading-8">
-                      {question.question_text}
-                    </span>
+                  <legend className="sr-only">
+                    Question {question.slot} · {question.difficulty}:{" "}
+                    {question.question_text}
                   </legend>
+
+                  <div className="mb-4 min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#ffb067]">
+                      Question {question.slot} · {question.difficulty}
+                    </p>
+                    <h2 className="mt-3 break-words text-lg font-semibold leading-7 text-white sm:text-xl sm:leading-8">
+                      {question.question_text}
+                    </h2>
+                  </div>
 
                   <div className="mt-4 min-h-6">
                     <p
@@ -665,7 +712,7 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
               Play Again
             </button>
             <Link
-              href="/"
+              href="/categories"
               className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-white hover:border-white/30 hover:bg-white/5"
             >
               Back to categories

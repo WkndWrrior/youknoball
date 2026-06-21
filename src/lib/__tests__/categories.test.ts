@@ -25,7 +25,7 @@ describe("sportsCategories", () => {
     expect(sportsCategories.at(-1)).toMatchObject({
       slug: "mlb",
       title: "MLB",
-      eyebrow: "Box score brain",
+      eyebrow: "The sweet spot",
       description:
         "Summer baseball trivia for fans who track pennant races, record books, October swings, and bullpen chaos.",
     });

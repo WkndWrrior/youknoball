@@ -60,12 +60,14 @@ export function createSessionSupabaseServerClient(accessToken: string) {
   });
 }
 
+export function getSupabaseSessionFromCookieValue(rawCookie: string | null | undefined) {
+  return parseSupabaseSessionCookie(decodeCookieValue(rawCookie ?? undefined));
+}
+
 export function getSupabaseSessionFromRequest(request: NextRequest) {
-  const rawCookie = decodeCookieValue(
+  return getSupabaseSessionFromCookieValue(
     request.cookies.get(supabaseAuthStorageKey)?.value,
   );
-
-  return parseSupabaseSessionCookie(rawCookie);
 }
 
 export type ServerSupabaseClient = SupabaseClient;

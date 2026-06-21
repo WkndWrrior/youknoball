@@ -73,6 +73,16 @@ describe("SportQuiz", () => {
     ).toBeNull();
   });
 
+  it("creates a valid submission ID from random values when randomUUID is unavailable", () => {
+    const submissionId = createSportQuizSubmissionId(null, (bytes) => {
+      bytes.fill(0);
+      bytes[15] = 1;
+      return bytes;
+    });
+
+    expect(submissionId).toBe("00000000-0000-4000-8000-000000000001");
+  });
+
   it("keeps one submission ID through submit retries and replaces it on reload", async () => {
     const source = await readSource();
     const loadStart = source.indexOf("const loadQuiz = useCallback");
@@ -107,7 +117,8 @@ describe("SportQuiz", () => {
     expect(source).toContain("Submit Answers");
     expect(source).toContain("Play Again");
     expect(source).toContain("Back to categories");
-    expect(source).toContain('href="/"');
+    expect(source).toContain('href="/categories"');
+    expect(source).not.toContain('href="/"');
     expect(source).not.toContain('href="/#categories"');
   });
 
@@ -137,6 +148,19 @@ describe("SportQuiz", () => {
     expect(source).not.toMatch(/timer/i);
     expect(source).not.toMatch(/leaderboard/i);
     expect(source).not.toMatch(/share/i);
+  });
+
+  it("keeps the visible question prompt inside normal card flow", async () => {
+    const source = await readSource();
+
+    expect(source).toContain('<legend className="sr-only">');
+    expect(source).toContain("Question {question.slot} · {question.difficulty}:");
+    expect(source).toContain('className="mb-4 min-w-0"');
+    expect(source).toContain("<h2");
+    expect(source).toContain(
+      'className="mt-3 break-words text-lg font-semibold leading-7 text-white sm:text-xl sm:leading-8"',
+    );
+    expect(source).not.toContain('<legend className="w-full px-0">');
   });
 
   it("keeps a capped slug-specific local question history for replays", async () => {

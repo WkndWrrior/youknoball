@@ -23,8 +23,8 @@ export function LeaderboardTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/5">
-      <div className={`grid ${leaderboardGridColumns} gap-3 border-b border-white/10 px-4 py-3 text-[0.7rem] uppercase tracking-[0.3em] text-white/45`}>
+    <div className="overflow-x-auto rounded-[1.5rem] border border-white/10 bg-white/5">
+      <div className={`grid min-w-[32rem] ${leaderboardGridColumns} gap-3 border-b border-white/10 px-4 py-3 text-[0.7rem] uppercase tracking-[0.3em] text-white/45`}>
         <span>Rank</span>
         <span>Player</span>
         <span className="justify-self-end text-right">Score</span>
@@ -35,7 +35,7 @@ export function LeaderboardTable({
         {entries.map((entry, index) => (
           <div
             key={`${entry.display_name}-${entry.last_played_at}-${index}`}
-            className={`grid ${leaderboardGridColumns} items-center gap-3 px-4 py-4 text-sm text-white/85 odd:bg-white/[0.03]`}
+            className={`grid min-w-[32rem] ${leaderboardGridColumns} items-center gap-3 px-4 py-4 text-sm text-white/85 odd:bg-white/[0.03]`}
           >
             <span className="font-display text-lg text-white">
               {String(index + 1).padStart(2, "0")}

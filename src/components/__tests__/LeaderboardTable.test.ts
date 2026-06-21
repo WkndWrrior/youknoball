@@ -13,6 +13,8 @@ describe("LeaderboardTable", () => {
     expect(source).toContain(
       "grid-cols-[3.25rem_minmax(0,1fr)_4.5rem_4.5rem_4.5rem]",
     );
+    expect(source).toContain("overflow-x-auto");
+    expect(source).toContain("min-w-[32rem]");
     expect(source).toContain("text-right");
     expect(source).toContain("justify-self-end");
     expect(source).toContain("tabular-nums");
