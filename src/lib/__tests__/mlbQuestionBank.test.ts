@@ -33,6 +33,9 @@ describe("MLB question bank migration", () => {
     expect(migration).toContain(
       "('hard', 'Who holds MLB''s single-season saves record with 62 saves in 2008?', 'Mariano Rivera'",
     );
+    expect(migration).toContain(
+      "Which dominant Yankees closer allowed only 11 earned runs across his postseason career?",
+    );
     expect(migration.match(/, 'A', 'Verified against/g)).toHaveLength(8);
     expect(migration.match(/, 'B', 'Verified against/g)).toHaveLength(8);
     expect(migration.match(/, 'C', 'Verified against/g)).toHaveLength(7);

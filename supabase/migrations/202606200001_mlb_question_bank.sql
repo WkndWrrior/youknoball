@@ -46,7 +46,7 @@ question_seed (
     ('hard', 'Who was the first World Series MVP after the award debuted in 1955?', 'Sandy Koufax', 'Roy Campanella', 'Johnny Podres', 'Don Newcombe', 'C', 'Verified against https://www.baseball-reference.com/postseason/1955_WS.shtml'),
     ('hard', 'Who set MLB''s consecutive games played record at 2,632?', 'Lou Gehrig', 'Pete Rose', 'Eddie Murray', 'Cal Ripken Jr.', 'D', 'Verified against https://baseballhall.org/hall-of-famers/ripken-cal'),
     ('hard', 'Who holds MLB''s career grand slam record with 25?', 'Alex Rodriguez', 'Lou Gehrig', 'Manny Ramirez', 'Eddie Murray', 'A', 'Verified against https://www.mlb.com/news/most-career-grand-slams-in-mlb-history'),
-    ('hard', 'Who was the first designated hitter in MLB history?', 'Ron Blomberg', 'Orlando Cepeda', 'Tony Oliva', 'Frank Robinson', 'A', 'Verified against https://www.mlb.com/news/featured/history-of-the-designated-hitter-rule')
+    ('hard', 'Which dominant Yankees closer allowed only 11 earned runs across his postseason career?', 'Mariano Rivera', 'Trevor Hoffman', 'Dennis Eckersley', 'Goose Gossage', 'A', 'Verified against https://www.baseball-reference.com/players/r/riverma01.shtml')
 ),
 inserted_questions as (
   insert into public.questions (
