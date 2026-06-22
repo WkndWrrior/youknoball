@@ -21,4 +21,13 @@ describe("/play share controls", () => {
     expect(source).toContain("Copy result");
     expect(source).toContain("Facebook");
   });
+
+  it("exposes a question report control on every daily question card", async () => {
+    const source = await readFile(path.join(process.cwd(), "src/app/play/page.tsx"), "utf8");
+
+    expect(source).toContain('import { QuestionReportButton } from "@/components/QuestionReportButton"');
+    expect(source).toContain("<QuestionReportButton");
+    expect(source).toContain('context="daily_challenge"');
+    expect(source).toContain("questionId={question.id}");
+  });
 });

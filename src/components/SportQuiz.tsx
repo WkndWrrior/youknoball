@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { QuestionReportButton } from "@/components/QuestionReportButton";
 import type { AnswerOption, SubmittedAnswers } from "@/lib/dailyChallenge";
 import {
   MAX_SPORT_QUIZ_RECENT_QUESTION_IDS,
@@ -589,13 +590,20 @@ export function SportQuiz({ slug, title }: SportQuizProps) {
                     {question.question_text}
                   </legend>
 
-                  <div className="mb-4 min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#ffb067]">
-                      Question {question.slot} · {question.difficulty}
-                    </p>
-                    <h2 className="mt-3 break-words text-lg font-semibold leading-7 text-white sm:text-xl sm:leading-8">
-                      {question.question_text}
-                    </h2>
+                  <div className="mb-4 min-w-0 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#ffb067]">
+                        Question {question.slot} · {question.difficulty}
+                      </p>
+                      <h2 className="mt-3 break-words text-lg font-semibold leading-7 text-white sm:text-xl sm:leading-8">
+                        {question.question_text}
+                      </h2>
+                    </div>
+                    <QuestionReportButton
+                      questionId={question.id}
+                      context="sport_quiz"
+                      className="shrink-0 sm:max-w-[16rem]"
+                    />
                   </div>
 
                   <div className="mt-4 min-h-6">

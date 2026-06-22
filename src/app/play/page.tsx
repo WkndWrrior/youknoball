@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
+import { QuestionReportButton } from "@/components/QuestionReportButton";
 import {
   formatTimer,
   getRemainingTimerMs,
@@ -651,7 +652,7 @@ export default function PlayPage() {
                     key={question.id}
                     className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]"
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#ffb067]">
                           Question {question.slot}
@@ -660,17 +661,23 @@ export default function PlayPage() {
                           {question.sport} · {question.difficulty === "pro" ? "Real fan" : "Accessible"}
                         </p>
                       </div>
-                      {questionResult ? (
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] ${
-                            questionResult.is_correct
-                              ? "bg-emerald-500/15 text-emerald-200"
-                              : "bg-red-500/15 text-red-200"
-                          }`}
-                        >
-                          {questionResult.is_correct ? "Correct" : "Miss"}
-                        </span>
-                      ) : null}
+                      <div className="flex flex-col items-start gap-2 sm:items-end">
+                        {questionResult ? (
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] ${
+                              questionResult.is_correct
+                                ? "bg-emerald-500/15 text-emerald-200"
+                                : "bg-red-500/15 text-red-200"
+                            }`}
+                          >
+                            {questionResult.is_correct ? "Correct" : "Miss"}
+                          </span>
+                        ) : null}
+                        <QuestionReportButton
+                          questionId={question.id}
+                          context="daily_challenge"
+                        />
+                      </div>
                     </div>
 
                     <h2 className="mt-5 text-xl font-semibold leading-8 text-white">

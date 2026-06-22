@@ -125,6 +125,10 @@ describe("SportQuiz", () => {
   it("renders accessible A-D controls and answer-by-answer results", async () => {
     const source = await readSource();
 
+    expect(source).toContain('import { QuestionReportButton } from "@/components/QuestionReportButton"');
+    expect(source).toContain("<QuestionReportButton");
+    expect(source).toContain('context="sport_quiz"');
+    expect(source).toContain("questionId={question.id}");
     expect(source).toContain('const optionKeys: AnswerOption[] = ["A", "B", "C", "D"]');
     expect(source).toContain("<fieldset");
     expect(source).toContain("<legend");
@@ -155,7 +159,9 @@ describe("SportQuiz", () => {
 
     expect(source).toContain('<legend className="sr-only">');
     expect(source).toContain("Question {question.slot} · {question.difficulty}:");
-    expect(source).toContain('className="mb-4 min-w-0"');
+    expect(source).toContain(
+      'className="mb-4 min-w-0 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"',
+    );
     expect(source).toContain("<h2");
     expect(source).toContain(
       'className="mt-3 break-words text-lg font-semibold leading-7 text-white sm:text-xl sm:leading-8"',
