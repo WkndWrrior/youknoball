@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { parseQuestionReportPayload } from "@/lib/questionReports";
+import { sendQuestionReportNotification } from "@/lib/server/questionReportNotifications";
 import { createQuestionReport } from "@/lib/server/questionReportsRepository";
 import { getSupabaseSessionFromRequest } from "@/lib/server/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -20,11 +21,24 @@ export async function POST(request: NextRequest) {
     }
 
     const session = getSupabaseSessionFromRequest(request);
+    const reporterUserId = session?.user.id ?? null;
+    const adminClient = supabaseAdmin();
 
-    await createQuestionReport(supabaseAdmin(), {
+    const savedReport = await createQuestionReport(adminClient, {
       ...report,
-      reporterUserId: session?.user.id ?? null,
+      reporterUserId,
     });
+
+    try {
+      await sendQuestionReportNotification(adminClient, {
+        ...report,
+        reportId:
+          savedReport && typeof savedReport.id === "string" ? savedReport.id : null,
+        reporterUserId,
+      });
+    } catch {
+      // Reporting should not fail for players just because notification email failed.
+    }
 
     return NextResponse.json({
       message: "Thanks. We'll review this question.",

@@ -4,10 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
 
 const createQuestionReport = vi.fn();
+const sendQuestionReportNotification = vi.fn();
 const supabaseAdmin = vi.fn();
 
 vi.mock("@/lib/server/questionReportsRepository", () => ({
   createQuestionReport,
+}));
+
+vi.mock("@/lib/server/questionReportNotifications", () => ({
+  sendQuestionReportNotification,
 }));
 
 vi.mock("@/lib/supabaseAdmin", () => ({
@@ -54,6 +59,7 @@ describe("POST /api/question-reports", () => {
       id: "report-1",
       question_id: questionId,
     });
+    sendQuestionReportNotification.mockResolvedValue({ sent: true });
   });
 
   it("stores a guest report with normalized values", async () => {
@@ -71,6 +77,17 @@ describe("POST /api/question-reports", () => {
     expect(createQuestionReport).toHaveBeenCalledWith(
       { tag: "admin" },
       {
+        questionId,
+        reporterUserId: null,
+        context: "sport_quiz",
+        reason: "unclear_question",
+        note: "This wording felt confusing.",
+      },
+    );
+    expect(sendQuestionReportNotification).toHaveBeenCalledWith(
+      { tag: "admin" },
+      {
+        reportId: "report-1",
         questionId,
         reporterUserId: null,
         context: "sport_quiz",
@@ -107,6 +124,33 @@ describe("POST /api/question-reports", () => {
         note: null,
       }),
     );
+    expect(sendQuestionReportNotification).toHaveBeenCalledWith(
+      { tag: "admin" },
+      expect.objectContaining({
+        reportId: "report-1",
+        reporterUserId: "user-123",
+      }),
+    );
+  });
+
+  it("does not fail the player report when notification email fails", async () => {
+    sendQuestionReportNotification.mockRejectedValue(new Error("email down"));
+
+    const { POST } = await import("@/app/api/question-reports/route");
+    const response = await POST(
+      buildRequest({
+        questionId,
+        context: "daily_challenge",
+        reason: "wrong_answer",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(createQuestionReport).toHaveBeenCalled();
+    expect(sendQuestionReportNotification).toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      message: "Thanks. We'll review this question.",
+    });
   });
 
   it("rejects invalid reports before inserting", async () => {
