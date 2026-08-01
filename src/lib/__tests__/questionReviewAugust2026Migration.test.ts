@@ -46,6 +46,8 @@ describe("August 2026 question review migration", () => {
           "Which team beat UCLA in the 1974 national semifinals before winning the title?",
         finalText:
           "In the 1974 NCAA men's basketball semifinals, which team ended UCLA's run of seven straight national titles with a double-overtime win, then claimed the championship?",
+        sourceUrl:
+          "https://www.ncaa.com/news/basketball-men/article/2020-05-18/1974-ncaa-tournament-bracket-scores-stats-records",
         changesDifficulty: false,
       },
       {
@@ -55,6 +57,8 @@ describe("August 2026 question review migration", () => {
           "Which matchup was the first college football game broadcast on radio?",
         finalText:
           "In 1921, which college football rivalry matchup became the first game broadcast on radio?",
+        sourceUrl:
+          "https://www.ncaa.com/news/ncaa/article/2020-01-31/college-football-history-notable-firsts-and-milestones",
         changesDifficulty: false,
       },
       {
@@ -64,6 +68,8 @@ describe("August 2026 question review migration", () => {
           "Which school won the 1997 national title behind freshman Mike Bibby?",
         finalText:
           "Which school won the 1997 NCAA men's basketball title behind freshman phenom Mike Bibby, knocking off three No. 1 seeds along the way?",
+        sourceUrl:
+          "https://www.ncaa.com/news/basketball-men/article/2020-05-08/1997-ncaa-tournament-bracket-scores-stats-records",
         changesDifficulty: false,
       },
       {
@@ -71,6 +77,7 @@ describe("August 2026 question review migration", () => {
         sport: "cbb",
         priorText: "Coach K built a dynasty on which college basketball campus?",
         finalText: '"Coach K" built a dynasty on which college basketball campus?',
+        sourceUrl: "https://goduke.com/staff-directory/mike-krzyzewski/159",
         changesDifficulty: false,
       },
       {
@@ -80,6 +87,8 @@ describe("August 2026 question review migration", () => {
           "Which program owns the major-college record 47-game winning streak?",
         finalText:
           "Which college football program owns the major-college record with a 47-game winning streak from 1953 to 1957?",
+        sourceUrl:
+          "https://www.ncaa.com/news/football/article/2018-11-02/longest-winning-streaks-college-football-history",
         changesDifficulty: true,
       },
       {
@@ -89,6 +98,8 @@ describe("August 2026 question review migration", () => {
           "Who is the all-time leading scorer in Division I men's basketball?",
         finalText:
           "Without a 3-point line or shot clock, which player scored 3,667 points in just three varsity seasons to become Division I men's basketball's all-time leading scorer?",
+        sourceUrl:
+          "https://www.ncaa.com/news/basketball-men/article/2020-11-09/all-time-scoring-leaders-32-mens-college-basketball-conferences",
         changesDifficulty: true,
       },
       {
@@ -97,6 +108,7 @@ describe("August 2026 question review migration", () => {
         priorText: "Who was the first West Coast player to win the Heisman Trophy?",
         finalText:
           "Which Portland, Oregon, high school product became the first player from the West Coast to win the Heisman Trophy in 1962?",
+        sourceUrl: "https://www.heisman.com/about-the-heisman/milestones/",
         changesDifficulty: false,
       },
       {
@@ -105,6 +117,8 @@ describe("August 2026 question review migration", () => {
         priorText: "Who coached UConn through its dominant 2023 men's title run?",
         finalText:
           "After a 31-8 season and six double-digit NCAA tournament wins, who coached UConn to the 2023 men's basketball national title?",
+        sourceUrl:
+          "https://www.ncaa.com/live-updates/basketball-men/d1/uconn-rolls-again-double-digit-win-advances-national-title",
         changesDifficulty: false,
       },
     ];
@@ -116,6 +130,7 @@ describe("August 2026 question review migration", () => {
       const sportLiteral = postgresLiteral(update.sport);
       const idLiteral = postgresLiteral(update.id);
 
+      expect(unit).toMatch(/from\s+public\.sports\s+s/i);
       expect(unit).toContain(`question_text = ${finalLiteral}`);
       expect(unit).toMatch(
         new RegExp(
@@ -130,12 +145,18 @@ describe("August 2026 question review migration", () => {
         expect(unit).not.toMatch(/\bdifficulty\s*=/);
       }
 
-      expect(unit).toMatch(/\bsource_notes\s*=/);
+      expect(unit).toMatch(
+        new RegExp(
+          `source_notes\\s*=\\s*[^;]*${escapeRegExp(update.sourceUrl)}`,
+          "i",
+        ),
+      );
       expect(unit).toContain("reviewed_at = timezone('utc', now())");
       expect(unit).toContain("updated_at = timezone('utc', now())");
       expect(unit.match(/get diagnostics updated_count = row_count;/g)).toHaveLength(1);
-      expect(unit.match(/if updated_count <> 1 then/g)).toHaveLength(1);
-      expect(unit).toMatch(/raise exception[\s\S]*updated_count/);
+      expect(unit).toMatch(
+        /if\s+updated_count\s*<>\s*1\s+then[\s\S]*?raise\s+exception[\s\S]*?updated_count[\s\S]*?end\s+if\s*;/i,
+      );
     }
 
     expect(migration).not.toContain("0905e82a-abcb-4861-84cc-8e3e0509d079");
