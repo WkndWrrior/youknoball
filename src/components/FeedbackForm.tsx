@@ -257,9 +257,9 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
         aria-hidden="true"
         className="absolute left-[-10000px] top-auto h-px w-px overflow-hidden"
       >
-        <label htmlFor={`${formId}-website`}>Website</label>
+        <label htmlFor={`${formId}-feedback-check`}>Form check</label>
         <input
-          id={`${formId}-website`}
+          id={`${formId}-feedback-check`}
           name="feedback_check_7f3c"
           type="text"
           value={website}

@@ -45,11 +45,13 @@ function createResponse({
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
 
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 function installFetch(response: Response | Promise<Response>) {
@@ -90,6 +92,14 @@ function getForm() {
   }
 
   return form;
+}
+
+function getFormControls(form = getForm()) {
+  return Array.from(
+    form.querySelectorAll<
+      HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement
+    >("input, textarea, button"),
+  );
 }
 
 function fillValidFields(email = "player@example.com") {
@@ -150,11 +160,7 @@ describe("FeedbackForm behavior", () => {
     fireEvent.submit(form);
 
     expect(form.getAttribute("aria-busy")).toBe("true");
-    const controls = Array.from(
-      form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>(
-        "input, textarea, button",
-      ),
-    );
+    const controls = getFormControls(form);
     expect(controls.length).toBeGreaterThan(0);
     expect(controls.every((control) => control.disabled)).toBe(true);
 
@@ -165,6 +171,56 @@ describe("FeedbackForm behavior", () => {
     expect((await screen.findByRole("status")).textContent).toBe(
       DEFAULT_SUCCESS_MESSAGE,
     );
+    expect(form.getAttribute("aria-busy")).toBe("false");
+    expect(getFormControls(form).every((control) => !control.disabled)).toBe(
+      true,
+    );
+  });
+
+  it("preserves inputs and restores controls after a rejected fetch, then retries", async () => {
+    const request = createDeferred<Response>();
+    installFetch(request.promise);
+    renderFeedbackForm();
+    fillValidFields();
+    fireEvent.click(screen.getByRole("radio", { name: "Bug" }));
+    fireEvent.change(getHoneypot(), { target: { value: "bot value" } });
+    const form = getForm();
+
+    fireEvent.submit(form);
+    expect(form.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => {
+      request.reject(new TypeError("Network unavailable."));
+      try {
+        await request.promise;
+      } catch {
+        // The component handles the same rejection and restores its controls.
+      }
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Network unavailable.",
+    );
+    expect(form.getAttribute("aria-busy")).toBe("false");
+    expect(getFormControls(form).every((control) => !control.disabled)).toBe(
+      true,
+    );
+    expect(getMessageField().value).toBe(
+      "The category selector needs clearer focus styles.",
+    );
+    expect(getEmailField().value).toBe("player@example.com");
+    expect(getHoneypot().value).toBe("bot value");
+    expect(
+      (screen.getByRole("radio", { name: "Bug" }) as HTMLInputElement).checked,
+    ).toBe(true);
+
+    const retryFetch = installFetch(
+      createResponse({ ok: true, payload: { message: "Recovered." } }),
+    );
+    fireEvent.submit(form);
+
+    expect((await screen.findByRole("status")).textContent).toBe("Recovered.");
+    expect(retryFetch).toHaveBeenCalledTimes(1);
   });
 
   it("resets every input and feedback type after success", async () => {
@@ -335,6 +391,8 @@ describe("FeedbackForm behavior", () => {
 
     expect(honeypot.name).toBeTruthy();
     expect(honeypot.name).not.toMatch(/website|url|email|address/i);
+    expect(honeypot.id).not.toMatch(/website|url|email|address/i);
+    expect(honeypot.labels?.item(0)?.textContent).toBe("Form check");
     expect(honeypot.closest('[aria-hidden="true"]')).not.toBeNull();
     expect(honeypot.tabIndex).toBe(-1);
     expect(honeypot.autocomplete).toBe("off");
