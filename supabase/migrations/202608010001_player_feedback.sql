@@ -9,7 +9,7 @@ create table if not exists public.feedback_submissions (
     check (status in ('new', 'reviewing', 'resolved', 'dismissed')),
   reviewer_notes text,
   reviewed_at timestamptz,
-  created_at timestamptz not null default timezone('utc', now())
+  created_at timestamptz not null default now()
 );
 
 create index if not exists feedback_submissions_status_created_at_idx
@@ -21,7 +21,7 @@ create index if not exists feedback_submissions_reporter_user_id_idx
 
 alter table public.feedback_submissions enable row level security;
 
-revoke all on public.feedback_submissions from anon, authenticated;
+revoke all on public.feedback_submissions from public, anon, authenticated;
 
 comment on table public.feedback_submissions is
   'Private storage for player feedback submissions.';
