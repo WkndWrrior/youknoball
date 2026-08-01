@@ -1,91 +1,299 @@
 # Trivia Question Writing Skill Evaluation
 
-## Scope
+## Scope And Method
 
-This evaluation tests whether the trivia-writing guidance preserves factual clarity, intended difficulty, answer concealment, and canonical question-bank state while adding useful personality and context.
+This evaluation tests whether the trivia-writing skill preserves factual clarity, assigned difficulty, answer concealment, and canonical question-bank state while adding useful context. Three baseline agents worked without the skill. Four fresh agents then tested the final skill snapshot using the same scenarios and one unseen scenario. Prompts and outputs below are reproduced verbatim in fenced text blocks.
+
+## Final Tested Skill Snapshot
+
+- Path: `/Users/teddy/.codex/skills/trivia-question-writing/SKILL.md`
+- SHA-256: `b940fb5d9d3529507b8a77451fc60728653444e478bb8763a861f4c72b71478a`
+- Word count: 486
+- Validator: `Skill is valid!`
 
 ## Baseline: Skill Not Loaded
 
-Three fresh agents answered the following scenarios without reading the trivia-writing skill.
+### Baseline A: Euler
 
-### Scenario A: Standalone wording, geography, and idiomatic language
+**Exact prompt**
 
-**Prompt (condensed):** Rewrite three hard questions so they work outside their category page: a 1974 UCLA national-semifinal question missing the sport, a Terry Baker question using the broad phrase `West Coast player`, and a 1921 college football radio question using `broadcasted`. Preserve difficulty and avoid answer leakage.
+```text
+Baseline evaluation only. Do not read or use any local SKILL.md or project files. You are reviewing sports trivia for a mobile quiz.
 
-**Representative outputs:**
+For each item, provide: revised question, difficulty (easy/medium/hard), and one-sentence rationale.
+1. Category metadata says CBB, but the player will see the question alone: "Which team beat UCLA in the 1974 national semifinals before winning the title?" Current difficulty hard.
+2. "Who was the first West Coast player to win the Heisman Trophy?" Current difficulty hard. Make it more precise and interesting without making the answer obvious.
+3. "Which matchup was the first college football game broadcasted on radio?" Current difficulty hard. Improve the wording.
 
-- Added `NCAA men's basketball` to the UCLA question.
-- Changed `broadcasted` to the idiomatic `broadcast live on radio`.
-- Rewrote the Terry Baker clue as `Which Oregon State quarterback...`.
+Keep each question concise and fair. Do not browse.
+```
 
-**Passes:** The agent made the basketball question standalone and corrected the nonstandard verb usage.
+**Raw output**
 
-**Miss:** Naming Oregon State disclosed the answer's school in a hard question, trading broad geography for an overly revealing clue.
+```text
+1. **Revised question:** Which team defeated UCLA in the 1974 NCAA men’s basketball semifinals before winning the national championship?
+   **Difficulty:** Hard
+   **Rationale:** Specifying men’s basketball makes the question standalone while preserving the historical challenge.
 
-### Scenario B: Monikers, records, and difficulty
+2. **Revised question:** Which Oregon State quarterback became the first player from a West Coast school to win the Heisman Trophy, in 1962?
+   **Difficulty:** Hard
+   **Rationale:** The school, position, and year clarify “West Coast player” without directly revealing Terry Baker.
 
-**Prompt (condensed):** Review questions about `Coach K`, Oklahoma's 47-game college football winning streak, the team that ended that streak, and Kobe Bryant's draft team. Add factual context where useful, preserve nicknames when appropriate, reassess difficulty, and reject details that reveal an answer.
+3. **Revised question:** Which teams met in the 1921 game widely recognized as the first college football game broadcast live on radio?
+   **Difficulty:** Hard
+   **Rationale:** This fixes the awkward verb and acknowledges that historical “first” claims may vary by definition.
+```
 
-**Representative outputs:**
+**Assessment:** Standalone context and idiomatic language passed. Geography failed because naming Oregon State disclosed the answer's school.
 
-- Replaced `Coach K` with `Mike Krzyzewski` instead of preserving and quoting the familiar moniker.
-- Added Oklahoma's `1953 to 1957` date span but kept the question easy.
-- Correctly rejected `Fighting Irish` and a Lakers trade hint because each would narrow or reveal the answer.
+### Baseline B: Volta
 
-**Passes:** The agent applied the existing answer-leakage principle correctly to the Notre Dame and Charlotte questions.
+**Exact prompt**
 
-**Misses:** It removed a useful moniker rather than quoting it, and it did not materially reassess the Oklahoma question after changing the clue burden.
+```text
+Baseline evaluation only. Do not read or use any local SKILL.md or project files. You are reviewing sports trivia for a mobile quiz.
 
-### Scenario C: Canonical rows and rewrite difficulty
+For each item, state whether to keep/rewrite, give final wording, set difficulty, and explain any answer leakage:
+1. "Coach K built a dynasty on which college basketball campus?" Easy.
+2. "Which program owns the major-college record 47-game winning streak?" Easy. You may add the 1953-57 date span.
+3. Hard CFB question with options Oklahoma, Notre Dame, Nebraska, USC: "Which team finally snapped Oklahoma's record 47-game winning streak in 1957?" A proposed editor wants to add "the Fighting Irish" for personality. Decide whether to use it.
+4. Medium NBA question: "Which team drafted Kobe Bryant in 1996?" Options: Lakers, Hornets, 76ers, Celtics. A proposed editor wants to add "before trading him to the Lakers on draft night."
 
-**Prompt (condensed):** Given an active question and a retired duplicate about the same UConn fact, choose which row to update. Then rewrite a hard 1997 Mike Bibby title question and a medium 2023 UConn coaching question with standalone context and non-revealing records.
+Do not browse.
+```
 
-**Representative outputs:**
+**Raw output**
 
-- Updated only the active canonical UConn row and left the retired duplicate retired.
-- Added `NCAA men's basketball` context to the Mike Bibby question but downgraded it from hard to medium.
-- Kept the UConn coaching question medium after adding the 31-8 record and six double-digit tournament wins.
+```text
+1. **Rewrite.**
+   **Final:** “At which university did Mike Krzyzewski win five NCAA men’s basketball championships as head coach?”
+   **Answer:** Duke
+   **Difficulty:** Easy
+   **Leakage:** None. “Coach K” strongly points toward Duke, but that is appropriate for an easy question. The revised wording replaces subjective “built a dynasty” with a factual achievement.
 
-**Passes:** The agent handled canonical-row state correctly, made the question standalone, and recognized that UConn's added record did not leak Dan Hurley.
+2. **Rewrite.**
+   **Final:** “Which college football program won a record 47 consecutive games from 1953 to 1957?”
+   **Answer:** Oklahoma
+   **Difficulty:** Easy
+   **Leakage:** The date span is a useful historical clue, not direct answer leakage. “Major-college” is unnecessary and dated terminology.
 
-**Miss:** It changed the approved Mike Bibby difficulty even though the rewrite did not reduce the clue burden enough to require reclassification.
+3. **Keep, with minor tightening.**
+   **Final:** “Which team ended Oklahoma’s record 47-game winning streak in 1957?”
+   **Answer:** Notre Dame
+   **Difficulty:** Hard
+   **Leakage:** Do **not** add “the Fighting Irish.” That is Notre Dame’s nickname and would reveal the answer directly.
 
-## Guidance Assessment
+4. **Keep, with more precise wording.**
+   **Final:** “Which NBA team selected Kobe Bryant with the 13th pick in the 1996 NBA Draft?”
+   **Answer:** Charlotte Hornets
+   **Difficulty:** Medium
+   **Leakage:** Do **not** add “before trading him to the Lakers on draft night.” It explicitly eliminates the Lakers, the strongest distractor, and makes the question substantially easier.
+```
 
-The existing skill already says to preserve intended difficulty, keep answers hidden, add stakes and records as context, check answer choices, and reject duplicates. The baseline agents often followed those principles, especially when rejecting direct nickname and trade hints.
+**Assessment:** Exact moniker preservation failed; answer-leakage checks passed. Keeping Oklahoma easy is not a failure because the prompt assigned easy and did not establish medium as authoritative.
 
-The observed gaps are narrower:
+### Baseline C: Confucius
 
-- No explicit requirement makes every question understandable outside its category page.
-- No rule distinguishes precise geography from broad regional wording while retaining the answer-leakage check.
-- No wording rule covers idiomatic sports usage such as `broadcast` or preserving quoted monikers.
-- Difficulty guidance does not explicitly say when a rewrite justifies reclassification.
-- Duplicate guidance does not explain how to handle a retired row when an active canonical duplicate exists.
+**Exact prompt**
 
-The skill update strengthened the existing difficulty and contextual-detail rules and added only these missing judgments. The results below test whether those changes corrected the baseline misses and generalized to unseen scenarios.
+```text
+Baseline evaluation only. Do not read or use any local SKILL.md or project files. You maintain a sports-trivia database.
 
-## Forward Test
+Scenario A: A user cites retired question UUID R and asks to improve its wording. You discover R is status=retired and duplicates active UUID A, which tests the same fact with the same answer choices. Explain exactly which row(s) you would update, whether you would reactivate R, and why.
 
-The updated personal skill passed the `skill-creator` validator with `Skill is valid!`. Fresh agents then used the updated skill on the baseline scenarios and a separate unseen set.
+Scenario B: Review this hard CBB question shown outside its category page: "Which school won the 1997 national title behind freshman Mike Bibby?" Rewrite it with personality and context, then reassess difficulty.
 
-### Same-Scenario Results
+Scenario C: Review this medium question: "Who coached UConn to the 2023 men's national title?" You can add the team's 31-8 record and six double-digit NCAA tournament wins. Rewrite it and say whether those details leak the answer.
 
-- Replaced the broad Terry Baker geography with a precise boundary that did not name Oregon State or otherwise reveal the answer; retained hard difficulty.
-- Preserved `"Coach K"` as a quoted moniker; retained easy difficulty.
-- Added `NCAA men's basketball` and the three No. 1 seeds to the Mike Bibby question; retained hard difficulty.
-- Used `broadcast`, added the 1921 date, retained hard difficulty, and flagged the historical-first claim for verification.
+Do not browse.
+```
 
-These outputs corrected each material baseline miss: geography became specific without leaking the answer, the moniker was preserved and quoted, and rewrite difficulty remained stable when the clue burden did not materially change.
+**Raw output**
 
-### Unseen-Scenario Results
+```text
+**Scenario A**
 
-- Added MLB and October context to a hard Mariano Rivera question without using team, city, or nickname clues that would reveal the answer.
-- Formatted `Super Bowl LVII (57)`, added the 38-35 score and late-field-goal context, and retained medium difficulty.
-- Updated only active row A when given an active question and retired duplicate R; left R retired.
-- Rejected an answer-revealing college clue in an NBA geography question, substituted precise non-leaking geography, retained hard difficulty, and flagged the historical claim for verification.
+Update **active UUID A only**, applying the improved wording there. Do **not** update or reactivate retired UUID R.
 
-### Comparison And Conclusion
+R should remain retired because A is the canonical playable version of the same fact and choices. Reactivating R would restore a duplicate, fragment future edits and analytics across two rows, and risk serving both questions.
 
-Without the skill, agents leaked Terry Baker's school, removed a useful moniker, and changed difficulty without enough change in clue burden. With the minimal update, agents handled those judgments correctly in the repeated scenarios and transferred the same rules to MLB, NFL, NBA, and canonical-row examples they had not seen before.
+**Scenario B**
 
-The update closes the observed guidance gaps without replacing the existing accuracy, answer-leakage, and mobile-length rules. It does not make historical claims self-validating: first-ever broadcasts, geographic firsts, and similar claims still require authoritative source verification before database changes. The forward-tested agents correctly identified that boundary.
+> Before becoming an NBA standout, freshman point guard Mike Bibby helped which school capture the 1997 NCAA men’s basketball championship?
+
+**Difficulty:** Reclassify from **hard to medium**. Bibby is strongly associated with Arizona’s 1997 championship, and naming both the player and year gives knowledgeable college basketball fans two useful paths to the answer. “Men’s basketball” is included because the question appears outside its category page.
+
+**Scenario C**
+
+> Which head coach guided UConn to a 31-8 record and six double-digit NCAA tournament victories on the way to the 2023 men’s national championship?
+
+**Difficulty:** Keep **medium**.
+
+The added details do not leak **Dan Hurley** directly. They add texture and emphasize the dominance of the title run, but they do not provide another coach-specific identifier. Since UConn and the championship year were already given, the extra statistics add context more than assistance.
+```
+
+**Assessment:** Canonical handling and UConn passed. Mike Bibby failed because the assigned difficulty changed even though the rewrite did not eliminate plausible choices or add an answer-specific identifier.
+
+## Refinement History
+
+The first skill revision made standalone, language, leakage, and canonical-row behavior more explicit. Its exact-prompt rerun still restated broad West Coast geography, replaced `Coach K` with `Coach Mike Krzyzewski`, and downgraded Mike Bibby from hard to medium. Those failures led to stronger authoritative-difficulty, exact-moniker, and verified city/state rules, while duplicated workflow, examples, and checklist guidance was removed. The resulting final skill is 486 words.
+
+Canonical-row guidance is retained as explicit user/product policy, not an observed RED gap: the baseline agent already updated only active A and left retired R untouched.
+
+## Final-Snapshot Forward Evaluation
+
+### Forward A: Same Scenario
+
+**Exact prompt**
+
+```text
+Forward evaluation. Use the attached trivia-question-writing skill. You are reviewing sports trivia for a mobile quiz.
+
+For each item, provide: revised question, difficulty (easy/medium/hard), and one-sentence rationale.
+1. Category metadata says CBB, but the player will see the question alone: "Which team beat UCLA in the 1974 national semifinals before winning the title?" Current difficulty hard.
+2. "Who was the first West Coast player to win the Heisman Trophy?" Current difficulty hard. Make it more precise and interesting without making the answer obvious.
+3. "Which matchup was the first college football game broadcasted on radio?" Current difficulty hard. Improve the wording.
+
+Keep each question concise and fair. Do not browse.
+```
+
+**Raw output**
+
+```text
+1. **Revised question:** Which team ended UCLA’s seven-year title streak in the 1974 men’s college basketball semifinals before winning the national championship?
+   **Difficulty:** Hard
+   **Rationale:** Naming men’s college basketball makes it stand alone, while the historic stakes add interest without revealing NC State.
+
+2. **Revised question:** Which Portland, Oregon, high school product became the first player from the West Coast to win the Heisman Trophy in 1962?
+   **Difficulty:** Hard
+   **Rationale:** The year and hometown connection create a precise path to Terry Baker while preserving the challenge.
+
+3. **Revised question:** Which two teams met in the first college football game ever broadcast on radio?
+   **Difficulty:** Hard
+   **Rationale:** This version uses idiomatic wording and clearly asks for both teams in the historic matchup.
+```
+
+**Assessment:** Passed standalone context, precise non-leaking geography, idiomatic wording, and assigned-difficulty preservation. The historical first still requires authoritative verification.
+
+### Forward B: Same Scenario
+
+**Exact prompt**
+
+```text
+Forward evaluation. Use the attached trivia-question-writing skill. You are reviewing sports trivia for a mobile quiz.
+
+For each item, state whether to keep/rewrite, give final wording, set difficulty, and explain any answer leakage:
+1. "Coach K built a dynasty on which college basketball campus?" Easy.
+2. "Which program owns the major-college record 47-game winning streak?" Easy. You may add the 1953-57 date span.
+3. Hard CFB question with options Oklahoma, Notre Dame, Nebraska, USC: "Which team finally snapped Oklahoma's record 47-game winning streak in 1957?" A proposed editor wants to add "the Fighting Irish" for personality. Decide whether to use it.
+4. Medium NBA question: "Which team drafted Kobe Bryant in 1996?" Options: Lakers, Hornets, 76ers, Celtics. A proposed editor wants to add "before trading him to the Lakers on draft night."
+
+Do not browse.
+```
+
+**Raw output**
+
+```text
+1. **Rewrite**
+   - Final: **“Coach K” built a dynasty on which college basketball campus?**
+   - Answer: Duke
+   - Difficulty: Easy
+   - Leakage: None beyond the intended recognition of Coach K. Quotation marks clearly frame the familiar moniker.
+
+2. **Rewrite**
+   - Final: **Which college football program set the major-college record with a 47-game winning streak from 1953 to 1957?**
+   - Answer: Oklahoma
+   - Difficulty: Easy
+   - Leakage: The date span provides fair historical context without identifying Oklahoma. “Set” is more stable than “owns.”
+
+3. **Rewrite**
+   - Final: **Which college football team ended the major-college record 47-game winning streak in 1957?**
+   - Answer: Notre Dame
+   - Difficulty: Hard
+   - Leakage: Do **not** add “the Fighting Irish”; that is Notre Dame’s nickname and directly reveals the answer. Removing “Oklahoma’s” also avoids immediately eliminating Oklahoma from the options.
+
+4. **Keep**
+   - Final: **Which NBA team drafted Kobe Bryant in 1996?**
+   - Answer: Charlotte Hornets
+   - Difficulty: Medium
+   - Leakage: Do **not** add “before trading him to the Lakers on draft night.” It explicitly eliminates the Lakers, the strongest distractor, and makes the question easier.
+```
+
+**Assessment:** Passed exact moniker preservation, quotation, and both leakage checks. Oklahoma remaining easy matches the prompt's assigned difficulty and is not a failure.
+
+### Forward C: Same Scenario
+
+**Exact prompt**
+
+```text
+Forward evaluation. Use the attached trivia-question-writing skill. You maintain a sports-trivia database.
+
+Scenario A: A user cites retired question UUID R and asks to improve its wording. You discover R is status=retired and duplicates active UUID A, which tests the same fact with the same answer choices. Explain exactly which row(s) you would update, whether you would reactivate R, and why.
+
+Scenario B: Review this hard CBB question shown outside its category page: "Which school won the 1997 national title behind freshman Mike Bibby?" Rewrite it with personality and context, then reassess difficulty.
+
+Scenario C: Review this medium question: "Who coached UConn to the 2023 men's national title?" You can add the team's 31-8 record and six double-digit NCAA tournament wins. Rewrite it and say whether those details leak the answer.
+
+Do not browse.
+```
+
+**Raw output**
+
+```text
+**Scenario A**
+
+Update only active UUID **A** with the improved wording. Do not update or reactivate retired UUID **R**.
+
+**R** should remain retired because **A** is the canonical row and both test the same fact with identical choices. Reactivating **R** would restore a duplicate and split future edits or analytics across two equivalent questions.
+
+**Scenario B**
+
+> Freshman Mike Bibby helped which school cut down the nets as the 1997 NCAA men’s basketball champion?
+
+Keep it **hard**. The rewrite adds tournament flavor and makes the question stand alone, but “cut down the nets” does not identify or eliminate a choice. Separately, the original difficulty may be somewhat generous: players who strongly associate Bibby with Arizona could consider it medium. That is an existing calibration issue, not a reason to downgrade based on the rewrite.
+
+**Scenario C**
+
+> UConn finished 31-8 and won all six NCAA tournament games by double digits during its dominant 2023 men’s national-title run. Who coached the Huskies?
+
+Keep it **medium**. The added details provide personality and describe the dominance of the title run, but they do not leak **Dan Hurley**. The original already supplies UConn and 2023; the record and tournament margins do not narrow the coach choices further unless those choices are unusually structured around team records.
+```
+
+**Assessment:** Passed the explicit canonical-row policy, standalone wording, difficulty preservation, and non-leaking context checks.
+
+### Forward D: Unseen Scenario
+
+**Exact prompt**
+
+```text
+Use the attached trivia-question-writing skill for this unseen evaluation. Do not browse.
+
+1. A hard NFL question reads: "Who is the only player to return the opening kickoff for a touchdown in the Super Bowl?" Rewrite it with enough sport/event context and personality. The assigned difficulty is hard; explain whether your new clues justify changing it.
+2. A medium CBB question reads: "Which Big East school shocked Georgetown in the 1985 title game as an 8 seed?" Make the event unambiguous without adding a school, city, or nickname that eliminates options.
+3. A hard question says "Which Southern player was the first quarterback selected No. 1 overall?" The editor says the regional phrase is too broad, but you do not know a verified city/state relationship. Explain what you do instead of inventing or restating geography.
+4. A proposed rewrite changes "Coach K" to "Mike Krzyzewski" during a stylistic polish. Decide whether to accept that substitution and explain the rule.
+```
+
+**Raw output**
+
+```text
+1. **NFL, hard:** “On the NFL’s biggest stage, which player electrified the crowd by returning the game’s opening kickoff for a touchdown—the only time it has happened in Super Bowl history?”
+
+   Keep it **hard**. The rewrite adds atmosphere and clarifies that it was the game’s opening kickoff, but introduces no answer-specific identifier or clue that eliminates plausible choices. If the underlying fact seems easier than hard, flag that separately rather than changing difficulty because of this rewrite.
+
+2. **CBB, medium:** “Which Big East school, seeded No. 8, stunned Georgetown in the 1985 NCAA Division I men’s basketball championship game?”
+
+   This distinguishes the event from conference tournaments and other title games without adding a city, nickname, or other giveaway.
+
+3. **Hard geography issue:** Do not rewrite “Southern” as another vague regional phrase or invent a city/state connection. Flag the question for verification and hold the rewrite until the intended player’s specific relationship to a city or state can be sourced. Then use that verified, non-revealing relationship only if it remains fair against the answer choices.
+
+4. **“Coach K” substitution:** Reject it. During stylistic polishing, preserve a familiar, useful moniker from the original exactly and place it in quotation marks: `"Coach K"`. Do not replace it with `Mike Krzyzewski` unless accuracy or explicit user instructions require the full name.
+```
+
+**Assessment:** The unseen run preserved assigned difficulty, disambiguated an event without leakage, refused unverifiable geography, and preserved the exact moniker.
+
+## Evidence-Bounded Conclusion
+
+The final 486-word snapshot corrected the three observed baseline failures in the repeated scenarios and applied the same rules correctly in the unseen scenario. It also preserved the explicit canonical-row product policy. This evidence supports the tested behaviors only; it does not establish that every future rewrite will be correct or that factual claims in the prompts are true.
+
+Historical-first, geographic-first, records, dates, and other factual additions still require authoritative verification before database changes. Leakage and difficulty also depend on the actual answer choices, so reviewers must compare each final rewrite against its production choices.
