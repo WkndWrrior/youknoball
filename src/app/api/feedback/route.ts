@@ -11,7 +11,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
-const MAX_FEEDBACK_REQUEST_BYTES = 8 * 1024;
+const MAX_FEEDBACK_REQUEST_BYTES = 32 * 1024;
 
 const invalidFeedbackResponse = () =>
   NextResponse.json({ message: "Invalid feedback." }, { status: 400 });

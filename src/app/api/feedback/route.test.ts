@@ -1,6 +1,11 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  MAX_FEEDBACK_EMAIL_LENGTH,
+  MAX_FEEDBACK_MESSAGE_LENGTH,
+  MAX_FEEDBACK_SOURCE_PATH_LENGTH,
+} from "@/lib/feedback";
 import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
 
 const createFeedbackSubmission = vi.fn();
@@ -160,6 +165,50 @@ describe("POST /api/feedback", () => {
     });
   });
 
+  it("accepts a maximum-valid escaped Unicode payload beneath the transport limit", async () => {
+    const message = "🏀".repeat(MAX_FEEDBACK_MESSAGE_LENGTH);
+    const contactEmail = `${"a".repeat(
+      MAX_FEEDBACK_EMAIL_LENGTH - "@example.com".length,
+    )}@example.com`;
+    const sourcePath = `/${"a".repeat(MAX_FEEDBACK_SOURCE_PATH_LENGTH - 1)}`;
+    const serializedPayload = JSON.stringify({
+      feedbackType: "general",
+      message,
+      contactEmail,
+      sourcePath,
+      website: "",
+    }).replaceAll("🏀", "\\ud83c\\udfc0");
+    const requestBytes = new TextEncoder().encode(serializedPayload).byteLength;
+    const request = new NextRequest("http://localhost/api/feedback", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: serializedPayload,
+    });
+
+    expect(requestBytes).toBeGreaterThan(8 * 1024);
+    expect(requestBytes).toBeLessThan(32 * 1024);
+
+    const { POST } = await import("@/app/api/feedback/route");
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(createFeedbackSubmission).toHaveBeenCalledWith(
+      { tag: "admin" },
+      {
+        feedbackType: "general",
+        message,
+        contactEmail,
+        sourcePath,
+        reporterUserId: null,
+      },
+    );
+    await expect(response.json()).resolves.toEqual({
+      message: "Thanks for helping us make You Kno Ball better.",
+    });
+  });
+
   it("attaches only the server-verified user when the cookie user is forged", async () => {
     const { POST } = await import("@/app/api/feedback/route");
     const response = await POST(
@@ -271,14 +320,14 @@ describe("POST /api/feedback", () => {
       "an oversized message",
       {
         feedbackType: "bug",
-        message: "x".repeat(9_000),
+        message: "x".repeat(40_000),
       },
     ],
     [
       "an oversized unknown field",
       {
         ...validPayload,
-        clientMetadata: "x".repeat(9_000),
+        clientMetadata: "x".repeat(40_000),
       },
     ],
   ])("rejects %s before persistence", async (_case, payload) => {
@@ -300,7 +349,7 @@ describe("POST /api/feedback", () => {
     const request = buildStreamingRequest(
       [
         '{"feedbackType":"bug","message":"',
-        "x".repeat(9_000),
+        "x".repeat(40_000),
         '"}',
       ],
       cancel,
