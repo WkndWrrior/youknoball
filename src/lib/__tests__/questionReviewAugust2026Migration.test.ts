@@ -6,19 +6,26 @@ import { describe, expect, it } from "vitest";
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const dollarQuote = (tag: string, value: string) =>
-  `$${tag}$${value}$${tag}$`;
+const postgresLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
-const extractQuestionReviewBlock = (migration: string, id: string) => {
-  const startMarker = `-- question-review:${id}`;
-  const endMarker = `-- end-question-review:${id}`;
-  const start = migration.indexOf(startMarker);
-  const end = migration.indexOf(endMarker, start + startMarker.length);
+const extractQuestionReviewUnits = (migration: string) => {
+  const starts = Array.from(
+    migration.matchAll(/\bupdate\s+public\.questions\s+q\b/gi),
+    (match) => match.index ?? -1,
+  );
 
-  expect(start).toBeGreaterThanOrEqual(0);
-  expect(end).toBeGreaterThan(start);
+  return starts.map((start, index) =>
+    migration.slice(start, starts[index + 1] ?? migration.length),
+  );
+};
 
-  return migration.slice(start, end + endMarker.length);
+const extractQuestionReviewUnit = (migration: string, id: string) => {
+  const unit = extractQuestionReviewUnits(migration).find((candidate) =>
+    candidate.includes(id),
+  );
+
+  expect(unit).toBeDefined();
+  return unit ?? "";
 };
 
 describe("August 2026 question review migration", () => {
@@ -103,37 +110,32 @@ describe("August 2026 question review migration", () => {
     ];
 
     for (const update of updates) {
-      const block = extractQuestionReviewBlock(migration, update.id);
-      const whereIndex = block.search(/\bwhere\b/i);
-      const predicate = block.slice(whereIndex);
-      const idClause = `q.id = '${update.id}'::uuid`;
-      const priorClause = `q.question_text = ${dollarQuote("prior", update.priorText)}`;
+      const unit = extractQuestionReviewUnit(migration, update.id);
+      const priorLiteral = postgresLiteral(update.priorText);
+      const finalLiteral = postgresLiteral(update.finalText);
+      const sportLiteral = postgresLiteral(update.sport);
+      const idLiteral = postgresLiteral(update.id);
 
-      expect(block.match(/\bupdate\s+public\.questions\b/gi)).toHaveLength(1);
-      expect(block).toContain(
-        `question_text = ${dollarQuote("question", update.finalText)}`,
-      );
-      expect(block).toContain(`s.slug = ${dollarQuote("sport", update.sport)}`);
-      expect(predicate).toContain(idClause);
-      expect(predicate).toContain(priorClause);
-      expect(predicate).toMatch(
+      expect(unit).toContain(`question_text = ${finalLiteral}`);
+      expect(unit).toMatch(
         new RegExp(
-          `${escapeRegExp(idClause)}[\\s\\S]*\\bor\\b[\\s\\S]*${escapeRegExp(priorClause)}`,
+          `where\\s+q\\.sport_id\\s*=\\s*s\\.id\\s+and\\s+s\\.slug\\s*=\\s*${escapeRegExp(sportLiteral)}\\s+and\\s*\\(\\s*q\\.id\\s*=\\s*${escapeRegExp(idLiteral)}\\s*::uuid\\s+or\\s+q\\.question_text\\s*=\\s*${escapeRegExp(priorLiteral)}\\s*\\)`,
+          "i",
         ),
       );
 
       if (update.changesDifficulty) {
-        expect(block).toMatch(/\bdifficulty\s*=\s*'medium'/);
+        expect(unit).toMatch(/\bdifficulty\s*=\s*'medium'/);
       } else {
-        expect(block).not.toMatch(/\bdifficulty\s*=/);
+        expect(unit).not.toMatch(/\bdifficulty\s*=/);
       }
 
-      expect(block).toMatch(/\bsource_notes\s*=/);
-      expect(block).toContain("reviewed_at = timezone('utc', now())");
-      expect(block).toContain("updated_at = timezone('utc', now())");
-      expect(block.match(/get diagnostics updated_count = row_count;/g)).toHaveLength(1);
-      expect(block.match(/if updated_count <> 1 then/g)).toHaveLength(1);
-      expect(block).toMatch(/raise exception[\s\S]*updated_count/);
+      expect(unit).toMatch(/\bsource_notes\s*=/);
+      expect(unit).toContain("reviewed_at = timezone('utc', now())");
+      expect(unit).toContain("updated_at = timezone('utc', now())");
+      expect(unit.match(/get diagnostics updated_count = row_count;/g)).toHaveLength(1);
+      expect(unit.match(/if updated_count <> 1 then/g)).toHaveLength(1);
+      expect(unit).toMatch(/raise exception[\s\S]*updated_count/);
     }
 
     expect(migration).not.toContain("0905e82a-abcb-4861-84cc-8e3e0509d079");
