@@ -8,22 +8,54 @@ const escapeRegExp = (value: string) =>
 
 const postgresLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
-const extractUpdateUnits = (migration: string) => {
+const extractProceduralBody = (migration: string) => {
+  expect(migration.match(/\bdo\s+\$\$/gi)).toHaveLength(1);
+  expect(migration.match(/\bend\s+\$\$\s*;/gi)).toHaveLength(1);
+
+  const wrapper = migration.match(
+    /^\s*do\s+\$\$\s*declare\s+updated_count\s+integer\s*;\s*begin\s+([\s\S]*?)\s+end\s+\$\$\s*;\s*$/i,
+  );
+
+  expect(wrapper).not.toBeNull();
+  return wrapper?.[1] ?? "";
+};
+
+const extractUpdateUnits = (proceduralBody: string) => {
   const starts = Array.from(
-    migration.matchAll(/\bupdate\s+public\.questions\s+q\b/gi),
+    proceduralBody.matchAll(/\bupdate\s+public\.questions\s+q\b/gi),
     (match) => match.index ?? -1,
   );
 
   return starts.map((start, index) =>
-    migration.slice(start, starts[index + 1] ?? migration.length),
+    proceduralBody.slice(start, starts[index + 1] ?? proceduralBody.length),
   );
 };
 
-const findUpdateUnit = (units: string[], id: string) => {
-  const matches = units.filter((unit) => unit.includes(id));
+type ParsedUpdateUnit = {
+  setClause: string;
+  predicate: string;
+  guard: string;
+};
+
+const parseUpdateUnit = (unit: string): ParsedUpdateUnit => {
+  const parsed = unit.match(
+    /^update\s+public\.questions\s+q\s+set\s+([\s\S]*?)\s+from\s+public\.sports\s+s\s+(where[\s\S]*?);\s*(get\s+diagnostics[\s\S]*?end\s+if\s*;)\s*$/i,
+  );
+
+  expect(parsed).not.toBeNull();
+
+  return {
+    setClause: parsed?.[1] ?? "",
+    predicate: parsed?.[2] ?? "",
+    guard: parsed?.[3] ?? "",
+  };
+};
+
+const findUpdateUnit = (units: ParsedUpdateUnit[], id: string) => {
+  const matches = units.filter((unit) => unit.predicate.includes(id));
 
   expect(matches).toHaveLength(1);
-  return matches[0] ?? "";
+  return matches[0] ?? { setClause: "", predicate: "", guard: "" };
 };
 
 type PolishAction = {
@@ -392,19 +424,18 @@ describe("question bank polish migration", () => {
       ),
       "utf8",
     );
-    const units = extractUpdateUnits(migration);
+    const proceduralBody = extractProceduralBody(migration);
+    const units = extractUpdateUnits(proceduralBody).map(parseUpdateUnit);
 
     expect(units).toHaveLength(actions.length);
 
     for (const action of actions) {
-      const unit = findUpdateUnit(units, action.id);
+      const { setClause, predicate, guard } = findUpdateUnit(units, action.id);
       const sportLiteral = postgresLiteral(action.sport);
       const idLiteral = postgresLiteral(action.id);
       const oldTextLiteral = postgresLiteral(action.oldText);
 
-      expect(unit).toMatch(/^update\s+public\.questions\s+q\b/i);
-      expect(unit).toMatch(/from\s+public\.sports\s+s\b/i);
-      expect(unit).toMatch(
+      expect(predicate).toMatch(
         new RegExp(
           `where\\s+q\\.sport_id\\s*=\\s*s\\.id\\s+and\\s+s\\.slug\\s*=\\s*${escapeRegExp(sportLiteral)}\\s+and\\s+q\\.status\\s*=\\s*'ready'\\s+and\\s*\\(\\s*q\\.id\\s*=\\s*${escapeRegExp(idLiteral)}\\s*::uuid\\s+or\\s+q\\.question_text\\s*=\\s*${escapeRegExp(oldTextLiteral)}\\s*\\)`,
           "i",
@@ -412,25 +443,38 @@ describe("question bank polish migration", () => {
       );
 
       if (action.finalText) {
-        expect(unit).toContain(
+        expect(setClause).toContain(
           `question_text = ${postgresLiteral(action.finalText)}`,
         );
       } else {
-        expect(unit).not.toMatch(/\bquestion_text\s*=/i);
+        expect(setClause).not.toMatch(/\bquestion_text\s*=/i);
       }
 
       if (action.finalDifficulty) {
-        expect(unit).toContain(`difficulty = '${action.finalDifficulty}'`);
+        expect(setClause).toContain(`difficulty = '${action.finalDifficulty}'`);
       } else {
-        expect(unit).not.toMatch(/\bdifficulty\s*=/i);
+        expect(setClause).not.toMatch(/\bdifficulty\s*=/i);
       }
 
       if (action.action === "retire") {
-        expect(unit).toContain("status = 'retired'");
-        expect(unit).toContain("eligible_for_daily = false");
-        expect(unit).toContain("eligible_for_sport_quiz = false");
+        expect(setClause).toContain("status = 'retired'");
+        expect(setClause).toContain("eligible_for_daily = false");
+        expect(setClause).toContain("eligible_for_sport_quiz = false");
+        expect(setClause.match(/\bstatus\s*=/gi)).toHaveLength(1);
+        expect(setClause.match(/\beligible_for_daily\s*=/gi)).toHaveLength(1);
+        expect(setClause.match(/\beligible_for_sport_quiz\s*=/gi)).toHaveLength(
+          1,
+        );
       } else {
-        expect(unit).not.toContain("status = 'retired'");
+        for (const protectedStateColumn of [
+          "status",
+          "eligible_for_daily",
+          "eligible_for_sport_quiz",
+        ]) {
+          expect(setClause).not.toMatch(
+            new RegExp(`\\b${protectedStateColumn}\\b`, "i"),
+          );
+        }
       }
 
       for (const protectedColumn of [
@@ -440,13 +484,13 @@ describe("question bank polish migration", () => {
         "option_d",
         "correct_option",
       ]) {
-        expect(unit).not.toMatch(
-          new RegExp(`\\b${protectedColumn}\\s*=`, "i"),
+        expect(setClause).not.toMatch(
+          new RegExp(`\\b${protectedColumn}\\b`, "i"),
         );
       }
 
       for (const sourceUrl of action.sourceUrls) {
-        expect(unit).toMatch(
+        expect(setClause).toMatch(
           new RegExp(
             `source_notes\\s*=\\s*'[^']*${escapeRegExp(sourceUrl)}[^']*'`,
             "i",
@@ -454,14 +498,14 @@ describe("question bank polish migration", () => {
         );
       }
 
-      expect(unit).toContain("reviewed_at = timezone('utc', now())");
-      expect(unit).toContain("updated_at = timezone('utc', now())");
+      expect(setClause).toContain("reviewed_at = timezone('utc', now())");
+      expect(setClause).toContain("updated_at = timezone('utc', now())");
       expect(
-        unit.match(/get diagnostics updated_count = row_count;/gi),
+        guard.match(/get diagnostics updated_count = row_count;/gi),
       ).toHaveLength(1);
-      expect(unit.match(/if\s+updated_count\s*<>\s*1\s+then/gi)).toHaveLength(1);
-      expect(unit.match(/raise\s+exception/gi)).toHaveLength(1);
-      expect(unit).toMatch(
+      expect(guard.match(/if\s+updated_count\s*<>\s*1\s+then/gi)).toHaveLength(1);
+      expect(guard.match(/raise\s+exception/gi)).toHaveLength(1);
+      expect(guard).toMatch(
         /get diagnostics updated_count = row_count;\s*if\s+updated_count\s*<>\s*1\s+then\s*raise\s+exception\s+'[^']*'\s*,\s*updated_count\s*;\s*end\s+if\s*;/i,
       );
     }
