@@ -26,6 +26,35 @@ function isFeedbackType(value: unknown): value is FeedbackType {
   );
 }
 
+function exceedsCodePointLimit(value: string, limit: number): boolean {
+  const codePoints = value[Symbol.iterator]();
+  let count = 0;
+
+  while (!codePoints.next().done) {
+    count += 1;
+    if (count > limit) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasUnsafeSourcePathCharacter(value: string): boolean {
+  for (const character of value) {
+    const characterCode = character.charCodeAt(0);
+    if (
+      character === "\\" ||
+      characterCode <= 0x1f ||
+      characterCode === 0x7f
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function parseFeedbackPayload(
   value: unknown,
 ): ParsedFeedbackPayload | null {
@@ -35,7 +64,7 @@ export function parseFeedbackPayload(
 
   const message =
     typeof value.message === "string" ? value.message.trim() : "";
-  if (!message || message.length > MAX_FEEDBACK_MESSAGE_LENGTH) {
+  if (!message || exceedsCodePointLimit(message, MAX_FEEDBACK_MESSAGE_LENGTH)) {
     return null;
   }
 
@@ -48,6 +77,7 @@ export function parseFeedbackPayload(
 
   if (
     value.contactEmail !== undefined &&
+    value.contactEmail !== null &&
     typeof value.contactEmail !== "string"
   ) {
     return null;
@@ -56,7 +86,7 @@ export function parseFeedbackPayload(
   const normalizedEmail = value.contactEmail?.trim().toLowerCase() || null;
   if (
     normalizedEmail &&
-    (normalizedEmail.length > MAX_FEEDBACK_EMAIL_LENGTH ||
+    (exceedsCodePointLimit(normalizedEmail, MAX_FEEDBACK_EMAIL_LENGTH) ||
       !EMAIL_PATTERN.test(normalizedEmail))
   ) {
     return null;
@@ -64,15 +94,19 @@ export function parseFeedbackPayload(
 
   if (
     value.sourcePath !== undefined &&
+    value.sourcePath !== null &&
     typeof value.sourcePath !== "string"
   ) {
     return null;
   }
 
-  const sourcePath = value.sourcePath?.trim() || null;
+  const rawSourcePath =
+    typeof value.sourcePath === "string" ? value.sourcePath : "";
+  const sourcePath = rawSourcePath.trim() || null;
   if (
     sourcePath &&
-    (sourcePath.length > MAX_FEEDBACK_SOURCE_PATH_LENGTH ||
+    (hasUnsafeSourcePathCharacter(rawSourcePath) ||
+      exceedsCodePointLimit(sourcePath, MAX_FEEDBACK_SOURCE_PATH_LENGTH) ||
       !sourcePath.startsWith("/") ||
       sourcePath.startsWith("//") ||
       sourcePath.includes("?") ||

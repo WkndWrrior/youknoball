@@ -44,18 +44,77 @@ describe("feedback", () => {
     expect(FEEDBACK_TYPES).toEqual(["general", "bug", "idea"]);
   });
 
-  it("normalizes blank optional fields to null", () => {
-    expect(
-      parseFeedbackPayload({
+  it.each([
+    ["null", null, null],
+    ["undefined", undefined, undefined],
+    ["blank strings", "   ", "   "],
+  ])(
+    "normalizes %s optional fields to null",
+    (_description, contactEmail, sourcePath) => {
+      expect(
+        parseFeedbackPayload({
+          ...validPayload,
+          contactEmail,
+          sourcePath,
+        }),
+      ).toEqual({
         ...validPayload,
-        contactEmail: "   ",
-        sourcePath: "   ",
-      }),
-    ).toEqual({
-      ...validPayload,
-      contactEmail: null,
-      sourcePath: null,
+        contactEmail: null,
+        sourcePath: null,
+      });
+    },
+  );
+
+  it.each([
+    [
+      "message",
+      { message: "x".repeat(MAX_FEEDBACK_MESSAGE_LENGTH) },
+    ],
+    [
+      "contact email",
+      {
+        contactEmail: `${"a".repeat(
+          MAX_FEEDBACK_EMAIL_LENGTH - "@example.com".length,
+        )}@example.com`,
+      },
+    ],
+    [
+      "source path",
+      {
+        sourcePath: `/${"a".repeat(MAX_FEEDBACK_SOURCE_PATH_LENGTH - 1)}`,
+      },
+    ],
+  ])("accepts a %s at the exact length limit", (_description, fields) => {
+    expect(parseFeedbackPayload({ ...validPayload, ...fields })).toMatchObject(
+      fields,
+    );
+  });
+
+  it("accepts a message with the maximum astral Unicode code points", () => {
+    const message = "🏀".repeat(MAX_FEEDBACK_MESSAGE_LENGTH);
+
+    expect(parseFeedbackPayload({ ...validPayload, message })).toMatchObject({
+      message,
     });
+  });
+
+  it("rejects every ASCII control character in a nonblank source path", () => {
+    const controlCodePoints = [
+      ...Array.from({ length: 0x20 }, (_value, codePoint) => codePoint),
+      0x7f,
+    ];
+
+    for (const codePoint of controlCodePoints) {
+      const controlCharacter = String.fromCodePoint(codePoint);
+
+      expect(
+        parseFeedbackPayload({
+          ...validPayload,
+          sourcePath: `/categories${controlCharacter}hidden`,
+        }),
+        `U+${codePoint.toString(16).padStart(4, "0")}`,
+      ).toBeNull();
+    }
   });
 
   it.each([
@@ -69,8 +128,23 @@ describe("feedback", () => {
       },
     ],
     [
+      "a message with one too many astral Unicode code points",
+      {
+        ...validPayload,
+        message: "🏀".repeat(MAX_FEEDBACK_MESSAGE_LENGTH + 1),
+      },
+    ],
+    [
       "a malformed contact email",
       { ...validPayload, contactEmail: "player at example.com" },
+    ],
+    [
+      "a non-string contact email",
+      { ...validPayload, contactEmail: 42 },
+    ],
+    [
+      "a non-string source path",
+      { ...validPayload, sourcePath: { pathname: "/categories" } },
     ],
     [
       "a contact email over the length limit",
@@ -92,6 +166,18 @@ describe("feedback", () => {
     [
       "a protocol-relative source path",
       { ...validPayload, sourcePath: "//example.com/categories" },
+    ],
+    [
+      "a backslash authority escape",
+      { ...validPayload, sourcePath: "/\\evil.example/x" },
+    ],
+    [
+      "a newline authority escape",
+      { ...validPayload, sourcePath: "/\n/evil.example/x" },
+    ],
+    [
+      "a source path with a trailing control character",
+      { ...validPayload, sourcePath: "/categories\n" },
     ],
     [
       "a source path with a query string",
