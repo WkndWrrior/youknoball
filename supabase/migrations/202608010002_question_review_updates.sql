@@ -11,6 +11,7 @@ begin
   from public.sports s
   where q.sport_id = s.id
     and s.slug = 'cbb'
+    and q.status = 'ready'
     and (
       q.id = '101635c2-dbd2-4384-b954-a8e5bf9594c6'::uuid
       or q.question_text = 'Which team beat UCLA in the 1974 national semifinals before winning the title?'
@@ -30,6 +31,7 @@ begin
   from public.sports s
   where q.sport_id = s.id
     and s.slug = 'cfb'
+    and q.status = 'ready'
     and (
       q.id = '12a9ce1c-9b4b-4e15-a65f-1084b2f43c08'::uuid
       or q.question_text = 'Which matchup was the first college football game broadcast on radio?'
@@ -49,6 +51,7 @@ begin
   from public.sports s
   where q.sport_id = s.id
     and s.slug = 'cbb'
+    and q.status = 'ready'
     and (
       q.id = '13724d84-8706-4948-a263-60971cf8158c'::uuid
       or q.question_text = 'Which school won the 1997 national title behind freshman Mike Bibby?'
@@ -68,9 +71,11 @@ begin
   from public.sports s
   where q.sport_id = s.id
     and s.slug = 'cbb'
+    and q.status = 'ready'
     and (
       q.id = '169f5245-60ed-46cb-9049-541cdd528d86'::uuid
       or q.question_text = 'Coach K built a dynasty on which college basketball campus?'
+      or q.question_text = 'Mike Krzyzewski became a coaching legend at which school?'
     );
 
   get diagnostics updated_count = row_count;
@@ -88,6 +93,7 @@ begin
   from public.sports s
   where q.sport_id = s.id
     and s.slug = 'cfb'
+    and q.status = 'ready'
     and (
       q.id = '16e44025-d542-421e-b95e-5e787fed003c'::uuid
       or q.question_text = 'Which program owns the major-college record 47-game winning streak?'
@@ -108,6 +114,7 @@ begin
   from public.sports s
   where q.sport_id = s.id
     and s.slug = 'cbb'
+    and q.status = 'ready'
     and (
       q.id = '1b866dd0-732e-4139-a468-8ed397768104'::uuid
       or q.question_text = 'Who is the all-time leading scorer in Division I men''s basketball?'
@@ -127,6 +134,7 @@ begin
   from public.sports s
   where q.sport_id = s.id
     and s.slug = 'cfb'
+    and q.status = 'ready'
     and (
       q.id = '1e5f8ca2-2864-475e-a365-372071f0323c'::uuid
       or q.question_text = 'Who was the first West Coast player to win the Heisman Trophy?'
@@ -146,6 +154,7 @@ begin
   from public.sports s
   where q.sport_id = s.id
     and s.slug = 'cbb'
+    and q.status = 'ready'
     and (
       q.id = '664e8135-bf10-4642-94fd-b4209a302c51'::uuid
       or q.question_text = 'Who coached UConn through its dominant 2023 men''s title run?'

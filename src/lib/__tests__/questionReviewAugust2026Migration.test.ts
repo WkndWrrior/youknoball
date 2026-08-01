@@ -76,6 +76,9 @@ describe("August 2026 question review migration", () => {
         id: "169f5245-60ed-46cb-9049-541cdd528d86",
         sport: "cbb",
         priorText: "Coach K built a dynasty on which college basketball campus?",
+        additionalPriorTexts: [
+          "Mike Krzyzewski became a coaching legend at which school?",
+        ],
         finalText: '"Coach K" built a dynasty on which college basketball campus?',
         sourceUrl: "https://goduke.com/staff-directory/mike-krzyzewski/159",
         changesDifficulty: false,
@@ -125,16 +128,26 @@ describe("August 2026 question review migration", () => {
 
     for (const update of updates) {
       const unit = extractQuestionReviewUnit(migration, update.id);
-      const priorLiteral = postgresLiteral(update.priorText);
       const finalLiteral = postgresLiteral(update.finalText);
       const sportLiteral = postgresLiteral(update.sport);
       const idLiteral = postgresLiteral(update.id);
+      const textFallbackPattern = [
+        update.priorText,
+        ...("additionalPriorTexts" in update
+          ? update.additionalPriorTexts
+          : []),
+      ]
+        .map(
+          (priorText) =>
+            `q\\.question_text\\s*=\\s*${escapeRegExp(postgresLiteral(priorText))}`,
+        )
+        .join("\\s+or\\s+");
 
       expect(unit).toMatch(/from\s+public\.sports\s+s/i);
       expect(unit).toContain(`question_text = ${finalLiteral}`);
       expect(unit).toMatch(
         new RegExp(
-          `where\\s+q\\.sport_id\\s*=\\s*s\\.id\\s+and\\s+s\\.slug\\s*=\\s*${escapeRegExp(sportLiteral)}\\s+and\\s*\\(\\s*q\\.id\\s*=\\s*${escapeRegExp(idLiteral)}\\s*::uuid\\s+or\\s+q\\.question_text\\s*=\\s*${escapeRegExp(priorLiteral)}\\s*\\)`,
+          `where\\s+q\\.sport_id\\s*=\\s*s\\.id\\s+and\\s+s\\.slug\\s*=\\s*${escapeRegExp(sportLiteral)}\\s+and\\s+q\\.status\\s*=\\s*'ready'\\s+and\\s*\\(\\s*q\\.id\\s*=\\s*${escapeRegExp(idLiteral)}\\s*::uuid\\s+or\\s+${textFallbackPattern}\\s*\\)`,
           "i",
         ),
       );
