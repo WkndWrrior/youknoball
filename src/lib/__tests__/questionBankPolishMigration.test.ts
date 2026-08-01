@@ -43,8 +43,11 @@ const actions: PolishAction[] = [
     action: "rewrite",
     oldText:
       "When the banner-count debates start, which franchise sits atop NBA history for most championships?",
-    finalText: "Which franchise won its NBA-record 18th championship in 2024?",
-    sourceUrls: ["https://www.nba.com/news/nba-starting-5-june-18-2024"],
+    finalText:
+      "Which NBA franchise won 11 championships in 13 seasons from 1957 through 1969?",
+    sourceUrls: [
+      "https://www.nba.com/celtics/news/sidebar/misc-20220105-sam-jones-was-winner-gentleman-and-mr-clutch",
+    ],
   },
   {
     id: "815c13f4-889a-4c17-a6b6-ec2c6c6a41c8",
@@ -83,6 +86,18 @@ const actions: PolishAction[] = [
     finalText:
       'Before "The Chosen One" headlines and NBA title runs, LeBron James grew up in what Ohio city?',
     sourceUrls: ["https://www.nba.com/news/starting-5-dec-30-2024"],
+  },
+  {
+    id: "737b713f-b98c-44b7-b7d0-abe2577b4a09",
+    sport: "cbb",
+    action: "rewrite",
+    oldText:
+      "Which Big East school shocked Georgetown in the 1985 NCAA title game as an 8 seed?",
+    finalText:
+      "Which Big East school shocked Georgetown in the 1985 NCAA men's basketball title game as an 8 seed?",
+    sourceUrls: [
+      "https://www.ncaa.com/basketball-men/d1/villanova-college-basketball-championships-complete-history",
+    ],
   },
   {
     id: "7226d02d-c30b-4d9c-a43d-83ae81f5bde9",
@@ -416,6 +431,18 @@ describe("question bank polish migration", () => {
         expect(unit).toContain("eligible_for_sport_quiz = false");
       } else {
         expect(unit).not.toContain("status = 'retired'");
+      }
+
+      for (const protectedColumn of [
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
+        "correct_option",
+      ]) {
+        expect(unit).not.toMatch(
+          new RegExp(`\\b${protectedColumn}\\s*=`, "i"),
+        );
       }
 
       for (const sourceUrl of action.sourceUrls) {

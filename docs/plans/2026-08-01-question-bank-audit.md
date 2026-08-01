@@ -2,7 +2,7 @@
 
 ## Scope and result
 
-The audit reviewed all 194 ready questions in the live snapshot: NBA 33, CBB 36, NFL 35, CFB 30, MLB 30, and NHL 30. It accepts 32 actions for migration `202608010003_question_bank_polish.sql`: 24 text-only rewrites, 6 rewrites or labels with difficulty changes, and 2 retirements. The other 162 ready rows are unchanged by this migration, including the eight rows already assigned to migration `202608010002_question_review_updates.sql`.
+The audit reviewed all 194 ready questions in the live snapshot: NBA 33, CBB 36, NFL 35, CFB 30, MLB 30, and NHL 30. It accepts 33 actions for migration `202608010003_question_bank_polish.sql`: 25 text-only rewrites, 6 rewrites or labels with difficulty changes, and 2 retirements. It rejects 1 agent proposal entirely and revises 2 accepted formulations after choice and duplicate review. The other 161 ready rows are unchanged by this migration, including the eight rows already assigned to migration `202608010002_question_review_updates.sql`.
 
 Every accepted action was checked against its four answer choices. The protected Michael Jordan/Craig Ehlo row remains unchanged, as do all eight migration-002 rows and the retired UConn duplicate.
 
@@ -12,10 +12,10 @@ Every accepted action was checked against its four answer choices. The protected
 
 - Action: rewrite.
 - Old: `When the banner-count debates start, which franchise sits atop NBA history for most championships?`
-- New: `Which franchise won its NBA-record 18th championship in 2024?`
+- New: `Which NBA franchise won 11 championships in 13 seasons from 1957 through 1969?`
 - Difficulty: easy -> easy.
-- Reason: replaces a mutable current leaderboard with Boston's stable 2024 record-setting event; no choice is unfairly eliminated.
-- Source: https://www.nba.com/news/nba-starting-5-june-18-2024
+- Reason: replaces a mutable current leaderboard with Boston's stable dynasty record. The 11-in-13 span is fair against the Lakers, Warriors, Celtics, and Bulls and remains distinct from the existing question about the 2024 NBA Finals winner.
+- Source: https://www.nba.com/celtics/news/sidebar/misc-20220105-sam-jones-was-winner-gentleman-and-mr-clutch
 
 ### 815c13f4-889a-4c17-a6b6-ec2c6c6a41c8
 
@@ -55,6 +55,15 @@ Every accepted action was checked against its four answer choices. The protected
 
 ## CBB
 
+### 737b713f-b98c-44b7-b7d0-abe2577b4a09
+
+- Action: rewrite retained canonical row.
+- Old: `Which Big East school shocked Georgetown in the 1985 NCAA title game as an 8 seed?`
+- New: `Which Big East school shocked Georgetown in the 1985 NCAA men's basketball title game as an 8 seed?`
+- Difficulty: easy -> easy.
+- Reason: adds the sport and tournament context needed for the canonical question to stand alone while preserving its No. 8-seed upset clue and all four choices.
+- Source: https://www.ncaa.com/basketball-men/d1/villanova-college-basketball-championships-complete-history
+
 ### 7226d02d-c30b-4d9c-a43d-83ae81f5bde9
 
 - Action: rewrite.
@@ -70,7 +79,7 @@ Every accepted action was checked against its four answer choices. The protected
 - Old: `In the 1985 NCAA title-game upset, Villanova defeated which defending champion?`
 - New: unchanged; status becomes retired and both quiz eligibility flags become false.
 - Difficulty: hard -> hard.
-- Reason: near-duplicates ready row `737b713f-b98c-44b7-b7d0-abe2577b4a09`, which asks for Villanova as the No. 8 seed that beat Georgetown in the 1985 NCAA men's title game. The retained row is the stronger canonical version.
+- Reason: near-duplicates ready row `737b713f-b98c-44b7-b7d0-abe2577b4a09`, whose canonical wording is `Which Big East school shocked Georgetown in the 1985 NCAA men's basketball title game as an 8 seed?` The retained row is the stronger version because it supplies the No. 8 seed and asks for the upset winner.
 - Source: https://www.ncaa.com/basketball-men/d1/villanova-college-basketball-championships-complete-history
 
 ### b8889027-4618-45fd-a9b4-4ae44efd2398
@@ -307,6 +316,11 @@ Every accepted action was checked against its four answer choices. The protected
 - Source: https://www.nhl.com/news/golden-knights-magic-runs-out-in-stanley-cup-final-against-capitals-299000478
 
 ## Rejected or revised proposals
+
+### 535678e8-85db-4138-9285-b12facb06904 (NBA)
+
+- Revised proposal: the first audit proposed `Which franchise won its NBA-record 18th championship in 2024?`
+- Decision: replace it with the accepted 11-championships-in-13-seasons clue above. The 2024 wording near-duplicates ready row `8aa148a0-b1ab-4abc-9f59-689dff6dd8e1`, which already asks which team won the 2024 NBA Finals.
 
 ### b6596b33-515c-45c2-b33b-fad95489a63a (NBA)
 
