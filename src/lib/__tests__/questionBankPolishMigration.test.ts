@@ -63,6 +63,7 @@ type PolishAction = {
   sport: string;
   action: "rewrite" | "difficulty" | "retire";
   oldText: string;
+  additionalPriorTexts?: string[];
   finalText?: string;
   finalDifficulty?: "easy" | "medium" | "hard";
   sourceUrls: string[];
@@ -115,6 +116,9 @@ const actions: PolishAction[] = [
     action: "rewrite",
     oldText:
       "Before the Chosen One headlines and NBA title runs, LeBron James grew up in what Ohio city?",
+    additionalPriorTexts: [
+      "LeBron James was born and raised in what Ohio city?",
+    ],
     finalText:
       'Before "The Chosen One" headlines and NBA title runs, LeBron James grew up in what Ohio city?',
     sourceUrls: ["https://www.nba.com/news/starting-5-dec-30-2024"],
@@ -125,6 +129,9 @@ const actions: PolishAction[] = [
     action: "rewrite",
     oldText:
       "Which Big East school shocked Georgetown in the 1985 NCAA title game as an 8 seed?",
+    additionalPriorTexts: [
+      "Which Big East school won the 1985 national championship as an 8 seed?",
+    ],
     finalText:
       "Which Big East school shocked Georgetown in the 1985 NCAA men's basketball title game as an 8 seed?",
     sourceUrls: [
@@ -245,6 +252,7 @@ const actions: PolishAction[] = [
     sport: "nfl",
     action: "rewrite",
     oldText: "The first Super Bowl belonged to which franchise?",
+    additionalPriorTexts: ["Which team won Super Bowl I (1)?"],
     finalText: "Which franchise won Super Bowl I (1)?",
     sourceUrls: ["https://www.nfl.com/photos/super-bowl-i-09000d5d8020f107"],
   },
@@ -254,6 +262,9 @@ const actions: PolishAction[] = [
     action: "rewrite",
     oldText:
       "On the Giants' wild final drive in Super Bowl XLII (42), who came down with the Helmet Catch?",
+    additionalPriorTexts: [
+      "Who caught the Helmet Catch in Super Bowl XLII (42)?",
+    ],
     finalText:
       'On the Giants\' wild final drive in Super Bowl XLII (42), who came down with the "Helmet Catch"?',
     sourceUrls: [
@@ -274,6 +285,9 @@ const actions: PolishAction[] = [
     sport: "cfb",
     action: "rewrite",
     oldText: "Johnny Football won the 2012 Heisman while playing for which school?",
+    additionalPriorTexts: [
+      "Which school did Johnny Manziel represent when he won the 2012 Heisman Trophy?",
+    ],
     finalText: '"Johnny Football" won the 2012 Heisman while playing for which school?',
     sourceUrls: [
       "https://www.heisman.com/articles/this-week-in-heisman-history-johnny-manziel-sets-sec-total-offense-mark-in-victory-over-arkansas/",
@@ -361,6 +375,7 @@ const actions: PolishAction[] = [
     sport: "mlb",
     action: "rewrite",
     oldText: "In the 1951 pennant race, who hit the Shot Heard Round the World?",
+    additionalPriorTexts: ["Who hit the 1951 Shot Heard Round the World?"],
     finalText:
       'In the decisive Game 3 of the 1951 NL pennant tiebreaker, who hit the "Shot Heard Round the World"?',
     sourceUrls: [
@@ -396,6 +411,9 @@ const actions: PolishAction[] = [
     action: "rewrite",
     oldText:
       "After chasing Gretzky's mark for years, who now sits atop the NHL regular-season career goals list?",
+    additionalPriorTexts: [
+      "Who is the NHL's all-time leader in career regular-season goals?",
+    ],
     finalText:
       "Who broke Wayne Gretzky's NHL record of 894 regular-season goals in April 2025?",
     sourceUrls: [
@@ -408,6 +426,9 @@ const actions: PolishAction[] = [
     action: "difficulty",
     oldText:
       "Which expansion team crashed all the way into the Stanley Cup Final in its first season?",
+    additionalPriorTexts: [
+      "Which expansion team reached the Stanley Cup Final in its inaugural 2017-18 season?",
+    ],
     finalDifficulty: "medium",
     sourceUrls: [
       "https://www.nhl.com/news/golden-knights-magic-runs-out-in-stanley-cup-final-against-capitals-299000478",
@@ -434,13 +455,41 @@ describe("question bank polish migration", () => {
       const sportLiteral = postgresLiteral(action.sport);
       const idLiteral = postgresLiteral(action.id);
       const oldTextLiteral = postgresLiteral(action.oldText);
-
-      expect(predicate).toMatch(
+      const constrainedPredicate = predicate.match(
         new RegExp(
-          `where\\s+q\\.sport_id\\s*=\\s*s\\.id\\s+and\\s+s\\.slug\\s*=\\s*${escapeRegExp(sportLiteral)}\\s+and\\s+q\\.status\\s*=\\s*'ready'\\s+and\\s*\\(\\s*q\\.id\\s*=\\s*${escapeRegExp(idLiteral)}\\s*::uuid\\s+or\\s+q\\.question_text\\s*=\\s*${escapeRegExp(oldTextLiteral)}\\s*\\)`,
+          `where\\s+q\\.sport_id\\s*=\\s*s\\.id\\s+and\\s+s\\.slug\\s*=\\s*${escapeRegExp(sportLiteral)}\\s+and\\s+q\\.status\\s*=\\s*'ready'\\s+and\\s*\\(\\s*([\\s\\S]*?)\\s*\\)\\s*$`,
           "i",
         ),
       );
+
+      expect(constrainedPredicate).not.toBeNull();
+
+      const targetAlternatives = constrainedPredicate?.[1] ?? "";
+      expect(targetAlternatives).toMatch(
+        new RegExp(
+          `^q\\.id\\s*=\\s*${escapeRegExp(idLiteral)}\\s*::uuid`,
+          "i",
+        ),
+      );
+      expect(targetAlternatives).toMatch(
+        new RegExp(
+          `\\bor\\s+q\\.question_text\\s*=\\s*${escapeRegExp(oldTextLiteral)}`,
+          "i",
+        ),
+      );
+
+      for (const priorText of action.additionalPriorTexts ?? []) {
+        expect(targetAlternatives).toMatch(
+          new RegExp(
+            `\\bor\\s+q\\.question_text\\s*=\\s*${escapeRegExp(postgresLiteral(priorText))}`,
+            "i",
+          ),
+        );
+      }
+
+      expect(
+        targetAlternatives.match(/\bor\s+q\.question_text\s*=/gi),
+      ).toHaveLength(1 + (action.additionalPriorTexts?.length ?? 0));
 
       if (action.finalText) {
         expect(setClause).toContain(
@@ -505,6 +554,12 @@ describe("question bank polish migration", () => {
       ).toHaveLength(1);
       expect(guard.match(/if\s+updated_count\s*<>\s*1\s+then/gi)).toHaveLength(1);
       expect(guard.match(/raise\s+exception/gi)).toHaveLength(1);
+      expect(guard).toMatch(
+        new RegExp(
+          `raise\\s+exception\\s+'[^']*${escapeRegExp(action.id)}[^']*'`,
+          "i",
+        ),
+      );
       expect(guard).toMatch(
         /get diagnostics updated_count = row_count;\s*if\s+updated_count\s*<>\s*1\s+then\s*raise\s+exception\s+'[^']*'\s*,\s*updated_count\s*;\s*end\s+if\s*;/i,
       );

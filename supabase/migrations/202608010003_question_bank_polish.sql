@@ -19,7 +19,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 535678e8-85db-4138-9285-b12facb06904 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -40,7 +40,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 815c13f4-889a-4c17-a6b6-ec2c6c6a41c8 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -60,7 +60,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish f1b74737-81d6-48c8-a4e1-e62b688d0ff4 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -80,7 +80,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish f971d39f-1d55-453d-848f-a19f174b368e matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -96,11 +96,12 @@ begin
     and (
       q.id = 'a3b3dcfb-ff7c-4c4f-a89a-1e4e0ad8cfd3'::uuid
       or q.question_text = 'Before the Chosen One headlines and NBA title runs, LeBron James grew up in what Ohio city?'
+      or q.question_text = 'LeBron James was born and raised in what Ohio city?'
     );
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish a3b3dcfb-ff7c-4c4f-a89a-1e4e0ad8cfd3 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -116,11 +117,12 @@ begin
     and (
       q.id = '737b713f-b98c-44b7-b7d0-abe2577b4a09'::uuid
       or q.question_text = 'Which Big East school shocked Georgetown in the 1985 NCAA title game as an 8 seed?'
+      or q.question_text = 'Which Big East school won the 1985 national championship as an 8 seed?'
     );
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 737b713f-b98c-44b7-b7d0-abe2577b4a09 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -140,7 +142,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 7226d02d-c30b-4d9c-a43d-83ae81f5bde9 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -162,7 +164,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish c6d8b26c-e08a-4c48-984b-59d67a790000 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -182,7 +184,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish b8889027-4618-45fd-a9b4-4ae44efd2398 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -202,7 +204,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 5423a49d-d5d7-4872-9526-3cc035c16a07 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -222,7 +224,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 4a0c2441-2e3b-425a-8fb8-8ace8c037611 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -242,7 +244,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish ae679d0a-6067-4646-8d5a-5eee965fad45 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -262,7 +264,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish f395e563-5a9d-4489-87bd-b798e3171f10 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -282,7 +284,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish c2aafb44-7663-4931-8384-b7c7ecabf099 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -302,7 +304,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish f210fcb0-e997-45d5-8e7b-bb9089baedd9 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -322,7 +324,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish d20244b4-13fb-4a33-acbb-2c7591d6d345 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -338,11 +340,12 @@ begin
     and (
       q.id = '3b21ecd5-4433-4459-9f56-18d7e1134c77'::uuid
       or q.question_text = 'The first Super Bowl belonged to which franchise?'
+      or q.question_text = 'Which team won Super Bowl I (1)?'
     );
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 3b21ecd5-4433-4459-9f56-18d7e1134c77 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -358,11 +361,12 @@ begin
     and (
       q.id = '484c1b5c-5eab-46e9-8eb4-1395d8594482'::uuid
       or q.question_text = 'On the Giants'' wild final drive in Super Bowl XLII (42), who came down with the Helmet Catch?'
+      or q.question_text = 'Who caught the Helmet Catch in Super Bowl XLII (42)?'
     );
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 484c1b5c-5eab-46e9-8eb4-1395d8594482 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -384,7 +388,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish bfcff20c-ae61-4188-a9a8-b2eb9fdcb5da matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -400,11 +404,12 @@ begin
     and (
       q.id = '98d47501-9167-4d9f-9f2b-7e69ad0005a0'::uuid
       or q.question_text = 'Johnny Football won the 2012 Heisman while playing for which school?'
+      or q.question_text = 'Which school did Johnny Manziel represent when he won the 2012 Heisman Trophy?'
     );
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 98d47501-9167-4d9f-9f2b-7e69ad0005a0 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -424,7 +429,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 051d193c-b8a1-4d2d-888b-631a9bcdc0da matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -444,7 +449,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 9e138209-3ae9-4ec2-bc15-0cfe16121edb matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -464,7 +469,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 1f3f79a2-5e04-4c60-99f3-98005743442e matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -484,7 +489,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 2702b046-3b1d-4b78-b557-d14301d30a6c matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -504,7 +509,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 99038afd-d614-4788-9e2a-c866b755db0e matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -524,7 +529,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 9aab2901-c4e4-469c-8ab7-7e58fd21a09f matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -544,7 +549,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 9135ed53-9166-4d0b-92b4-e9349c6e6179 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -564,7 +569,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 96942dc2-29e1-4fa2-b08e-9f7118f299cc matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -580,11 +585,12 @@ begin
     and (
       q.id = '9c4c6d5c-e401-4385-9dc0-f5e7081d6d72'::uuid
       or q.question_text = 'In the 1951 pennant race, who hit the Shot Heard Round the World?'
+      or q.question_text = 'Who hit the 1951 Shot Heard Round the World?'
     );
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 9c4c6d5c-e401-4385-9dc0-f5e7081d6d72 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -604,7 +610,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 0ffd45c7-8d3e-49d4-bc7d-a525526c001b matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -624,7 +630,7 @@ begin
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish f8a4a870-5132-4408-b2d1-99802c937754 matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -640,11 +646,12 @@ begin
     and (
       q.id = '4bed1358-a5dd-47b9-acbc-00b3eccbe57d'::uuid
       or q.question_text = 'After chasing Gretzky''s mark for years, who now sits atop the NHL regular-season career goals list?'
+      or q.question_text = 'Who is the NHL''s all-time leader in career regular-season goals?'
     );
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish 4bed1358-a5dd-47b9-acbc-00b3eccbe57d matched % rows', updated_count;
   end if;
 
   update public.questions q
@@ -660,11 +667,12 @@ begin
     and (
       q.id = 'f4f00303-8bc9-47df-9ee4-3e1361583f71'::uuid
       or q.question_text = 'Which expansion team crashed all the way into the Stanley Cup Final in its first season?'
+      or q.question_text = 'Which expansion team reached the Stanley Cup Final in its inaugural 2017-18 season?'
     );
 
   get diagnostics updated_count = row_count;
   if updated_count <> 1 then
-    raise exception 'Question bank polish update matched % rows', updated_count;
+    raise exception 'Question bank polish f4f00303-8bc9-47df-9ee4-3e1361583f71 matched % rows', updated_count;
   end if;
 
 end $$;
