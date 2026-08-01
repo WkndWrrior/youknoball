@@ -99,7 +99,7 @@ describe("August 2026 question review migration", () => {
         finalText:
           "Without a 3-point line or shot clock, which player scored 3,667 points in just three varsity seasons to become Division I men's basketball's all-time leading scorer?",
         sourceUrl:
-          "https://www.ncaa.com/news/basketball-men/article/2020-11-09/all-time-scoring-leaders-32-mens-college-basketball-conferences",
+          "https://lsusports.net/news/2018/02/28/211703254",
         changesDifficulty: true,
       },
       {
@@ -108,7 +108,7 @@ describe("August 2026 question review migration", () => {
         priorText: "Who was the first West Coast player to win the Heisman Trophy?",
         finalText:
           "Which Portland, Oregon, high school product became the first player from the West Coast to win the Heisman Trophy in 1962?",
-        sourceUrl: "https://www.heisman.com/about-the-heisman/milestones/",
+        sourceUrl: "https://www.heisman.com/heisman-winners/terry-baker/",
         changesDifficulty: false,
       },
       {
@@ -118,7 +118,7 @@ describe("August 2026 question review migration", () => {
         finalText:
           "After a 31-8 season and six double-digit NCAA tournament wins, who coached UConn to the 2023 men's basketball national title?",
         sourceUrl:
-          "https://www.ncaa.com/live-updates/basketball-men/d1/uconn-rolls-again-double-digit-win-advances-national-title",
+          "https://uconnhuskies.com/news/2023/4/3/mens-basketball-uconn-wins-march-madness-with-76-59-smothering-of-sdsu",
         changesDifficulty: false,
       },
     ];
