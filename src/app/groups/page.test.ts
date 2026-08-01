@@ -45,5 +45,16 @@ describe("groups pages", () => {
     expect(layout).toContain("active:scale-[0.98]");
     expect(layout).toContain("active:bg-[#ff7a18]/10");
     expect(layout).toContain("focus-visible:ring-[#ff7a18]/70");
+    expect(layout).toContain(
+      'import { SiteFooter } from "@/components/SiteFooter"',
+    );
+    expect(layout).toContain('<body className="flex min-h-screen flex-col">');
+    expect(layout).toContain('<div className="relative flex-1">{children}</div>');
+    const contentIndex = layout.indexOf(
+      '<div className="relative flex-1">{children}</div>',
+    );
+    const footerIndex = layout.indexOf("<SiteFooter />");
+    expect(contentIndex).toBeGreaterThanOrEqual(0);
+    expect(footerIndex).toBeGreaterThan(contentIndex);
   });
 });

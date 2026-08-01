@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AuthButton } from "@/components/AuthButton";
+import { SiteFooter } from "@/components/SiteFooter";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
+      <body className="flex min-h-screen flex-col">
         <header className="sticky top-0 z-40 border-b border-white/10 bg-black/80 backdrop-blur-xl">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
             <div className="flex items-center gap-10 lg:gap-12">
@@ -96,7 +97,8 @@ export default function RootLayout({
             </div>
           </div>
         </header>
-        <div className="relative">{children}</div>
+        <div className="relative flex-1">{children}</div>
+        <SiteFooter />
       </body>
     </html>
   );
