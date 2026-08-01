@@ -19,6 +19,7 @@ type FetchLike = (
     method: "POST";
     headers: Record<string, string>;
     body: string;
+    signal: AbortSignal;
   },
 ) => Promise<{
   ok: boolean;
@@ -36,6 +37,10 @@ const FEEDBACK_TYPE_LABELS: Record<FeedbackType, string> = {
   bug: "Bug",
   idea: "Idea",
 };
+
+const GENERIC_RESEND_ERROR = "Unable to send feedback email.";
+const MAX_RESEND_ERROR_LENGTH = 1_000;
+const RESEND_TIMEOUT_MS = 5_000;
 
 function getConfiguredRecipients(rawValue: string | undefined) {
   return (rawValue ?? "")
@@ -65,6 +70,13 @@ where id = '${quotedSubmissionId}'
 order by created_at desc;`;
 }
 
+function quotePlayerMessage(message: string) {
+  return message
+    .split(/\r\n?|\n/)
+    .map((line) => `> ${line}`)
+    .join("\n");
+}
+
 function buildFeedbackEmailText(feedback: FeedbackNotificationInput) {
   const feedbackType = FEEDBACK_TYPE_LABELS[feedback.feedbackType];
 
@@ -76,11 +88,32 @@ function buildFeedbackEmailText(feedback: FeedbackNotificationInput) {
     `Reporter user ID: ${feedback.reporterUserId ?? "guest"}`,
     `Contact email: ${feedback.contactEmail ?? "None"}`,
     `Source path: ${feedback.sourcePath ?? "None"}`,
-    `Message: ${feedback.message}`,
     "",
     "Review query:",
     buildReviewQuery(feedback.submissionId),
+    "",
+    "Player message:",
+    quotePlayerMessage(feedback.message),
   ].join("\n");
+}
+
+async function getResendErrorMessage(
+  response: Awaited<ReturnType<FetchLike>>,
+) {
+  if (!response.text) {
+    return GENERIC_RESEND_ERROR;
+  }
+
+  try {
+    const detail = (await response.text()).trim();
+    if (!detail || detail.length > MAX_RESEND_ERROR_LENGTH) {
+      return GENERIC_RESEND_ERROR;
+    }
+
+    return detail;
+  } catch {
+    return GENERIC_RESEND_ERROR;
+  }
 }
 
 export async function sendFeedbackNotification(
@@ -93,24 +126,31 @@ export async function sendFeedbackNotification(
   }
 
   const feedbackType = FEEDBACK_TYPE_LABELS[feedback.feedbackType];
-  const response = await fetchImpl("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from: config.from,
-      to: config.to,
-      subject: `Player feedback: ${feedbackType}`,
-      text: buildFeedbackEmailText(feedback),
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const detail = response.text ? await response.text() : "";
-    throw new Error(detail || "Unable to send feedback email.");
+  try {
+    const response = await fetchImpl("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.apiKey}`,
+        "content-type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        from: config.from,
+        to: config.to,
+        subject: `Player feedback: ${feedbackType}`,
+        text: buildFeedbackEmailText(feedback),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getResendErrorMessage(response));
+    }
+
+    return { sent: true };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return { sent: true };
 }
