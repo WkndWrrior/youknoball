@@ -6,6 +6,7 @@ import {
   FEEDBACK_TYPES,
   MAX_FEEDBACK_EMAIL_LENGTH,
   MAX_FEEDBACK_MESSAGE_LENGTH,
+  isValidFeedbackContactEmail,
   type FeedbackType,
 } from "@/lib/feedback";
 
@@ -19,8 +20,32 @@ const feedbackTypeLabels: Record<FeedbackType, string> = {
   idea: "Idea",
 };
 
+const defaultSuccessMessage =
+  "Thanks for helping us make You Kno Ball better.";
+const genericErrorMessage = "Unable to send feedback.";
+
 function limitCodePoints(value: string, maxCodePoints: number) {
   return Array.from(value).slice(0, maxCodePoints).join("");
+}
+
+async function readResponseMessage(response: Response): Promise<string | null> {
+  try {
+    const payload = (await response.json()) as unknown;
+    if (
+      payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      "message" in payload &&
+      typeof payload.message === "string" &&
+      payload.message.trim()
+    ) {
+      return payload.message;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
@@ -33,6 +58,10 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
   const [website, setWebsite] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [messageError, setMessageError] = useState<string | null>(null);
+  const [contactEmailError, setContactEmailError] = useState<string | null>(
+    null,
+  );
   const [submitting, setSubmitting] = useState(false);
 
   async function submitFeedback(event: FormEvent<HTMLFormElement>) {
@@ -42,10 +71,25 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
       return;
     }
 
-    submittingRef.current = true;
-    setSubmitting(true);
     setStatus(null);
     setError(null);
+
+    const nextMessageError = message.trim() ? null : "Enter a message.";
+    const trimmedContactEmail = contactEmail.trim();
+    const nextContactEmailError =
+      trimmedContactEmail &&
+      !isValidFeedbackContactEmail(trimmedContactEmail)
+        ? "Enter a valid email address."
+        : null;
+
+    setMessageError(nextMessageError);
+    setContactEmailError(nextContactEmailError);
+    if (nextMessageError || nextContactEmailError) {
+      return;
+    }
+
+    submittingRef.current = true;
+    setSubmitting(true);
 
     try {
       const response = await fetch("/api/feedback", {
@@ -61,24 +105,25 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
           sourcePath,
         }),
       });
-      const payload = (await response.json()) as { message?: string };
 
       if (!response.ok) {
-        throw new Error(payload.message ?? "Unable to send feedback.");
+        const responseMessage = await readResponseMessage(response);
+        throw new Error(responseMessage ?? genericErrorMessage);
       }
 
+      const responseMessage = await readResponseMessage(response);
       setFeedbackType("general");
       setMessage("");
       setContactEmail("");
       setWebsite("");
-      setStatus(
-        payload.message ?? "Thanks for helping us make You Kno Ball better.",
-      );
+      setMessageError(null);
+      setContactEmailError(null);
+      setStatus(responseMessage ?? defaultSuccessMessage);
     } catch (feedbackError) {
       setError(
         feedbackError instanceof Error
           ? feedbackError.message
-          : "Unable to send feedback.",
+          : genericErrorMessage,
       );
     } finally {
       submittingRef.current = false;
@@ -89,6 +134,9 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
   return (
     <form
       onSubmit={submitFeedback}
+      noValidate
+      aria-busy={submitting}
+      aria-label="Feedback form"
       className="w-full rounded-lg border border-white/10 bg-black/70 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.35)] sm:p-5"
     >
       <fieldset>
@@ -107,6 +155,7 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
                 value={feedbackTypeOption}
                 checked={feedbackType === feedbackTypeOption}
                 onChange={() => setFeedbackType(feedbackTypeOption)}
+                disabled={submitting}
                 className="peer sr-only"
               />
               <span className="block rounded-md px-2 py-2 text-xs font-semibold text-white/60 transition peer-checked:bg-[#ff7a18] peer-checked:text-black peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#ffb067] peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-black sm:text-sm">
@@ -127,7 +176,7 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
           </label>
           <span
             id={`${formId}-message-count`}
-            className="text-xs tabular-nums text-white/45"
+            className="text-xs tabular-nums text-white/60"
           >
             {Array.from(message).length}/{MAX_FEEDBACK_MESSAGE_LENGTH}
           </span>
@@ -135,15 +184,34 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
         <textarea
           id={`${formId}-message`}
           value={message}
-          onChange={(event) =>
-            setMessage(limitCodePoints(event.target.value, MAX_FEEDBACK_MESSAGE_LENGTH))
-          }
+          onChange={(event) => {
+            setMessage(
+              limitCodePoints(
+                event.target.value,
+                MAX_FEEDBACK_MESSAGE_LENGTH,
+              ),
+            );
+            setMessageError(null);
+          }}
+          disabled={submitting}
           required
           rows={7}
-          aria-describedby={`${formId}-message-count`}
-          className="mt-2 block min-h-40 w-full resize-y rounded-lg border border-white/15 bg-black px-3 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/30 focus-visible:border-[#ff7a18] focus-visible:ring-2 focus-visible:ring-[#ff7a18]/35"
+          aria-invalid={messageError ? true : undefined}
+          aria-describedby={`${formId}-message-count${
+            messageError ? ` ${formId}-message-error` : ""
+          }`}
+          className="mt-2 block min-h-40 w-full resize-y rounded-lg border border-white/15 bg-black px-3 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/50 focus-visible:border-[#ff7a18] focus-visible:ring-2 focus-visible:ring-[#ff7a18]/35"
           placeholder="What should we know?"
         />
+        {messageError ? (
+          <p
+            id={`${formId}-message-error`}
+            className="mt-2 text-sm leading-5 text-red-200"
+            role="alert"
+          >
+            {messageError}
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-5">
@@ -151,19 +219,38 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
           htmlFor={`${formId}-email`}
           className="text-sm font-semibold text-white"
         >
-          Contact email <span className="font-normal text-white/45">(optional)</span>
+          Contact email{" "}
+          <span className="font-normal text-white/70">(optional)</span>
         </label>
         <input
           id={`${formId}-email`}
           type="email"
           value={contactEmail}
-          onChange={(event) => setContactEmail(event.target.value)}
-          maxLength={MAX_FEEDBACK_EMAIL_LENGTH}
+          onChange={(event) => {
+            setContactEmail(
+              limitCodePoints(event.target.value, MAX_FEEDBACK_EMAIL_LENGTH),
+            );
+            setContactEmailError(null);
+          }}
+          disabled={submitting}
           autoComplete="email"
           inputMode="email"
-          className="mt-2 block w-full rounded-lg border border-white/15 bg-black px-3 py-3 text-sm text-white outline-none placeholder:text-white/30 focus-visible:border-[#ff7a18] focus-visible:ring-2 focus-visible:ring-[#ff7a18]/35"
+          aria-invalid={contactEmailError ? true : undefined}
+          aria-describedby={
+            contactEmailError ? `${formId}-email-error` : undefined
+          }
+          className="mt-2 block w-full rounded-lg border border-white/15 bg-black px-3 py-3 text-sm text-white outline-none placeholder:text-white/50 focus-visible:border-[#ff7a18] focus-visible:ring-2 focus-visible:ring-[#ff7a18]/35"
           placeholder="you@example.com"
         />
+        {contactEmailError ? (
+          <p
+            id={`${formId}-email-error`}
+            className="mt-2 text-sm leading-5 text-red-200"
+            role="alert"
+          >
+            {contactEmailError}
+          </p>
+        ) : null}
       </div>
 
       <div
@@ -173,10 +260,11 @@ export function FeedbackForm({ sourcePath }: FeedbackFormProps) {
         <label htmlFor={`${formId}-website`}>Website</label>
         <input
           id={`${formId}-website`}
-          name="website"
+          name="feedback_check_7f3c"
           type="text"
           value={website}
           onChange={(event) => setWebsite(event.target.value)}
+          disabled={submitting}
           tabIndex={-1}
           autoComplete="off"
         />

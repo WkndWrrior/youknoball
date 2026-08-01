@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { FeedbackForm } from "@/components/FeedbackForm";
-import { MAX_FEEDBACK_SOURCE_PATH_LENGTH } from "@/lib/feedback";
+import { normalizeFeedbackSourcePath } from "@/lib/feedback";
 
 export const metadata: Metadata = {
   title: "Feedback",
@@ -13,31 +13,11 @@ type FeedbackPageProps = {
   }>;
 };
 
-function sanitizeSourcePath(
-  value: string | string[] | undefined,
-): string | null {
-  if (
-    typeof value !== "string" ||
-    !value ||
-    Array.from(value).length > MAX_FEEDBACK_SOURCE_PATH_LENGTH ||
-    !value.startsWith("/") ||
-    value.startsWith("//") ||
-    value.includes("\\") ||
-    /[\u0000-\u001f\u007f]/u.test(value) ||
-    value.includes("?") ||
-    value.includes("#")
-  ) {
-    return null;
-  }
-
-  return value;
-}
-
 export default async function FeedbackPage({
   searchParams,
 }: FeedbackPageProps) {
   const params = await searchParams;
-  const sourcePath = sanitizeSourcePath(params.from);
+  const sourcePath = normalizeFeedbackSourcePath(params.from);
 
   return (
     <main className="px-4 py-10 sm:px-6 sm:py-14">

@@ -5,6 +5,7 @@ import {
   MAX_FEEDBACK_EMAIL_LENGTH,
   MAX_FEEDBACK_MESSAGE_LENGTH,
   MAX_FEEDBACK_SOURCE_PATH_LENGTH,
+  normalizeFeedbackSourcePath,
   parseFeedbackPayload,
 } from "@/lib/feedback";
 
@@ -14,6 +15,53 @@ const validPayload = {
 };
 
 describe("feedback", () => {
+  it.each<[string, unknown, string | null]>([
+    ["an absent value", undefined, null],
+    ["a null value", null, null],
+    ["a blank value", "   ", null],
+    ["a pathname", "/categories", "/categories"],
+    ["a padded pathname", "  /categories  ", "/categories"],
+    [
+      "a pathname at the Unicode code point limit",
+      `/${"🏀".repeat(MAX_FEEDBACK_SOURCE_PATH_LENGTH - 1)}`,
+      `/${"🏀".repeat(MAX_FEEDBACK_SOURCE_PATH_LENGTH - 1)}`,
+    ],
+  ])("normalizes %s", (_description, value, expected) => {
+    expect(normalizeFeedbackSourcePath(value)).toBe(expected);
+  });
+
+  it.each<[string, unknown]>([
+    ["a repeated query parameter", ["/play", "/categories"]],
+    ["an external URL", "https://example.com/categories"],
+    ["a pathname without a leading slash", "categories"],
+    ["a protocol-relative pathname", "//example.com/categories"],
+    ["a backslash authority escape", "/\\evil.example/x"],
+    ["a pathname with a query", "/categories?tab=all"],
+    ["a pathname with a fragment", "/categories#football"],
+    [
+      "a pathname over the Unicode code point limit",
+      `/${"🏀".repeat(MAX_FEEDBACK_SOURCE_PATH_LENGTH)}`,
+    ],
+  ])("rejects %s in the source-path normalizer", (_description, value) => {
+    expect(normalizeFeedbackSourcePath(value)).toBeNull();
+  });
+
+  it("rejects every ASCII control character in the source-path normalizer", () => {
+    const controlCodePoints = [
+      ...Array.from({ length: 0x20 }, (_value, codePoint) => codePoint),
+      0x7f,
+    ];
+
+    for (const codePoint of controlCodePoints) {
+      expect(
+        normalizeFeedbackSourcePath(
+          `/categories${String.fromCodePoint(codePoint)}hidden`,
+        ),
+        `U+${codePoint.toString(16).padStart(4, "0")}`,
+      ).toBeNull();
+    }
+  });
+
   it("normalizes a valid feedback payload", () => {
     expect(
       parseFeedbackPayload({

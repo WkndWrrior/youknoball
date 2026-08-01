@@ -15,6 +15,10 @@ export type ParsedFeedbackPayload = {
   sourcePath: string | null;
 };
 
+export function isValidFeedbackContactEmail(value: string): boolean {
+  return EMAIL_PATTERN.test(value);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -55,6 +59,30 @@ function hasUnsafeSourcePathCharacter(value: string): boolean {
   return false;
 }
 
+export function normalizeFeedbackSourcePath(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const sourcePath = value.trim();
+  if (!sourcePath) {
+    return null;
+  }
+
+  if (
+    hasUnsafeSourcePathCharacter(value) ||
+    exceedsCodePointLimit(sourcePath, MAX_FEEDBACK_SOURCE_PATH_LENGTH) ||
+    !sourcePath.startsWith("/") ||
+    sourcePath.startsWith("//") ||
+    sourcePath.includes("?") ||
+    sourcePath.includes("#")
+  ) {
+    return null;
+  }
+
+  return sourcePath;
+}
+
 export function parseFeedbackPayload(
   value: unknown,
 ): ParsedFeedbackPayload | null {
@@ -87,30 +115,17 @@ export function parseFeedbackPayload(
   if (
     normalizedEmail &&
     (exceedsCodePointLimit(normalizedEmail, MAX_FEEDBACK_EMAIL_LENGTH) ||
-      !EMAIL_PATTERN.test(normalizedEmail))
+      !isValidFeedbackContactEmail(normalizedEmail))
   ) {
     return null;
   }
 
+  const sourcePath = normalizeFeedbackSourcePath(value.sourcePath);
   if (
     value.sourcePath !== undefined &&
     value.sourcePath !== null &&
-    typeof value.sourcePath !== "string"
-  ) {
-    return null;
-  }
-
-  const rawSourcePath =
-    typeof value.sourcePath === "string" ? value.sourcePath : "";
-  const sourcePath = rawSourcePath.trim() || null;
-  if (
-    sourcePath &&
-    (hasUnsafeSourcePathCharacter(rawSourcePath) ||
-      exceedsCodePointLimit(sourcePath, MAX_FEEDBACK_SOURCE_PATH_LENGTH) ||
-      !sourcePath.startsWith("/") ||
-      sourcePath.startsWith("//") ||
-      sourcePath.includes("?") ||
-      sourcePath.includes("#"))
+    (typeof value.sourcePath !== "string" ||
+      (Boolean(value.sourcePath.trim()) && !sourcePath))
   ) {
     return null;
   }

@@ -27,22 +27,16 @@ describe("feedback page", () => {
     expect(source).not.toContain("bg-white/[0.05]");
   });
 
-  it("accepts async Next search params and passes only a safe pathname", async () => {
+  it("normalizes async Next search params through the shared validator", async () => {
     const source = await readFeedbackPageSource();
 
     expect(source).toContain("searchParams: Promise<{");
     expect(source).toContain("from?: string | string[]");
     expect(source).toContain("const params = await searchParams");
-    expect(source).toContain("sanitizeSourcePath(params.from)");
-    expect(source).toContain("typeof value !== \"string\"");
     expect(source).toContain(
-      "Array.from(value).length > MAX_FEEDBACK_SOURCE_PATH_LENGTH",
+      'import { normalizeFeedbackSourcePath } from "@/lib/feedback"',
     );
-    expect(source).toContain('!value.startsWith("/")');
-    expect(source).toContain('value.startsWith("//")');
-    expect(source).toContain('value.includes("\\\\")');
-    expect(source).toContain(String.raw`/[\u0000-\u001f\u007f]/u.test(value)`);
-    expect(source).toContain('value.includes("?")');
-    expect(source).toContain('value.includes("#")');
+    expect(source).toContain("normalizeFeedbackSourcePath(params.from)");
+    expect(source).not.toContain("function sanitizeSourcePath");
   });
 });

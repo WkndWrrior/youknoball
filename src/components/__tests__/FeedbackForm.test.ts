@@ -1,92 +1,373 @@
+/** @vitest-environment jsdom */
+
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { createElement } from "react";
 
-import { describe, expect, it } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-async function readFeedbackFormSource() {
-  return readFile(
-    path.join(process.cwd(), "src/components/FeedbackForm.tsx"),
-    "utf8",
-  );
+import { FeedbackForm } from "@/components/FeedbackForm";
+import { MAX_FEEDBACK_EMAIL_LENGTH } from "@/lib/feedback";
+
+const DEFAULT_SUCCESS_MESSAGE =
+  "Thanks for helping us make You Kno Ball better.";
+const GENERIC_ERROR_MESSAGE = "Unable to send feedback.";
+
+type ResponseOptions = {
+  ok: boolean;
+  payload?: unknown;
+  jsonError?: Error;
+};
+
+function createResponse({
+  ok,
+  payload,
+  jsonError,
+}: ResponseOptions): Response {
+  return {
+    ok,
+    json: vi.fn(async () => {
+      if (jsonError) {
+        throw jsonError;
+      }
+
+      return payload;
+    }),
+  } as unknown as Response;
 }
 
-describe("FeedbackForm", () => {
-  it("uses the shared feedback contract and accessible compact controls", async () => {
-    const source = await readFeedbackFormSource();
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
 
-    expect(source).toContain('"use client"');
-    expect(source).toContain('from "@/lib/feedback"');
-    expect(source).toContain("FEEDBACK_TYPES");
-    expect(source).toContain("MAX_FEEDBACK_EMAIL_LENGTH");
-    expect(source).toContain("MAX_FEEDBACK_MESSAGE_LENGTH");
-    expect(source).toContain("type FeedbackType");
-    expect(source).toContain("sourcePath: string | null");
-    expect(source).toContain("<fieldset>");
-    expect(source).toContain("<legend");
-    expect(source).toContain('type="radio"');
-    expect(source).toContain("General");
-    expect(source).toContain("Bug");
-    expect(source).toContain("Idea");
-    expect(source).toContain("FEEDBACK_TYPES.map");
-    expect(source).toContain("required");
-    expect(source).toContain(
-      "Array.from(value).slice(0, maxCodePoints).join(\"\")",
+  return { promise, resolve };
+}
+
+function installFetch(response: Response | Promise<Response>) {
+  const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(response));
+  vi.stubGlobal("fetch", fetchMock);
+
+  return fetchMock;
+}
+
+function renderFeedbackForm() {
+  return render(createElement(FeedbackForm, { sourcePath: "/play" }));
+}
+
+function getMessageField() {
+  return screen.getByLabelText("Message") as HTMLTextAreaElement;
+}
+
+function getEmailField() {
+  return screen.getByLabelText(/Contact email/) as HTMLInputElement;
+}
+
+function getHoneypot() {
+  const input = document.querySelector(
+    '[aria-hidden="true"] input',
+  ) as HTMLInputElement | null;
+
+  if (!input) {
+    throw new Error("Expected a honeypot input.");
+  }
+
+  return input;
+}
+
+function getForm() {
+  const form = getMessageField().closest("form");
+  if (!form) {
+    throw new Error("Expected the message field to belong to a form.");
+  }
+
+  return form;
+}
+
+function fillValidFields(email = "player@example.com") {
+  fireEvent.change(getMessageField(), {
+    target: { value: "The category selector needs clearer focus styles." },
+  });
+  fireEvent.change(getEmailField(), { target: { value: email } });
+}
+
+function expectFieldError(
+  field: HTMLInputElement | HTMLTextAreaElement,
+  message: string,
+) {
+  expect(field.getAttribute("aria-invalid")).toBe("true");
+
+  const describedBy = field.getAttribute("aria-describedby")?.split(/\s+/) ?? [];
+  const errorElement = describedBy
+    .map((id) => document.getElementById(id))
+    .find((element) => element?.textContent === message);
+
+  expect(errorElement?.textContent).toBe(message);
+}
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("FeedbackForm behavior", () => {
+  it("sends exactly one request during a delayed duplicate submit", async () => {
+    const request = createDeferred<Response>();
+    const fetchMock = installFetch(request.promise);
+    renderFeedbackForm();
+    fillValidFields();
+
+    fireEvent.submit(getForm());
+    fireEvent.submit(getForm());
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      request.resolve(createResponse({ ok: true, payload: {} }));
+      await request.promise;
+    });
+    expect((await screen.findByRole("status")).textContent).toBe(
+      DEFAULT_SUCCESS_MESSAGE,
     );
-    expect(source).toContain(
-      "limitCodePoints(event.target.value, MAX_FEEDBACK_MESSAGE_LENGTH)",
+  });
+
+  it("marks the form busy and disables every control while pending", async () => {
+    const request = createDeferred<Response>();
+    installFetch(request.promise);
+    renderFeedbackForm();
+    fillValidFields();
+    const form = getForm();
+
+    fireEvent.submit(form);
+
+    expect(form.getAttribute("aria-busy")).toBe("true");
+    const controls = Array.from(
+      form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>(
+        "input, textarea, button",
+      ),
     );
-    expect(source).toContain('type="email"');
-    expect(source).toContain("maxLength={MAX_FEEDBACK_EMAIL_LENGTH}");
-    expect(source).toContain('name="website"');
-    expect(source).toContain('aria-hidden="true"');
-    expect(source).toContain("tabIndex={-1}");
-    expect(source).toContain('autoComplete="off"');
+    expect(controls.length).toBeGreaterThan(0);
+    expect(controls.every((control) => control.disabled)).toBe(true);
+
+    await act(async () => {
+      request.resolve(createResponse({ ok: true, payload: {} }));
+      await request.promise;
+    });
+    expect((await screen.findByRole("status")).textContent).toBe(
+      DEFAULT_SUCCESS_MESSAGE,
+    );
+  });
+
+  it("resets every input and feedback type after success", async () => {
+    installFetch(
+      createResponse({
+        ok: true,
+        payload: { message: "Feedback received." },
+      }),
+    );
+    renderFeedbackForm();
+    fillValidFields();
+    fireEvent.click(screen.getByRole("radio", { name: "Bug" }));
+    fireEvent.change(getHoneypot(), { target: { value: "bot value" } });
+
+    fireEvent.submit(getForm());
+
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "Feedback received.",
+    );
+    expect(getMessageField().value).toBe("");
+    expect(getEmailField().value).toBe("");
+    expect(getHoneypot().value).toBe("");
+    expect(
+      (screen.getByRole("radio", { name: "General" }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+  });
+
+  it("preserves every input after an API failure", async () => {
+    installFetch(
+      createResponse({
+        ok: false,
+        payload: { message: "Invalid feedback." },
+      }),
+    );
+    renderFeedbackForm();
+    fillValidFields();
+    fireEvent.click(screen.getByRole("radio", { name: "Idea" }));
+    fireEvent.change(getHoneypot(), { target: { value: "bot value" } });
+
+    fireEvent.submit(getForm());
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Invalid feedback.",
+    );
+    expect(getMessageField().value).toBe(
+      "The category selector needs clearer focus styles.",
+    );
+    expect(getEmailField().value).toBe("player@example.com");
+    expect(getHoneypot().value).toBe("bot value");
+    expect(
+      (screen.getByRole("radio", { name: "Idea" }) as HTMLInputElement).checked,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["empty", new SyntaxError("Unexpected end of JSON input")],
+    ["malformed", new SyntaxError("Unexpected token '<'")],
+  ])("treats an OK %s response as success", async (_description, jsonError) => {
+    installFetch(createResponse({ ok: true, jsonError }));
+    renderFeedbackForm();
+    fillValidFields();
+
+    fireEvent.submit(getForm());
+
+    expect((await screen.findByRole("status")).textContent).toBe(
+      DEFAULT_SUCCESS_MESSAGE,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(getMessageField().value).toBe("");
+  });
+
+  it("uses a generic error for a malformed non-OK response", async () => {
+    installFetch(
+      createResponse({
+        ok: false,
+        jsonError: new SyntaxError("Unexpected end of JSON input"),
+      }),
+    );
+    renderFeedbackForm();
+    fillValidFields();
+
+    fireEvent.submit(getForm());
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      GENERIC_ERROR_MESSAGE,
+    );
+    expect(screen.queryByText(/Unexpected end of JSON input/)).toBeNull();
+  });
+
+  it("rejects a whitespace-only message and clears its field error on edit", () => {
+    const fetchMock = installFetch(createResponse({ ok: true, payload: {} }));
+    renderFeedbackForm();
+    fireEvent.change(getMessageField(), { target: { value: "  \n  " } });
+
+    fireEvent.submit(getForm());
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expectFieldError(getMessageField(), "Enter a message.");
+
+    fireEvent.change(getMessageField(), { target: { value: "A useful note." } });
+    expect(screen.queryByText("Enter a message.")).toBeNull();
+    expect(getMessageField().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("rejects an email without a dotted domain and clears its error on edit", () => {
+    const fetchMock = installFetch(createResponse({ ok: true, payload: {} }));
+    renderFeedbackForm();
+    fillValidFields("player@example");
+
+    fireEvent.submit(getForm());
+
+    expect(getForm().noValidate).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expectFieldError(getEmailField(), "Enter a valid email address.");
+
+    fireEvent.change(getEmailField(), {
+      target: { value: "player@example.com" },
+    });
+    expect(screen.queryByText("Enter a valid email address.")).toBeNull();
+    expect(getEmailField().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("allows a blank optional email", async () => {
+    const fetchMock = installFetch(
+      createResponse({ ok: true, payload: { message: "Received." } }),
+    );
+    renderFeedbackForm();
+    fillValidFields("");
+
+    fireEvent.submit(getForm());
+
+    expect((await screen.findByRole("status")).textContent).toBe("Received.");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps email input at 320 Unicode code points without maxLength", () => {
+    renderFeedbackForm();
+    const email = getEmailField();
+
+    fireEvent.change(email, {
+      target: { value: "🏀".repeat(MAX_FEEDBACK_EMAIL_LENGTH + 1) },
+    });
+
+    expect(Array.from(email.value)).toHaveLength(MAX_FEEDBACK_EMAIL_LENGTH);
+    expect(email.maxLength).toBe(-1);
+    expect(email.type).toBe("email");
+  });
+
+  it("requires and caps the message at 2,000 Unicode code points", () => {
+    renderFeedbackForm();
+    const message = getMessageField();
+
+    fireEvent.change(message, { target: { value: "🏀".repeat(2001) } });
+
+    expect(message.required).toBe(true);
+    expect(Array.from(message.value)).toHaveLength(2000);
+  });
+
+  it("uses a nonsemantic honeypot name but sends the website JSON key", async () => {
+    const fetchMock = installFetch(
+      createResponse({ ok: true, payload: { message: "Received." } }),
+    );
+    renderFeedbackForm();
+    fillValidFields();
+    const honeypot = getHoneypot();
+    fireEvent.change(honeypot, { target: { value: "bot value" } });
+
+    expect(honeypot.name).toBeTruthy();
+    expect(honeypot.name).not.toMatch(/website|url|email|address/i);
+    expect(honeypot.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(honeypot.tabIndex).toBe(-1);
+    expect(honeypot.autocomplete).toBe("off");
+    fireEvent.submit(getForm());
+    await screen.findByRole("status");
+
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    expect(requestUrl).toBe("/api/feedback");
+    expect(requestInit?.method).toBe("POST");
+    expect(requestInit?.headers).toMatchObject({
+      "content-type": "application/json",
+    });
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      website: "bot value",
+      sourcePath: "/play",
+    });
+  });
+});
+
+describe("FeedbackForm style contract", () => {
+  it("keeps the compact panel and legible secondary text", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "src/components/FeedbackForm.tsx"),
+      "utf8",
+    );
+
     expect(source).toContain("rounded-lg");
     expect(source).toContain("focus-visible:ring-2");
-  });
-
-  it("posts JSON once and includes the source pathname", async () => {
-    const source = await readFeedbackFormSource();
-
-    expect(source).toContain('fetch("/api/feedback"');
-    expect(source).toContain('method: "POST"');
-    expect(source).toContain('"content-type": "application/json"');
-    expect(source).toContain("body: JSON.stringify({");
-    expect(source).toContain("feedbackType,");
-    expect(source).toContain("message,");
-    expect(source).toContain("contactEmail,");
-    expect(source).toContain("website,");
-    expect(source).toContain("sourcePath,");
-    expect(source).toContain("response.json()");
-    expect(source).toContain("{ message?: string }");
-    expect(source).toContain("if (!response.ok)");
-    expect(source).toContain("submittingRef.current");
-    expect(source).toContain("disabled={submitting}");
-  });
-
-  it("clears every editable field on success and exposes a status", async () => {
-    const source = await readFeedbackFormSource();
-
-    expect(source).toContain('setFeedbackType("general")');
-    expect(source).toContain('setMessage("")');
-    expect(source).toContain('setContactEmail("")');
-    expect(source).toContain('setWebsite("")');
-    expect(source).toContain('role="status"');
-  });
-
-  it("preserves inputs on failure and exposes an alert", async () => {
-    const source = await readFeedbackFormSource();
-    const responseGuard = source.indexOf("if (!response.ok)");
-    const firstReset = source.indexOf('setFeedbackType("general")', responseGuard);
-    const catchBlock = source.indexOf("} catch (feedbackError)", firstReset);
-
-    expect(responseGuard).toBeGreaterThanOrEqual(0);
-    expect(firstReset).toBeGreaterThan(responseGuard);
-    expect(catchBlock).toBeGreaterThan(firstReset);
-    expect(source.slice(catchBlock)).not.toContain('setFeedbackType("general")');
-    expect(source.slice(catchBlock)).not.toContain('setMessage("")');
-    expect(source.slice(catchBlock)).not.toContain('setContactEmail("")');
-    expect(source.slice(catchBlock)).not.toContain('setWebsite("")');
-    expect(source).toContain('role="alert"');
+    expect(source).toContain("placeholder:text-white/50");
+    expect(source).toContain("text-white/70");
+    expect(source).toContain("text-white/60");
+    expect(source).not.toContain("placeholder:text-white/30");
+    expect(source).not.toContain("text-white/45");
   });
 });
