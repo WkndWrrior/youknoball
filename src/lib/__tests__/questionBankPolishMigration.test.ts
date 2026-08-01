@@ -299,6 +299,9 @@ const actions: PolishAction[] = [
     action: "rewrite",
     oldText:
       "Which Heisman winner also took his Oregon State Beavers to the NCAA basketball Final Four?",
+    additionalPriorTexts: [
+      "Which Heisman winner also played in the NCAA basketball Final Four?",
+    ],
     finalText:
       "Which Heisman Trophy winner also played in the 1963 NCAA men's basketball Final Four?",
     sourceUrls: [

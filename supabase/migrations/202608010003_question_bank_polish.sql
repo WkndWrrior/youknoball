@@ -425,6 +425,7 @@ begin
     and (
       q.id = '051d193c-b8a1-4d2d-888b-631a9bcdc0da'::uuid
       or q.question_text = 'Which Heisman winner also took his Oregon State Beavers to the NCAA basketball Final Four?'
+      or q.question_text = 'Which Heisman winner also played in the NCAA basketball Final Four?'
     );
 
   get diagnostics updated_count = row_count;
