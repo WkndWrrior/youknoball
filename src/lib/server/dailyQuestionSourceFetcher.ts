@@ -13,7 +13,10 @@ const MAX_ERROR_LENGTH = 300;
 const MAX_SAVED_SOURCE_URLS = 20;
 const MAX_SOURCE_URL_LENGTH = 2_048;
 const MAX_SOURCE_CONCURRENCY = 4;
+const DEFAULT_CLEANUP_TIMEOUT_MS = 250;
+const MAX_CHARSET_SNIFF_BYTES = 4_096;
 const SOURCE_TIMEOUT = Symbol("source_timeout");
+const CLEANUP_TIMEOUT = Symbol("cleanup_timeout");
 const UTF8_ENCODER = new TextEncoder();
 
 // Configurable sources are intentionally limited to TLDs used by US leagues,
@@ -74,7 +77,7 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "text/plain",
 ]);
 
-export type SourceFetch = (
+type SourceFetch = (
   input: string,
   init: RequestInit,
 ) => Promise<Response>;
@@ -84,22 +87,23 @@ export interface SourceDnsAddress {
   family: 4 | 6;
 }
 
-export type SourceDnsResolver = (
+type SourceDnsResolver = (
   hostname: string,
 ) => Promise<readonly SourceDnsAddress[]>;
 
-export interface PinnedSourceContext {
+interface PinnedSourceContext {
   hostname: string;
   addresses: readonly SourceDnsAddress[];
   lookup: LookupFunction;
 }
 
-export interface PinnedSourceResponse {
+interface PinnedSourceResponse {
   response: Response;
   close: () => Promise<void>;
+  destroy?: () => Promise<void> | void;
 }
 
-export type PinnedSourceFetch = (
+type PinnedSourceFetch = (
   input: string,
   init: RequestInit,
   context: PinnedSourceContext,
@@ -110,12 +114,34 @@ export interface SourceUrlOptions {
 }
 
 export interface SourceFetchOptions extends SourceUrlOptions {
-  fetchImpl?: SourceFetch;
-  resolver?: SourceDnsResolver;
-  pinnedFetchImpl?: PinnedSourceFetch;
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;
+}
+
+interface SourceFetcherDependencies {
+  fetchImpl?: SourceFetch;
+  resolver: SourceDnsResolver;
+  pinnedFetchImpl: PinnedSourceFetch;
+  cleanupTimeoutMs: number;
+}
+
+interface TestOnlySourceFetcherDependencies {
+  fetchImpl?: SourceFetch;
+  resolver?: SourceDnsResolver;
+  pinnedFetchImpl?: PinnedSourceFetch;
+  cleanupTimeoutMs?: number;
+}
+
+interface SourceFetcher {
+  fetchSourceEvidence: (
+    input: string,
+    options?: SourceFetchOptions,
+  ) => Promise<SourceEvidenceResult>;
+  collectSavedSourceEvidence: (
+    sourceNotes: string | null | undefined,
+    options?: SourceFetchOptions,
+  ) => Promise<SourceEvidenceResult[]>;
 }
 
 export type SourceUrlRejectionReason =
@@ -453,6 +479,29 @@ export function createPinnedSourceLookup(
   };
 }
 
+function createPinnedDispatcher(lookup: LookupFunction): Agent {
+  return new Agent({
+    autoSelectFamily: true,
+    autoSelectFamilyAttemptTimeout: 250,
+    connections: 1,
+    pipelining: 1,
+    connect: { lookup },
+  });
+}
+
+function assertTestEnvironment(): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("Test-only source fetch helpers require the test environment");
+  }
+}
+
+export function createTestOnlyPinnedDispatcher(
+  lookup: LookupFunction,
+): Agent {
+  assertTestEnvironment();
+  return createPinnedDispatcher(lookup);
+}
+
 const defaultPinnedSourceFetch: PinnedSourceFetch = async (
   input,
   init,
@@ -460,35 +509,21 @@ const defaultPinnedSourceFetch: PinnedSourceFetch = async (
 ) => {
   // Only DNS lookup is replaced. The request URL remains unchanged so Undici
   // uses the authoritative hostname for HTTP Host and TLS SNI/certificate checks.
-  const dispatcher = new Agent({
-    autoSelectFamily: true,
-    autoSelectFamilyAttemptTimeout: 250,
-    connections: 1,
-    pipelining: 1,
-    connect: { lookup: context.lookup },
-  });
+  const dispatcher = createPinnedDispatcher(context.lookup);
   try {
     const response = await undiciFetch(input, {
       ...init,
       dispatcher,
     } as Parameters<typeof undiciFetch>[1]);
-    let closed = false;
     return {
       response: response as unknown as Response,
-      close: async () => {
-        if (closed) {
-          return;
-        }
-        closed = true;
-        try {
-          await dispatcher.close();
-        } catch (error) {
-          await dispatcher.destroy(error instanceof Error ? error : null);
-        }
-      },
+      close: () => dispatcher.close(),
+      destroy: () => dispatcher.destroy(),
     };
   } catch (error) {
-    await dispatcher.destroy(error instanceof Error ? error : null);
+    void dispatcher
+      .destroy(error instanceof Error ? error : null)
+      .catch(() => undefined);
     throw error;
   }
 };
@@ -783,6 +818,42 @@ function cancelReader(
   }
 }
 
+function runDetached(action: (() => Promise<void> | void) | undefined): void {
+  if (!action) {
+    return;
+  }
+  void Promise.resolve()
+    .then(action)
+    .catch(() => undefined);
+}
+
+async function cleanupPinnedResponse(
+  pinnedResponse: PinnedSourceResponse,
+  cleanupTimeoutMs: number,
+): Promise<void> {
+  let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+  const cleanupTimeout = new Promise<typeof CLEANUP_TIMEOUT>((resolve) => {
+    cleanupTimer = setTimeout(() => resolve(CLEANUP_TIMEOUT), cleanupTimeoutMs);
+  });
+  const closeResult = Promise.resolve()
+    .then(pinnedResponse.close)
+    .then(
+      () => true,
+      () => false,
+    );
+
+  try {
+    const result = await Promise.race([closeResult, cleanupTimeout]);
+    if (result !== true) {
+      runDetached(pinnedResponse.destroy);
+    }
+  } finally {
+    if (cleanupTimer) {
+      clearTimeout(cleanupTimer);
+    }
+  }
+}
+
 async function readBoundedBody(
   response: Response,
   maxBytes: number,
@@ -854,12 +925,80 @@ async function readBoundedBody(
   };
 }
 
-function decodeSourceBody(data: Uint8Array, rawContentType: string): string {
-  const charsetMatch = rawContentType.match(
+function extractCharsetParameter(value: string): string | null {
+  const match = value.match(
     /(?:^|;)\s*charset\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s]+))/i,
   );
+  return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
+}
+
+function sniffBomCharset(data: Uint8Array): string | null {
+  if (data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) {
+    return "utf-8";
+  }
+  if (data[0] === 0xff && data[1] === 0xfe) {
+    return "utf-16le";
+  }
+  if (data[0] === 0xfe && data[1] === 0xff) {
+    return "utf-16be";
+  }
+  return null;
+}
+
+function parseMetaAttributes(tag: string): Map<string, string> {
+  const attributes = new Map<string, string>();
+  const pattern = /([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(tag)) !== null) {
+    attributes.set(
+      match[1].toLowerCase(),
+      match[2] ?? match[3] ?? match[4] ?? "",
+    );
+  }
+  return attributes;
+}
+
+function sniffHtmlMetaCharset(data: Uint8Array): string | null {
+  const bounded = data.subarray(
+    0,
+    Math.min(data.byteLength, MAX_CHARSET_SNIFF_BYTES),
+  );
+  let initialHtml = "";
+  for (const byte of bounded) {
+    initialHtml += String.fromCharCode(byte);
+  }
+
+  for (const match of initialHtml.matchAll(/<meta\s+[^>]*>/gi)) {
+    const attributes = parseMetaAttributes(match[0]);
+    const charset = attributes.get("charset");
+    if (charset) {
+      return charset;
+    }
+    if (attributes.get("http-equiv")?.toLowerCase() === "content-type") {
+      const contentCharset = extractCharsetParameter(
+        attributes.get("content") ?? "",
+      );
+      if (contentCharset) {
+        return contentCharset;
+      }
+    }
+  }
+  return null;
+}
+
+function decodeSourceBody(
+  data: Uint8Array,
+  rawContentType: string,
+  contentType: string,
+): string {
+  const declaredCharset = extractCharsetParameter(rawContentType);
   const charset =
-    charsetMatch?.[1] ?? charsetMatch?.[2] ?? charsetMatch?.[3] ?? "utf-8";
+    declaredCharset ??
+    sniffBomCharset(data) ??
+    (contentType === "text/html" || contentType === "application/xhtml+xml"
+      ? sniffHtmlMetaCharset(data)
+      : null) ??
+    "utf-8";
   try {
     return new TextDecoder(charset, { fatal: false }).decode(data);
   } catch {
@@ -909,9 +1048,10 @@ function resultBase(
   return { requestedUrl, finalUrl, redirects: [...redirects] };
 }
 
-export async function fetchSourceEvidence(
+async function fetchSourceEvidenceWithDependencies(
   input: string,
-  options: SourceFetchOptions = {},
+  options: SourceFetchOptions,
+  dependencies: SourceFetcherDependencies,
 ): Promise<SourceEvidenceResult> {
   const initialValidation = validateSourceUrl(input, options);
   const rejectedInput = truncateUnicode(input, 2_000);
@@ -924,9 +1064,9 @@ export async function fetchSourceEvidence(
   }
 
   const requestedUrl = initialValidation.url;
-  const injectedFetch = options.fetchImpl;
-  const resolver = options.resolver ?? defaultSourceDnsResolver;
-  const pinnedFetch = options.pinnedFetchImpl ?? defaultPinnedSourceFetch;
+  const injectedFetch = dependencies.fetchImpl;
+  const resolver = dependencies.resolver;
+  const pinnedFetch = dependencies.pinnedFetchImpl;
   const timeoutMs = Math.min(
     positiveIntegerOrDefault(options.timeoutMs, DEFAULT_TIMEOUT_MS),
     DEFAULT_TIMEOUT_MS,
@@ -954,7 +1094,7 @@ export async function fetchSourceEvidence(
 
   try {
     while (true) {
-      let closePinnedResponse: (() => Promise<void>) | null = null;
+      let pinnedResponse: PinnedSourceResponse | null = null;
       try {
         let response: Response;
         const requestInit: RequestInit = {
@@ -1025,7 +1165,7 @@ export async function fetchSourceEvidence(
               };
             }
             response = pinnedResult.response;
-            closePinnedResponse = pinnedResult.close;
+            pinnedResponse = pinnedResult;
           }
         } catch (error) {
           if (controller.signal.aborted) {
@@ -1044,7 +1184,7 @@ export async function fetchSourceEvidence(
         if (REDIRECT_STATUSES.has(response.status)) {
           const location = response.headers.get("location");
           cancelBody(response);
-          if (!location || hasExplicitPort(location)) {
+          if (!location || location.includes("\\") || hasExplicitPort(location)) {
             return {
               ...resultBase(requestedUrl, currentUrl, redirects),
               status: "rejected",
@@ -1165,7 +1305,11 @@ export async function fetchSourceEvidence(
           };
         }
 
-        const decodedBody = decodeSourceBody(body.data, rawContentType);
+        const decodedBody = decodeSourceBody(
+          body.data,
+          rawContentType,
+          contentType,
+        );
         const evidence = extractEvidenceText(decodedBody, contentType);
         return {
           ...resultBase(requestedUrl, currentUrl, redirects),
@@ -1175,13 +1319,11 @@ export async function fetchSourceEvidence(
           contentType,
         };
       } finally {
-        if (closePinnedResponse) {
-          try {
-            await closePinnedResponse();
-          } catch {
-            // The response has already been consumed or cancelled. The default
-            // pinned fetch destroys its dispatcher if graceful close fails.
-          }
+        if (pinnedResponse) {
+          await cleanupPinnedResponse(
+            pinnedResponse,
+            dependencies.cleanupTimeoutMs,
+          );
         }
       }
     }
@@ -1202,9 +1344,10 @@ export async function fetchSourceEvidence(
   }
 }
 
-export async function collectSavedSourceEvidence(
+async function collectSavedSourceEvidenceWithDependencies(
   sourceNotes: string | null | undefined,
-  options: SourceFetchOptions = {},
+  options: SourceFetchOptions,
+  dependencies: SourceFetcherDependencies,
 ): Promise<SourceEvidenceResult[]> {
   const urls = extractApprovedSourceUrls(sourceNotes, options);
   const results = new Array<SourceEvidenceResult>(urls.length);
@@ -1214,10 +1357,64 @@ export async function collectSavedSourceEvidence(
     while (nextIndex < urls.length) {
       const index = nextIndex;
       nextIndex += 1;
-      results[index] = await fetchSourceEvidence(urls[index], options);
+      results[index] = await fetchSourceEvidenceWithDependencies(
+        urls[index],
+        options,
+        dependencies,
+      );
     }
   };
   const workerCount = Math.min(MAX_SOURCE_CONCURRENCY, urls.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
   return results;
+}
+
+function createSourceFetcher(
+  dependencies: SourceFetcherDependencies,
+): SourceFetcher {
+  return {
+    fetchSourceEvidence: (input, options = {}) =>
+      fetchSourceEvidenceWithDependencies(input, options, dependencies),
+    collectSavedSourceEvidence: (sourceNotes, options = {}) =>
+      collectSavedSourceEvidenceWithDependencies(
+        sourceNotes,
+        options,
+        dependencies,
+      ),
+  };
+}
+
+const productionSourceFetcher = createSourceFetcher({
+  resolver: defaultSourceDnsResolver,
+  pinnedFetchImpl: defaultPinnedSourceFetch,
+  cleanupTimeoutMs: DEFAULT_CLEANUP_TIMEOUT_MS,
+});
+
+export function createTestOnlySourceFetcher(
+  overrides: TestOnlySourceFetcherDependencies,
+): SourceFetcher {
+  assertTestEnvironment();
+  return createSourceFetcher({
+    fetchImpl: overrides.fetchImpl,
+    resolver: overrides.resolver ?? defaultSourceDnsResolver,
+    pinnedFetchImpl: overrides.pinnedFetchImpl ?? defaultPinnedSourceFetch,
+    cleanupTimeoutMs: positiveIntegerOrDefault(
+      overrides.cleanupTimeoutMs,
+      DEFAULT_CLEANUP_TIMEOUT_MS,
+    ),
+  });
+}
+
+export async function fetchSourceEvidence(
+  input: string,
+  options: SourceFetchOptions = {},
+): Promise<SourceEvidenceResult> {
+  return productionSourceFetcher.fetchSourceEvidence(input, options);
+}
+
+export async function collectSavedSourceEvidence(
+  sourceNotes: string | null | undefined,
+  options: SourceFetchOptions = {},
+): Promise<SourceEvidenceResult[]> {
+  return productionSourceFetcher.collectSavedSourceEvidence(sourceNotes, options);
 }

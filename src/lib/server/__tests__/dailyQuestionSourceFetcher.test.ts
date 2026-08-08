@@ -1,19 +1,86 @@
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo, LookupFunction } from "node:net";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetch as undiciFetch } from "undici";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import {
-  collectSavedSourceEvidence,
+  collectSavedSourceEvidence as collectSavedSourceEvidenceProduction,
   createPinnedSourceLookup,
+  createTestOnlyPinnedDispatcher,
+  createTestOnlySourceFetcher,
   extractApprovedSourceUrls,
-  fetchSourceEvidence,
+  fetchSourceEvidence as fetchSourceEvidenceProduction,
   isPublicSourceAddress,
   resolvePublicSourceAddresses,
   validateSourceUrl,
-  type PinnedSourceFetch,
-  type SourceDnsResolver,
-  type SourceFetch,
+  type SourceFetchOptions,
 } from "@/lib/server/dailyQuestionSourceFetcher";
+
+type SourceFetch = (input: string, init: RequestInit) => Promise<Response>;
+interface SourceDnsAddress {
+  address: string;
+  family: 4 | 6;
+}
+type SourceDnsResolver = (
+  hostname: string,
+) => Promise<readonly SourceDnsAddress[]>;
+interface PinnedSourceContext {
+  hostname: string;
+  addresses: readonly SourceDnsAddress[];
+  lookup: LookupFunction;
+}
+interface PinnedSourceResponse {
+  response: Response;
+  close: () => Promise<void>;
+  destroy?: () => Promise<void> | void;
+}
+type PinnedSourceFetch = (
+  input: string,
+  init: RequestInit,
+  context: PinnedSourceContext,
+) => Promise<PinnedSourceResponse>;
+
+interface TestSourceFetchOptions extends SourceFetchOptions {
+  fetchImpl?: SourceFetch;
+  resolver?: SourceDnsResolver;
+  pinnedFetchImpl?: PinnedSourceFetch;
+  cleanupTimeoutMs?: number;
+}
+
+function createFetcherForTest(options: TestSourceFetchOptions) {
+  const {
+    fetchImpl,
+    resolver,
+    pinnedFetchImpl,
+    cleanupTimeoutMs,
+    ...safeOptions
+  } = options;
+  const fetcher = createTestOnlySourceFetcher({
+    fetchImpl,
+    resolver,
+    pinnedFetchImpl,
+    cleanupTimeoutMs,
+  });
+  return { fetcher, safeOptions };
+}
+
+async function fetchSourceEvidence(
+  input: string,
+  options: TestSourceFetchOptions,
+) {
+  const { fetcher, safeOptions } = createFetcherForTest(options);
+  return fetcher.fetchSourceEvidence(input, safeOptions);
+}
+
+async function collectSavedSourceEvidence(
+  sourceNotes: string,
+  options: TestSourceFetchOptions,
+) {
+  const { fetcher, safeOptions } = createFetcherForTest(options);
+  return fetcher.collectSavedSourceEvidence(sourceNotes, safeOptions);
+}
 
 function asFetch(implementation: SourceFetch): SourceFetch {
   return vi.fn(implementation);
@@ -21,6 +88,26 @@ function asFetch(implementation: SourceFetch): SourceFetch {
 
 function asPinnedFetch(implementation: PinnedSourceFetch): PinnedSourceFetch {
   return vi.fn(implementation);
+}
+
+async function withTestDeadline<T>(
+  promise: Promise<T>,
+  timeoutMs = 2_000,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Test operation exceeded ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([promise, deadline]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function htmlResponse(
@@ -202,6 +289,10 @@ describe("approved question source URLs", () => {
 });
 
 describe("source fetch runtime requirements", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("declares Undici and a Node runtime compatible with local Node 22", () => {
     const packageJson = JSON.parse(
       readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),
@@ -244,6 +335,101 @@ describe("source fetch runtime requirements", () => {
     expect(
       isAtLeastMinimum(process.versions.node.split(".").map(Number)),
     ).toBe(true);
+  });
+
+  it("keeps unsafe dependency hooks out of normal production options", async () => {
+    expectTypeOf<SourceFetchOptions>().not.toHaveProperty("fetchImpl");
+    expectTypeOf<SourceFetchOptions>().not.toHaveProperty("resolver");
+    expectTypeOf<SourceFetchOptions>().not.toHaveProperty("pinnedFetchImpl");
+    expectTypeOf<
+      NonNullable<Parameters<typeof fetchSourceEvidenceProduction>[1]>
+    >().toEqualTypeOf<SourceFetchOptions>();
+    expectTypeOf<
+      NonNullable<Parameters<typeof collectSavedSourceEvidenceProduction>[1]>
+    >().toEqualTypeOf<SourceFetchOptions>();
+
+    const unsafeFetch = vi.fn(async () => htmlResponse("must not run"));
+    await expect(
+      fetchSourceEvidenceProduction("http://127.0.0.1/private", {
+        fetchImpl: unsafeFetch,
+      } as SourceFetchOptions),
+    ).resolves.toMatchObject({ status: "rejected" });
+    expect(unsafeFetch).not.toHaveBeenCalled();
+  });
+
+  it("guards test-only source construction outside the test environment", () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    expect(() => createTestOnlySourceFetcher({})).toThrow(/test environment/i);
+    expect(() =>
+      createTestOnlyPinnedDispatcher((() => undefined) as LookupFunction),
+    ).toThrow(/test environment/i);
+  });
+
+  it("wires the real Undici Agent to pinned lookup while preserving Host", async () => {
+    let receivedHost = "";
+    const server = createServer((request, response) => {
+      receivedHost = request.headers.host ?? "";
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end("pinned connector response");
+    });
+    const lookup = vi.fn(
+      createPinnedSourceLookup("www.ncaa.com", [
+        { address: "127.0.0.1", family: 4 },
+      ]),
+    ) as unknown as LookupFunction;
+    const dispatcher = createTestOnlyPinnedDispatcher(lookup);
+    let loopbackAvailable = true;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", resolve);
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EPERM") {
+        throw error;
+      }
+      loopbackAvailable = false;
+    }
+
+    try {
+      if (!loopbackAvailable) {
+        const optionsSymbol = Object.getOwnPropertySymbols(dispatcher).find(
+          (symbol) => symbol.description === "options",
+        );
+        expect(optionsSymbol).toBeDefined();
+        const agentOptions = (
+          dispatcher as unknown as Record<
+            symbol,
+            { connect?: { lookup?: LookupFunction } }
+          >
+        )[optionsSymbol as symbol];
+        expect(agentOptions.connect?.lookup).toBe(lookup);
+        return;
+      }
+
+      const port = (server.address() as AddressInfo).port;
+      const response = await withTestDeadline(
+        undiciFetch(`http://www.ncaa.com:${port}/connector-test`, {
+          dispatcher,
+        }),
+      );
+      await expect(response.text()).resolves.toBe("pinned connector response");
+      expect(lookup).toHaveBeenCalled();
+      expect(receivedHost).toBe(`www.ncaa.com:${port}`);
+    } finally {
+      await withTestDeadline(dispatcher.close()).catch(async () => {
+        await withTestDeadline(dispatcher.destroy()).catch(() => undefined);
+      });
+      if (server.listening) {
+        server.closeAllConnections();
+        await withTestDeadline(
+          new Promise<void>((resolve, reject) => {
+            server.close((error) => (error ? reject(error) : resolve()));
+          }),
+        );
+      }
+    }
   });
 });
 
@@ -623,6 +809,23 @@ describe("saved source evidence fetching", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects backslashes in a raw relative redirect before URL resolution", async () => {
+    const fetchMock = asFetch(async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "/\\www.ncaa.com:443/path" },
+      }),
+    );
+
+    await expect(
+      fetchSourceEvidence("https://www.ncaa.com/start", { fetchImpl: fetchMock }),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      reason: "disallowed_redirect",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ["disallowed redirect", "https://attacker.test/private", "disallowed_redirect"],
     ["credential redirect", "https://user:pass@www.ncaa.com/private", "disallowed_redirect"],
@@ -762,6 +965,45 @@ describe("saved source evidence fetching", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("bounds stalled response cancellation and dispatcher close, then destroys", async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn(() => new Promise<void>(() => {}));
+    const close = vi.fn(() => new Promise<void>(() => {}));
+    const destroy = vi.fn(() => new Promise<void>(() => {}));
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("partial evidence"));
+      },
+      cancel,
+    });
+    const resolver: SourceDnsResolver = async () => [
+      { address: "93.184.216.34", family: 4 },
+    ];
+    const pinnedFetch = asPinnedFetch(async () => ({
+      response: new Response(stream, {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+      close,
+      destroy,
+    }));
+
+    const pending = fetchSourceEvidence("https://www.ncaa.com/stalled", {
+      resolver,
+      pinnedFetchImpl: pinnedFetch,
+      timeoutMs: 25,
+      cleanupTimeoutMs: 10,
+    });
+    await vi.advanceTimersByTimeAsync(25);
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(pending).resolves.toMatchObject({ status: "timeout" });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("rejects a declared body larger than the byte limit", async () => {
     const fetchMock = asFetch(async () =>
       htmlResponse("small", {
@@ -850,6 +1092,69 @@ describe("saved source evidence fetching", () => {
     await expect(
       fetchSourceEvidence("https://www.espn.com/story", { fetchImpl: fetchMock }),
     ).resolves.toMatchObject({ status: "fetched", excerpt: "Café" });
+  });
+
+  it("sniffs a Unicode BOM when the HTTP content type omits charset", async () => {
+    const utf16Le = Uint8Array.from([
+      0xff,
+      0xfe,
+      0x43,
+      0x00,
+      0x61,
+      0x00,
+      0x66,
+      0x00,
+      0xe9,
+      0x00,
+    ]);
+    const fetchMock = asFetch(async () =>
+      new Response(utf16Le, {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+
+    await expect(
+      fetchSourceEvidence("https://www.espn.com/story", { fetchImpl: fetchMock }),
+    ).resolves.toMatchObject({ status: "fetched", excerpt: "Café" });
+  });
+
+  it.each([
+    '<meta charset="windows-1252">',
+    '<meta http-equiv="Content-Type" content="text/html; charset=windows-1252">',
+  ])("sniffs legacy HTML encoding from %s", async (meta) => {
+    const prefix = new TextEncoder().encode(
+      `<html><head>${meta}<title>Caf`,
+    );
+    const suffix = new TextEncoder().encode("</title></head><body>Caf");
+    const ending = new TextEncoder().encode("</body></html>");
+    const body = new Uint8Array(
+      prefix.byteLength + suffix.byteLength + ending.byteLength + 2,
+    );
+    let offset = 0;
+    body.set(prefix, offset);
+    offset += prefix.byteLength;
+    body[offset] = 0xe9;
+    offset += 1;
+    body.set(suffix, offset);
+    offset += suffix.byteLength;
+    body[offset] = 0xe9;
+    offset += 1;
+    body.set(ending, offset);
+    const fetchMock = asFetch(async () =>
+      new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+
+    await expect(
+      fetchSourceEvidence("https://www.espn.com/story", { fetchImpl: fetchMock }),
+    ).resolves.toMatchObject({
+      status: "fetched",
+      title: "Café",
+      excerpt: "Café",
+    });
   });
 
   it("rejects unsupported content types", async () => {
