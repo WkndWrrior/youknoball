@@ -5,6 +5,7 @@ import {
   getChallengeResolutionForDate,
   getPlayerSportCategoryPerformance,
   getServeableChallengeForDate,
+  prepareDailyChallengeDraftForDate,
   resolveCanonicalChallengeIdForDate,
 } from "@/lib/server/dailyChallengeRepository";
 
@@ -37,6 +38,7 @@ function createThenableQuery<T>(result: QueryResult<T>) {
   query.insert = vi.fn(() => query);
   query.update = vi.fn(() => query);
   query.delete = vi.fn(() => query);
+  query.is = vi.fn(() => query);
   query.maybeSingle = vi.fn(async () => result);
   query.single = vi.fn(async () => result);
   query.then = (resolve: (value: QueryResult<T>) => unknown, reject: (reason: unknown) => unknown) =>
@@ -231,6 +233,312 @@ const canonicalQuestions = canonicalRows.map((row) => {
     option_d: snapshot.option_d,
     correct_option: snapshot.correct_option,
   };
+});
+
+const completeDraftRows = reusableQuestionRows.map((question, index) => ({
+  slot: index + 1,
+  question_snapshot: question,
+}));
+
+describe("prepareDailyChallengeDraftForDate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    generateDailyChallengeQuestions.mockReset();
+  });
+
+  it("persists five generated snapshots without publishing the draft", async () => {
+    const generatedQuestions = reusableQuestionRows.map((question, index) => ({
+      ...question,
+      slot: index + 1,
+    }));
+    const challengeInsertQuery = createThenableQuery({
+      data: {
+        id: "generated_challenge_1",
+        challenge_date: "2026-04-02",
+        status: "generated",
+        generation_method: "auto",
+        rules_version: "v1",
+        generated_at: "2026-04-01T23:00:00Z",
+        published_at: null,
+        created_at: "2026-04-01T23:00:00Z",
+      },
+      error: null,
+    });
+    const itemInsertQuery = createThenableQuery({ data: null, error: null });
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({ data: null, error: null }),
+        createThenableQuery({ data: [], error: null }),
+        challengeInsertQuery,
+      ],
+      daily_challenge_items: itemInsertQuery,
+      questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
+    });
+
+    supabaseAdmin.mockReturnValue(adminClient);
+    generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
+
+    await expect(prepareDailyChallengeDraftForDate("2026-04-02")).resolves.toEqual({
+      challengeId: "generated_challenge_1",
+      challengeDate: "2026-04-02",
+      questionIds: generatedQuestions.map((question) => question.id),
+      questions: generatedQuestions,
+    });
+
+    expect(generateDailyChallengeQuestions).toHaveBeenCalledWith({
+      candidates: reusableQuestionRows,
+      recentQuestionIds: [],
+    });
+    expect(challengeInsertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        challenge_date: "2026-04-02",
+        status: "generated",
+        published_at: null,
+      }),
+    );
+    expect(itemInsertQuery.insert).toHaveBeenCalledWith(
+      generatedQuestions.map(({ slot, ...question }) => ({
+        daily_challenge_id: "generated_challenge_1",
+        slot,
+        question_id: question.id,
+        question_snapshot: question,
+      })),
+    );
+    expect(challengeInsertQuery.update).not.toHaveBeenCalled();
+  });
+
+  it("returns the same complete draft when the same date is prepared twice", async () => {
+    const generatedQuestions = reusableQuestionRows.map((question, index) => ({
+      ...question,
+      slot: index + 1,
+    }));
+    const generatedRow = {
+      id: "generated_challenge_1",
+      challenge_date: "2026-04-02",
+      status: "generated",
+      generation_method: "auto",
+      rules_version: "v1",
+      generated_at: "2026-04-01T23:00:00Z",
+      published_at: null,
+      created_at: "2026-04-01T23:00:00Z",
+    };
+    const challengeInsertQuery = createThenableQuery({
+      data: generatedRow,
+      error: null,
+    });
+    const itemInsertQuery = createThenableQuery({ data: null, error: null });
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({ data: null, error: null }),
+        createThenableQuery({ data: [], error: null }),
+        challengeInsertQuery,
+        createThenableQuery({ data: generatedRow, error: null }),
+      ],
+      daily_challenge_items: [
+        itemInsertQuery,
+        createThenableQuery({ data: completeDraftRows, error: null }),
+      ],
+      questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
+    });
+
+    supabaseAdmin.mockReturnValue(adminClient);
+    generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
+
+    const first = await prepareDailyChallengeDraftForDate("2026-04-02");
+    const second = await prepareDailyChallengeDraftForDate("2026-04-02");
+
+    expect(second).toEqual(first);
+    expect(generateDailyChallengeQuestions).toHaveBeenCalledTimes(1);
+    expect(challengeInsertQuery.insert).toHaveBeenCalledTimes(1);
+    expect(itemInsertQuery.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up an incomplete stale draft and prepares a fresh unpublished draft", async () => {
+    const generatedQuestions = reusableQuestionRows.map((question, index) => ({
+      ...question,
+      slot: index + 1,
+    }));
+    const staleDeleteQuery = createThenableQuery({ data: null, error: null });
+    const challengeInsertQuery = createThenableQuery({
+      data: {
+        id: "generated_challenge_2",
+        status: "generated",
+        generated_at: "2026-04-01T23:05:00Z",
+        published_at: null,
+      },
+      error: null,
+    });
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({
+          data: {
+            id: "stale_generated_1",
+            status: "generated",
+            generated_at: "2026-04-01T00:00:00Z",
+            published_at: null,
+          },
+          error: null,
+        }),
+        staleDeleteQuery,
+        createThenableQuery({ data: [], error: null }),
+        challengeInsertQuery,
+      ],
+      daily_challenge_items: [
+        createThenableQuery({ data: [], error: null }),
+        createThenableQuery({ data: null, error: null }),
+      ],
+      questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
+    });
+
+    supabaseAdmin.mockReturnValue(adminClient);
+    generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
+
+    await expect(prepareDailyChallengeDraftForDate("2026-04-02")).resolves.toMatchObject({
+      challengeId: "generated_challenge_2",
+      challengeDate: "2026-04-02",
+      questionIds: generatedQuestions.map((question) => question.id),
+    });
+
+    expect(staleDeleteQuery.delete).toHaveBeenCalledWith();
+    expect(challengeInsertQuery.update).not.toHaveBeenCalled();
+  });
+
+  it("re-reads and returns the canonical complete draft after an insert conflict", async () => {
+    const generatedQuestions = reusableQuestionRows.map((question, index) => ({
+      ...question,
+      slot: index + 1,
+    }));
+    const conflictQuery = createThenableQuery({
+      data: null,
+      error: { code: "23505", message: "duplicate challenge date" },
+    });
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({ data: null, error: null }),
+        createThenableQuery({ data: [], error: null }),
+        conflictQuery,
+        createThenableQuery({
+          data: {
+            id: "canonical_challenge",
+            status: "generated",
+            generated_at: "2026-04-01T23:00:00Z",
+            published_at: null,
+          },
+          error: null,
+        }),
+      ],
+      daily_challenge_items: createThenableQuery({
+        data: completeDraftRows,
+        error: null,
+      }),
+      questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
+    });
+
+    supabaseAdmin.mockReturnValue(adminClient);
+    generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
+
+    await expect(prepareDailyChallengeDraftForDate("2026-04-02")).resolves.toMatchObject({
+      challengeId: "canonical_challenge",
+      challengeDate: "2026-04-02",
+      questionIds: reusableQuestionRows.map((question) => question.id),
+    });
+
+    expect(conflictQuery.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects malformed challenge dates before reading the database", async () => {
+    await expect(prepareDailyChallengeDraftForDate("04/02/2026")).rejects.toThrow(
+      "Invalid challenge date",
+    );
+    expect(supabaseAdmin).not.toHaveBeenCalled();
+  });
+});
+
+describe("draft publication", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("promotes a complete generated draft before serving it publicly", async () => {
+    const publishQuery = createThenableQuery({
+      data: {
+        id: "generated_challenge_1",
+        status: "published",
+        generated_at: "2026-04-01T23:00:00Z",
+        published_at: "2026-04-02T05:00:00Z",
+      },
+      error: null,
+    });
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({
+          data: {
+            id: "generated_challenge_1",
+            status: "generated",
+            generated_at: "2026-04-01T23:00:00Z",
+            published_at: null,
+          },
+          error: null,
+        }),
+        publishQuery,
+      ],
+      daily_challenge_items: createThenableQuery({
+        data: completeDraftRows,
+        error: null,
+      }),
+    });
+    const client = createClientMock({});
+
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(
+      getChallengeResolutionForDate(client as never, "2026-04-02"),
+    ).resolves.toEqual({
+      dailyChallengeId: "generated_challenge_1",
+      questions: canonicalQuestions,
+    });
+
+    expect(publishQuery.update).toHaveBeenCalledWith({
+      status: "published",
+      published_at: expect.any(String),
+    });
+    expect(publishQuery.eq).toHaveBeenCalledWith("id", "generated_challenge_1");
+    expect(publishQuery.eq).toHaveBeenCalledWith("status", "generated");
+    expect(publishQuery.is).toHaveBeenCalledWith("published_at", null);
+  });
+
+  it("never serves an unpublished draft when atomic promotion fails", async () => {
+    const publishQuery = createThenableQuery({
+      data: null,
+      error: { code: "PGRST301", message: "service unavailable" },
+    });
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({
+          data: {
+            id: "generated_challenge_1",
+            status: "generated",
+            generated_at: "2026-04-01T23:00:00Z",
+            published_at: null,
+          },
+          error: null,
+        }),
+        publishQuery,
+      ],
+      daily_challenge_items: createThenableQuery({
+        data: completeDraftRows,
+        error: null,
+      }),
+      daily_challenge_questions: createThenableQuery({ data: [], error: null }),
+    });
+    const client = createClientMock({});
+
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(
+      getChallengeResolutionForDate(client as never, "2026-04-02"),
+    ).resolves.toEqual({ dailyChallengeId: null, questions: [] });
+  });
 });
 
 describe("getPlayerSportCategoryPerformance", () => {
