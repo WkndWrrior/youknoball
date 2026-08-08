@@ -1,0 +1,488 @@
+const CHICAGO_TIME_ZONE = "America/Chicago";
+const MICRODOLLARS_PER_CENT = 10_000;
+const TOKEN_PRICE_DENOMINATOR = 1_000_000;
+const SEARCH_PRICE_SCALE = 1_000;
+
+export const DEFAULT_DAILY_REVIEW_MONTHLY_BUDGET_CENTS = 1_000;
+export const MAX_DAILY_REVIEW_MONTHLY_BUDGET_CENTS = 1_000_000;
+
+export const DAILY_REVIEW_PRICING = {
+  version: "2026-08-08",
+  verifierVersion: "nightly-question-verifier-v1",
+  models: {
+    "gpt-5.6-terra": {
+      uncachedInputMicrodollarsPerMillionTokens: 2_500_000,
+      cachedInputMicrodollarsPerMillionTokens: 250_000,
+      outputMicrodollarsPerMillionTokens: 15_000_000,
+      webSearchMicrodollarsPerThousandCalls: 10_000_000,
+    },
+  },
+} as const;
+
+export type DailyReviewPricedModel = keyof typeof DAILY_REVIEW_PRICING.models;
+
+export interface DailyQuestionReviewUsage {
+  model: string;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  webSearchCalls?: number;
+}
+
+export const DAILY_REVIEW_MAX_REQUEST_USAGE = {
+  inputTokens: 16_000,
+  cachedInputTokens: 0,
+  outputTokens: 1_800,
+  webSearchCalls: 1,
+} as const;
+
+export const DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION = 2;
+export const DAILY_REVIEW_MAX_QUESTIONS_PER_RUN = 5;
+
+const COST_BEARING_RUN_STATUSES = new Set([
+  "running",
+  "completed",
+  "completed_with_flags",
+  "failed",
+]);
+
+const CHICAGO_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: CHICAGO_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+export interface PersistedDailyQuestionReviewCost {
+  id: string;
+  status: string;
+  occurredAt: string;
+  estimatedCostMicrodollars: number;
+}
+
+export type DailyQuestionReviewBudgetReason =
+  | "within_budget"
+  | "monthly_budget_exceeded"
+  | "reservation_exceeds_remaining"
+  | "invalid_current_time"
+  | "invalid_reservation";
+
+export interface DailyQuestionReviewBudgetResult {
+  allowed: boolean;
+  spentMicrodollars: number;
+  limitMicrodollars: number;
+  remainingMicrodollars: number;
+  reservedMicrodollars: number;
+  reason: DailyQuestionReviewBudgetReason;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonnegativeSafeInteger(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+  );
+}
+
+function requireUsageCounter(value: number | undefined, field: string): number {
+  const normalized = value ?? 0;
+
+  if (!isNonnegativeSafeInteger(normalized)) {
+    throw new RangeError(`${field} must be a nonnegative safe integer.`);
+  }
+
+  return normalized;
+}
+
+function checkedMultiply(left: number, right: number, field: string): number {
+  if (left !== 0 && right > Math.floor(Number.MAX_SAFE_INTEGER / left)) {
+    throw new RangeError(`${field} exceeds safe integer accounting.`);
+  }
+
+  return left * right;
+}
+
+function checkedAdd(left: number, right: number, field: string): number {
+  if (right > Number.MAX_SAFE_INTEGER - left) {
+    throw new RangeError(`${field} exceeds safe integer accounting.`);
+  }
+
+  return left + right;
+}
+
+function integerCeilDivide(numerator: number, denominator: number): number {
+  const quotient = Math.floor(numerator / denominator);
+
+  return numerator % denominator === 0 ? quotient : quotient + 1;
+}
+
+export function estimateDailyQuestionReviewCostMicrodollars(
+  usage: DailyQuestionReviewUsage,
+): number {
+  const pricing = DAILY_REVIEW_PRICING.models[
+    usage.model as DailyReviewPricedModel
+  ];
+
+  if (!pricing) {
+    throw new RangeError(`No approved pricing for model ${usage.model}.`);
+  }
+
+  const inputTokens = requireUsageCounter(usage.inputTokens, "inputTokens");
+  const cachedInputTokens = requireUsageCounter(
+    usage.cachedInputTokens,
+    "cachedInputTokens",
+  );
+  const outputTokens = requireUsageCounter(usage.outputTokens, "outputTokens");
+  const webSearchCalls = requireUsageCounter(
+    usage.webSearchCalls,
+    "webSearchCalls",
+  );
+
+  if (cachedInputTokens > inputTokens) {
+    throw new RangeError("cachedInputTokens cannot exceed inputTokens.");
+  }
+
+  const uncachedInputTokens = inputTokens - cachedInputTokens;
+  const uncachedInputCostNumerator = checkedMultiply(
+    uncachedInputTokens,
+    pricing.uncachedInputMicrodollarsPerMillionTokens,
+    "Uncached input cost",
+  );
+  const cachedInputCostNumerator = checkedMultiply(
+    cachedInputTokens,
+    pricing.cachedInputMicrodollarsPerMillionTokens,
+    "Cached input cost",
+  );
+  const outputCostNumerator = checkedMultiply(
+    outputTokens,
+    pricing.outputMicrodollarsPerMillionTokens,
+    "Output cost",
+  );
+  const searchCostNumerator = checkedMultiply(
+    checkedMultiply(
+      webSearchCalls,
+      pricing.webSearchMicrodollarsPerThousandCalls,
+      "Web search cost",
+    ),
+    SEARCH_PRICE_SCALE,
+    "Web search cost",
+  );
+  const inputCostNumerator = checkedAdd(
+    uncachedInputCostNumerator,
+    cachedInputCostNumerator,
+    "Input cost",
+  );
+  const tokenCostNumerator = checkedAdd(
+    inputCostNumerator,
+    outputCostNumerator,
+    "Token cost",
+  );
+  const totalCostNumerator = checkedAdd(
+    tokenCostNumerator,
+    searchCostNumerator,
+    "Estimated review cost",
+  );
+
+  return integerCeilDivide(totalCostNumerator, TOKEN_PRICE_DENOMINATOR);
+}
+
+export const DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS =
+  estimateDailyQuestionReviewCostMicrodollars({
+    model: "gpt-5.6-terra",
+    ...DAILY_REVIEW_MAX_REQUEST_USAGE,
+  });
+
+export const DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS =
+  DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS *
+  DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION *
+  DAILY_REVIEW_MAX_QUESTIONS_PER_RUN;
+
+function getChicagoDateTimeParts(date: Date) {
+  const parts = CHICAGO_DATE_TIME_FORMATTER.formatToParts(date);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: Number(values.get("year")),
+    month: Number(values.get("month")),
+    day: Number(values.get("day")),
+    hour: Number(values.get("hour")),
+    minute: Number(values.get("minute")),
+    second: Number(values.get("second")),
+  };
+}
+
+function getChicagoMidnightUtc(year: number, month: number): Date {
+  const desiredLocalTimestamp = Date.UTC(year, month - 1, 1, 0, 0, 0, 0);
+  const initialCandidate = new Date(Date.UTC(year, month - 1, 1, 6, 0, 0, 0));
+  const actualLocal = getChicagoDateTimeParts(initialCandidate);
+  const actualLocalTimestamp = Date.UTC(
+    actualLocal.year,
+    actualLocal.month - 1,
+    actualLocal.day,
+    actualLocal.hour,
+    actualLocal.minute,
+    actualLocal.second,
+    0,
+  );
+  const correctedCandidate = new Date(
+    initialCandidate.getTime() + desiredLocalTimestamp - actualLocalTimestamp,
+  );
+  const correctedLocal = getChicagoDateTimeParts(correctedCandidate);
+
+  if (
+    correctedLocal.year !== year ||
+    correctedLocal.month !== month ||
+    correctedLocal.day !== 1 ||
+    correctedLocal.hour !== 0 ||
+    correctedLocal.minute !== 0 ||
+    correctedLocal.second !== 0
+  ) {
+    throw new RangeError("Unable to resolve the Central calendar boundary.");
+  }
+
+  return correctedCandidate;
+}
+
+export function getChicagoCalendarMonthRange(now: Date): {
+  startInclusive: string;
+  endExclusive: string;
+} {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new RangeError("Budget accounting requires a valid current time.");
+  }
+
+  const chicagoNow = getChicagoDateTimeParts(now);
+  const nextMonth = chicagoNow.month === 12 ? 1 : chicagoNow.month + 1;
+  const nextMonthYear =
+    chicagoNow.month === 12 ? chicagoNow.year + 1 : chicagoNow.year;
+
+  return {
+    startInclusive: getChicagoMidnightUtc(
+      chicagoNow.year,
+      chicagoNow.month,
+    ).toISOString(),
+    endExclusive: getChicagoMidnightUtc(nextMonthYear, nextMonth).toISOString(),
+  };
+}
+
+export function getDailyQuestionReviewMonthlyBudgetCents(
+  rawValue: unknown = process.env.DAILY_REVIEW_MONTHLY_BUDGET_CENTS,
+): number {
+  if (typeof rawValue !== "string" || !/^\d+$/.test(rawValue)) {
+    return DEFAULT_DAILY_REVIEW_MONTHLY_BUDGET_CENTS;
+  }
+
+  const parsed = Number(rawValue);
+
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed <= 0 ||
+    parsed > MAX_DAILY_REVIEW_MONTHLY_BUDGET_CENTS
+  ) {
+    return DEFAULT_DAILY_REVIEW_MONTHLY_BUDGET_CENTS;
+  }
+
+  return parsed;
+}
+
+function parsePersistedCostRecord(
+  value: unknown,
+): PersistedDailyQuestionReviewCost | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    value.id.trim().length === 0 ||
+    typeof value.status !== "string" ||
+    !COST_BEARING_RUN_STATUSES.has(value.status) ||
+    typeof value.occurredAt !== "string" ||
+    !isNonnegativeSafeInteger(value.estimatedCostMicrodollars)
+  ) {
+    return null;
+  }
+
+  const occurredAt = new Date(value.occurredAt);
+
+  if (Number.isNaN(occurredAt.getTime())) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    status: value.status,
+    occurredAt: occurredAt.toISOString(),
+    estimatedCostMicrodollars: value.estimatedCostMicrodollars,
+  };
+}
+
+function saturatingSafeIntegerAdd(left: number, right: number): number {
+  if (right > Number.MAX_SAFE_INTEGER - left) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  return left + right;
+}
+
+export function sumCurrentMonthReviewSpendMicrodollars(
+  records: readonly unknown[],
+  now: Date = new Date(),
+): number {
+  const range = getChicagoCalendarMonthRange(now);
+  const startTimestamp = Date.parse(range.startInclusive);
+  const endTimestamp = Date.parse(range.endExclusive);
+  const greatestCostByRunId = new Map<string, number>();
+
+  for (const value of records) {
+    const record = parsePersistedCostRecord(value);
+
+    if (!record) {
+      continue;
+    }
+
+    const occurredAt = Date.parse(record.occurredAt);
+
+    if (occurredAt < startTimestamp || occurredAt >= endTimestamp) {
+      continue;
+    }
+
+    greatestCostByRunId.set(
+      record.id,
+      Math.max(
+        greatestCostByRunId.get(record.id) ?? 0,
+        record.estimatedCostMicrodollars,
+      ),
+    );
+  }
+
+  let total = 0;
+
+  for (const cost of greatestCostByRunId.values()) {
+    total = saturatingSafeIntegerAdd(total, cost);
+  }
+
+  return total;
+}
+
+function normalizeBudgetCents(value: number | undefined): number {
+  if (value === undefined) {
+    return getDailyQuestionReviewMonthlyBudgetCents();
+  }
+
+  if (
+    !Number.isSafeInteger(value) ||
+    value <= 0 ||
+    value > MAX_DAILY_REVIEW_MONTHLY_BUDGET_CENTS
+  ) {
+    return DEFAULT_DAILY_REVIEW_MONTHLY_BUDGET_CENTS;
+  }
+
+  return value;
+}
+
+export function checkDailyQuestionReviewBudget(options: {
+  records: readonly unknown[];
+  now?: Date;
+  monthlyBudgetCents?: number;
+  reservedMicrodollars?: number;
+}): DailyQuestionReviewBudgetResult {
+  const limitMicrodollars =
+    normalizeBudgetCents(options.monthlyBudgetCents) * MICRODOLLARS_PER_CENT;
+  const reservedMicrodollars =
+    options.reservedMicrodollars ??
+    DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS;
+  const now = options.now ?? new Date();
+
+  if (!isNonnegativeSafeInteger(reservedMicrodollars)) {
+    return {
+      allowed: false,
+      spentMicrodollars: 0,
+      limitMicrodollars,
+      remainingMicrodollars: limitMicrodollars,
+      reservedMicrodollars: 0,
+      reason: "invalid_reservation",
+    };
+  }
+
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    return {
+      allowed: false,
+      spentMicrodollars: 0,
+      limitMicrodollars,
+      remainingMicrodollars: limitMicrodollars,
+      reservedMicrodollars,
+      reason: "invalid_current_time",
+    };
+  }
+
+  const spentMicrodollars = sumCurrentMonthReviewSpendMicrodollars(
+    options.records,
+    now,
+  );
+  const remainingMicrodollars = Math.max(
+    limitMicrodollars - spentMicrodollars,
+    0,
+  );
+
+  if (spentMicrodollars > limitMicrodollars) {
+    return {
+      allowed: false,
+      spentMicrodollars,
+      limitMicrodollars,
+      remainingMicrodollars,
+      reservedMicrodollars,
+      reason: "monthly_budget_exceeded",
+    };
+  }
+
+  if (reservedMicrodollars > remainingMicrodollars) {
+    return {
+      allowed: false,
+      spentMicrodollars,
+      limitMicrodollars,
+      remainingMicrodollars,
+      reservedMicrodollars,
+      reason: "reservation_exceeds_remaining",
+    };
+  }
+
+  return {
+    allowed: true,
+    spentMicrodollars,
+    limitMicrodollars,
+    remainingMicrodollars,
+    reservedMicrodollars,
+    reason: "within_budget",
+  };
+}
+
+export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
+  records: readonly unknown[];
+  operation: () => Promise<T> | T;
+  now?: Date;
+  monthlyBudgetCents?: number;
+  reservedMicrodollars?: number;
+}): Promise<{
+  budget: DailyQuestionReviewBudgetResult;
+  value: T | null;
+}> {
+  const budget = checkDailyQuestionReviewBudget(options);
+
+  if (!budget.allowed) {
+    return { budget, value: null };
+  }
+
+  return {
+    budget,
+    value: await options.operation(),
+  };
+}
+
+export const DAILY_REVIEW_DEFAULT_MONTHLY_LIMIT_MICRODOLLARS =
+  DEFAULT_DAILY_REVIEW_MONTHLY_BUDGET_CENTS * MICRODOLLARS_PER_CENT;
