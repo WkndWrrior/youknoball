@@ -10,6 +10,7 @@ export const DAILY_QUESTION_REVIEW_RUN_KINDS = ["scheduled"] as const;
 
 export const DAILY_QUESTION_REVIEW_EMAIL_STATUSES = [
   "pending",
+  "sending",
   "sent",
   "failed",
 ] as const;
@@ -171,6 +172,12 @@ export interface DailyQuestionReviewEmailMetadata {
   attempts: number;
   lastAttemptAt: string | null;
   failure: DailyQuestionReviewEmailFailure | null;
+}
+
+export interface DailyQuestionReviewEmailState {
+  status: DailyQuestionReviewEmailStatus;
+  emailSentAt: string | null;
+  metadata: DailyQuestionReviewEmailMetadata;
 }
 
 export interface DailyQuestionReplacementCandidate {
@@ -352,6 +359,17 @@ function isReviewErrorPhase(
     typeof value === "string" &&
     DAILY_QUESTION_REVIEW_ERROR_PHASES.includes(
       value as DailyQuestionReviewErrorPhase,
+    )
+  );
+}
+
+function isReviewEmailStatus(
+  value: unknown,
+): value is DailyQuestionReviewEmailStatus {
+  return (
+    typeof value === "string" &&
+    DAILY_QUESTION_REVIEW_EMAIL_STATUSES.includes(
+      value as DailyQuestionReviewEmailStatus,
     )
   );
 }
@@ -545,6 +563,7 @@ export function parseDailyQuestionReplacementCandidate(
     !originalSnapshot ||
     !snapshot ||
     !finding ||
+    value.questionId === originalSnapshot.id ||
     finding.questionId !== value.questionId ||
     snapshot.difficulty !== originalSnapshot.difficulty ||
     (value.eligible &&
@@ -785,6 +804,61 @@ export function parseDailyQuestionReviewEmailMetadata(
   return getJsonbTextByteLength(metadata) <= MAX_REVIEW_EMAIL_METADATA_BYTES
     ? metadata
     : null;
+}
+
+export function parseDailyQuestionReviewEmailState(
+  value: unknown,
+): DailyQuestionReviewEmailState | null {
+  if (!isRecord(value) || !isReviewEmailStatus(value.status)) {
+    return null;
+  }
+
+  const metadata = parseDailyQuestionReviewEmailMetadata(value.metadata);
+  const emailSentAt =
+    value.emailSentAt === null && "emailSentAt" in value
+      ? null
+      : isIsoTimestamp(value.emailSentAt)
+        ? value.emailSentAt
+        : undefined;
+
+  if (!metadata || emailSentAt === undefined) {
+    return null;
+  }
+
+  const isPending =
+    value.status === "pending" &&
+    emailSentAt === null &&
+    metadata.attempts === 0 &&
+    metadata.lastAttemptAt === null &&
+    metadata.providerMessageId === null &&
+    metadata.failure === null;
+  const isSending =
+    value.status === "sending" &&
+    emailSentAt === null &&
+    metadata.attempts > 0 &&
+    metadata.lastAttemptAt !== null &&
+    metadata.providerMessageId === null &&
+    metadata.failure === null;
+  const isSent =
+    value.status === "sent" &&
+    emailSentAt !== null &&
+    metadata.attempts > 0 &&
+    metadata.lastAttemptAt !== null &&
+    metadata.providerMessageId !== null &&
+    metadata.failure === null;
+  const isFailed =
+    value.status === "failed" &&
+    emailSentAt === null &&
+    metadata.attempts > 0 &&
+    metadata.lastAttemptAt !== null &&
+    metadata.providerMessageId === null &&
+    metadata.failure !== null;
+
+  if (!isPending && !isSending && !isSent && !isFailed) {
+    return null;
+  }
+
+  return { status: value.status, emailSentAt, metadata };
 }
 
 export function parseDailyQuestionReviewAction(

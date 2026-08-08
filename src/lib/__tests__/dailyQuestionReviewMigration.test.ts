@@ -125,7 +125,7 @@ describe("nightly question verification migration", () => {
     expect(migration).toContain("estimated_cost_usd numeric(12, 6) not null default 0");
     expect(migration).toContain("email_status text not null default 'pending'");
     expect(migration).toContain(
-      "check (email_status in ('pending', 'sent', 'failed'))",
+      "check (email_status in ('pending', 'sending', 'sent', 'failed'))",
     );
     expect(migration).toContain("email_sent_at timestamptz");
     expect(migration).toContain(
@@ -177,6 +177,12 @@ describe("nightly question verification migration", () => {
     );
     expect(runsTable).toContain(
       "email_status = 'pending' and email_sent_at is null",
+    );
+    expect(runsTable).toContain(
+      "email_status = 'sending' and email_sent_at is null",
+    );
+    expect(runsTable).toContain(
+      "email_status = 'sending' and email_sent_at is null and (email_metadata->>'attempts')::integer >= 1 and jsonb_typeof(email_metadata->'providerMessageId') = 'null' and jsonb_typeof(email_metadata->'lastAttemptAt') = 'string' and jsonb_typeof(email_metadata->'failure') = 'null'",
     );
     expect(runsTable).toContain(
       "email_status = 'sent' and email_sent_at is not null",
@@ -266,7 +272,7 @@ describe("nightly question verification migration", () => {
       "check (resolution in ('pending', 'kept', 'replaced'))",
     );
     expect(migration).toMatch(
-      /resolved_by uuid references auth\.users \(id\) on delete set null/,
+      /resolved_by uuid references auth\.users \(id\) on delete restrict/,
     );
     expect(migration).toContain("resolved_at timestamptz");
     expect(migration).toContain("application_metadata jsonb not null default '{}'::jsonb");
@@ -322,7 +328,25 @@ describe("nightly question verification migration", () => {
       "resolution = 'pending' and resolved_by is null and resolved_at is null and applied_at is null",
     );
     expect(itemsTable).toContain(
-      "resolution in ('kept', 'replaced') and resolved_by is not null and resolved_at is not null and applied_at is not null",
+      "resolution = 'kept' and review_status = 'completed' and resolved_by is not null and resolved_at is not null and applied_at is null",
+    );
+    expect(itemsTable).toContain(
+      "resolution = 'replaced' and review_status = 'completed' and resolved_by is not null and resolved_at is not null and applied_at is not null",
+    );
+  });
+
+  it("links each run challenge id to its immutable challenge date", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const runsTable = normalizedStatement(
+      migration,
+      "create table if not exists public.daily_question_review_runs",
+    );
+
+    expect(migration).toMatch(
+      /create unique index if not exists daily_challenges_id_challenge_date_unique\s+on public\.daily_challenges \(id, challenge_date\);[\s\S]*create table if not exists public\.daily_question_review_runs/,
+    );
+    expect(runsTable).toContain(
+      "foreign key (daily_challenge_id, challenge_date) references public.daily_challenges (id, challenge_date) on delete cascade",
     );
   });
 

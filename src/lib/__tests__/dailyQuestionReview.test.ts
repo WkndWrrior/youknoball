@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DAILY_QUESTION_REVIEW_ACTIONS,
+  DAILY_QUESTION_REVIEW_EMAIL_STATUSES,
   DAILY_QUESTION_REVIEW_ERROR_PHASES,
   DAILY_QUESTION_REVIEW_ITEM_STATUSES,
   DAILY_QUESTION_REVIEW_RESOLUTIONS,
@@ -31,6 +32,7 @@ import {
   MAX_SOURCE_FETCH_RESULTS,
   parseDailyQuestionReviewAction,
   parseDailyQuestionReviewEmailMetadata,
+  parseDailyQuestionReviewEmailState,
   parseDailyQuestionReplacementCandidate,
   parseDailyQuestionReviewRunErrors,
   parseDailyQuestionSourceFetchResults,
@@ -86,6 +88,12 @@ describe("daily question verification findings", () => {
       "pending",
       "reviewing",
       "completed",
+      "failed",
+    ]);
+    expect(DAILY_QUESTION_REVIEW_EMAIL_STATUSES).toEqual([
+      "pending",
+      "sending",
+      "sent",
       "failed",
     ]);
     expect(DAILY_QUESTION_SOURCE_FETCH_STATUSES).toEqual([
@@ -546,7 +554,12 @@ describe("email delivery metadata", () => {
     failure: null,
   };
 
-  it("parses pending, delivered, and failed delivery metadata", () => {
+  it("parses pending, sending, delivered, and failed delivery metadata", () => {
+    const sending = {
+      ...pendingMetadata,
+      attempts: 1,
+      lastAttemptAt: "2026-08-08T23:09:00.000Z",
+    };
     const delivered = {
       ...pendingMetadata,
       providerMessageId: "4f44a6f7-message",
@@ -567,8 +580,99 @@ describe("email delivery metadata", () => {
     expect(parseDailyQuestionReviewEmailMetadata(pendingMetadata)).toEqual(
       pendingMetadata,
     );
+    expect(parseDailyQuestionReviewEmailMetadata(sending)).toEqual(sending);
     expect(parseDailyQuestionReviewEmailMetadata(delivered)).toEqual(delivered);
     expect(parseDailyQuestionReviewEmailMetadata(failed)).toEqual(failed);
+  });
+
+  it.each([
+    [
+      "pending",
+      null,
+      pendingMetadata,
+    ],
+    [
+      "sending",
+      null,
+      {
+        ...pendingMetadata,
+        attempts: 1,
+        lastAttemptAt: "2026-08-08T23:09:00.000Z",
+      },
+    ],
+    [
+      "sent",
+      "2026-08-08T23:10:01.000Z",
+      {
+        ...pendingMetadata,
+        providerMessageId: "4f44a6f7-message",
+        attempts: 1,
+        lastAttemptAt: "2026-08-08T23:10:00.000Z",
+      },
+    ],
+    [
+      "failed",
+      null,
+      {
+        ...pendingMetadata,
+        attempts: 2,
+        lastAttemptAt: "2026-08-08T23:12:00.000Z",
+        failure: {
+          code: "provider_rejected",
+          message: "Resend rejected the request.",
+          occurredAt: "2026-08-08T23:12:00.000Z",
+        },
+      },
+    ],
+  ] as const)("parses a coherent %s email state", (status, emailSentAt, metadata) => {
+    expect(
+      parseDailyQuestionReviewEmailState({ status, emailSentAt, metadata }),
+    ).toEqual({ status, emailSentAt, metadata });
+  });
+
+  it.each([
+    ["pending with an attempt", "pending", null, {
+      ...pendingMetadata,
+      attempts: 1,
+      lastAttemptAt: "2026-08-08T23:09:00.000Z",
+    }],
+    ["sending without an attempt", "sending", null, pendingMetadata],
+    ["sending with a provider id", "sending", null, {
+      ...pendingMetadata,
+      providerMessageId: "message-in-flight",
+      attempts: 1,
+      lastAttemptAt: "2026-08-08T23:09:00.000Z",
+    }],
+    ["sent without a sent timestamp", "sent", null, {
+      ...pendingMetadata,
+      providerMessageId: "sent-message",
+      attempts: 1,
+      lastAttemptAt: "2026-08-08T23:10:00.000Z",
+    }],
+    ["sent with a failure", "sent", "2026-08-08T23:10:01.000Z", {
+      ...pendingMetadata,
+      attempts: 1,
+      lastAttemptAt: "2026-08-08T23:10:00.000Z",
+      failure: {
+        code: "provider_rejected",
+        message: "Rejected.",
+        occurredAt: "2026-08-08T23:10:00.000Z",
+      },
+    }],
+    ["failed with a sent timestamp", "failed", "2026-08-08T23:12:01.000Z", {
+      ...pendingMetadata,
+      attempts: 1,
+      lastAttemptAt: "2026-08-08T23:12:00.000Z",
+      failure: {
+        code: "provider_rejected",
+        message: "Rejected.",
+        occurredAt: "2026-08-08T23:12:00.000Z",
+      },
+    }],
+  ] as const)("rejects %s", (_description, status, emailSentAt, metadata) => {
+    expect(
+      parseDailyQuestionReviewEmailState({ status, emailSentAt, metadata }),
+    ).toBeNull();
   });
 
   it("accepts email metadata at configured boundaries", () => {
@@ -775,6 +879,15 @@ describe("replacement candidates", () => {
     [
       "an eligible replacement without evidence",
       { ...validCandidate, finding: { ...passedFinding, evidence: [] } },
+    ],
+    [
+      "a replacement that is the original question",
+      {
+        ...validCandidate,
+        questionId: QUESTION_ID,
+        snapshot: validSnapshot,
+        finding: { ...passedFinding, questionId: QUESTION_ID },
+      },
     ],
   ])("rejects %s", (_description, candidate) => {
     expect(

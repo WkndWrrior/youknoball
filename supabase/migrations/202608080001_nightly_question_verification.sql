@@ -1,3 +1,6 @@
+create unique index if not exists daily_challenges_id_challenge_date_unique
+  on public.daily_challenges (id, challenge_date);
+
 create table if not exists public.daily_question_review_runs (
   id uuid primary key default gen_random_uuid(),
   daily_challenge_id uuid not null references public.daily_challenges (id) on delete cascade,
@@ -17,7 +20,7 @@ create table if not exists public.daily_question_review_runs (
   estimated_cost_usd numeric(12, 6) not null default 0
     check (estimated_cost_usd >= 0),
   email_status text not null default 'pending'
-    check (email_status in ('pending', 'sent', 'failed')),
+    check (email_status in ('pending', 'sending', 'sent', 'failed')),
   email_sent_at timestamptz,
   email_metadata jsonb not null default
     '{"provider":"resend","providerMessageId":null,"attempts":0,"lastAttemptAt":null,"failure":null}'::jsonb
@@ -73,6 +76,9 @@ create table if not exists public.daily_question_review_runs (
   unique (review_date, run_kind),
   unique (challenge_date, run_kind),
   unique (id, daily_challenge_id),
+  foreign key (daily_challenge_id, challenge_date)
+    references public.daily_challenges (id, challenge_date)
+    on delete cascade,
   check (review_date < challenge_date),
   check (
     (
@@ -104,6 +110,14 @@ create table if not exists public.daily_question_review_runs (
       and (email_metadata->>'attempts')::integer = 0
       and jsonb_typeof(email_metadata->'providerMessageId') = 'null'
       and jsonb_typeof(email_metadata->'lastAttemptAt') = 'null'
+      and jsonb_typeof(email_metadata->'failure') = 'null'
+    )
+    or (
+      email_status = 'sending'
+      and email_sent_at is null
+      and (email_metadata->>'attempts')::integer >= 1
+      and jsonb_typeof(email_metadata->'providerMessageId') = 'null'
+      and jsonb_typeof(email_metadata->'lastAttemptAt') = 'string'
       and jsonb_typeof(email_metadata->'failure') = 'null'
     )
     or (
@@ -276,7 +290,7 @@ create table if not exists public.daily_question_review_items (
     ),
   resolution text not null default 'pending'
     check (resolution in ('pending', 'kept', 'replaced')),
-  resolved_by uuid references auth.users (id) on delete set null,
+  resolved_by uuid references auth.users (id) on delete restrict,
   resolved_at timestamptz,
   application_metadata jsonb not null default '{}'::jsonb
     check (jsonb_typeof(application_metadata) = 'object'),
@@ -350,7 +364,17 @@ create table if not exists public.daily_question_review_items (
       and application_metadata = '{}'::jsonb
     )
     or (
-      resolution in ('kept', 'replaced')
+      resolution = 'kept'
+      and review_status = 'completed'
+      and resolved_by is not null
+      and resolved_at is not null
+      and applied_at is null
+      and application_metadata = '{}'::jsonb
+      and resolved_at >= created_at
+    )
+    or (
+      resolution = 'replaced'
+      and review_status = 'completed'
       and resolved_by is not null
       and resolved_at is not null
       and applied_at is not null
