@@ -138,6 +138,38 @@ describe("approved question source URLs", () => {
     ).toMatchObject({ ok: false });
   });
 
+  it.each([
+    ["reserved example.com", "example.com", "https://example.com/source"],
+    [
+      "reserved example.net subdomain",
+      "example.net",
+      "https://stats.example.net/source",
+    ],
+    [
+      "reserved example.org subdomain",
+      "stats.example.org",
+      "https://stats.example.org/source",
+    ],
+    ["ARPA domain", "sports.arpa", "https://sports.arpa/source"],
+    ["ARPA subdomain", "stats.sports.arpa", "https://stats.sports.arpa/source"],
+    ["public suffix", "co.uk", "https://school.co.uk/source"],
+    ["unsupported TLD", "officialsports.io", "https://officialsports.io/source"],
+  ])("rejects a %s configurable domain", (_label, domain, url) => {
+    expect(
+      validateSourceUrl(url, { additionalApprovedDomains: domain }),
+    ).toMatchObject({ ok: false });
+  });
+
+  it.each([
+    ["official .com", "gators.com", "https://www.gators.com/news/source"],
+    ["official .edu", "umich.edu", "https://mgoblue.umich.edu/news/source"],
+    ["official .org", "naia.org", "https://www.naia.org/news/source"],
+  ])("accepts a valid %s configurable domain", (_label, domain, url) => {
+    expect(
+      validateSourceUrl(url, { additionalApprovedDomains: domain }),
+    ).toEqual({ ok: true, url });
+  });
+
   it("ignores malformed and rejected URL tokens while preserving valid URLs", () => {
     expect(
       extractApprovedSourceUrls(
@@ -222,6 +254,19 @@ describe("saved source evidence fetching", () => {
   it("rejects a redirect without a usable Location header", async () => {
     const fetchMock = asFetch(async () =>
       new Response(null, { status: 302 }),
+    );
+
+    await expect(
+      fetchSourceEvidence("https://www.ncaa.com/start", { fetchImpl: fetchMock }),
+    ).resolves.toMatchObject({ status: "rejected", reason: "invalid_redirect" });
+  });
+
+  it("rejects a malformed redirect Location", async () => {
+    const fetchMock = asFetch(async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://[invalid-host" },
+      }),
     );
 
     await expect(
@@ -321,6 +366,50 @@ describe("saved source evidence fetching", () => {
     await vi.advanceTimersByTimeAsync(25);
 
     await expect(pending).resolves.toMatchObject({ status: "timeout" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("times out when fetch ignores AbortSignal", async () => {
+    vi.useFakeTimers();
+    const fetchMock = asFetch(async () => new Promise<Response>(() => {}));
+
+    const pending = fetchSourceEvidence("https://www.ncaa.com/slow", {
+      fetchImpl: fetchMock,
+      timeoutMs: 25,
+    });
+    await vi.advanceTimersByTimeAsync(25);
+
+    await expect(pending).resolves.toMatchObject({ status: "timeout" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("times out and cancels best-effort when a response stream stalls", async () => {
+    vi.useFakeTimers();
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("partial evidence"));
+      },
+      cancel() {
+        cancelled = true;
+        return new Promise<void>(() => {});
+      },
+    });
+    const fetchMock = asFetch(async () =>
+      new Response(stream, {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+    );
+
+    const pending = fetchSourceEvidence("https://www.ncaa.com/stalled", {
+      fetchImpl: fetchMock,
+      timeoutMs: 25,
+    });
+    await vi.advanceTimersByTimeAsync(25);
+
+    await expect(pending).resolves.toMatchObject({ status: "timeout" });
+    expect(cancelled).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -448,6 +537,34 @@ describe("saved source evidence fetching", () => {
     ).resolves.toMatchObject({ status: "fetch_error" });
   });
 
+  it("returns a byte-bounded Unicode fetch error when the stream reader fails", async () => {
+    const message = "🏀".repeat(200);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error(message));
+      },
+    });
+    const fetchMock = asFetch(async () =>
+      new Response(stream, {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+    );
+
+    const result = await fetchSourceEvidence("https://www.ncaa.com/broken", {
+      fetchImpl: fetchMock,
+    });
+
+    expect(result.status).toBe("fetch_error");
+    if (result.status === "fetch_error") {
+      expect(new TextEncoder().encode(result.error).byteLength).toBeLessThanOrEqual(
+        300,
+      );
+      expect(result.error.length).toBeGreaterThan(0);
+      expect(result.error.endsWith("🏀")).toBe(true);
+    }
+  });
+
   it("handles malformed and empty HTML safely", async () => {
     const malformedFetch = asFetch(async () =>
       htmlResponse("<main><p>Useful fact<div>More context"),
@@ -471,7 +588,7 @@ describe("saved source evidence fetching", () => {
     ).resolves.toMatchObject({ status: "fetched", excerpt: "" });
   });
 
-  it("caps title, excerpt, and stored errors", async () => {
+  it("caps title and excerpt", async () => {
     const title = "T".repeat(1_000);
     const text = "Evidence ".repeat(2_000);
     const fetchMock = asFetch(async () =>

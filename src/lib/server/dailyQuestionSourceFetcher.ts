@@ -10,6 +10,24 @@ const MAX_EXCERPT_LENGTH = 4_000;
 const MAX_ERROR_LENGTH = 300;
 const MAX_SAVED_SOURCE_URLS = 20;
 const MAX_SOURCE_URL_LENGTH = 2_048;
+const SOURCE_TIMEOUT = Symbol("source_timeout");
+const UTF8_ENCODER = new TextEncoder();
+
+// Configurable sources are intentionally limited to TLDs used by US leagues,
+// teams, colleges, and governing bodies. This avoids treating public suffixes
+// from broader country-code namespaces as organization-owned apex domains.
+const CONFIGURABLE_SOURCE_TLDS = new Set([
+  "com",
+  "edu",
+  "gov",
+  "net",
+  "org",
+]);
+const RESERVED_EXAMPLE_DOMAINS = [
+  "example.com",
+  "example.net",
+  "example.org",
+] as const;
 
 const DEFAULT_APPROVED_SOURCE_DOMAINS = [
   "baseball-reference.com",
@@ -36,8 +54,8 @@ const DEFAULT_APPROVED_SOURCE_DOMAINS = [
 ] as const;
 
 const SPECIAL_USE_SUFFIXES = [
+  ".arpa",
   ".example",
-  ".home.arpa",
   ".internal",
   ".invalid",
   ".local",
@@ -172,7 +190,7 @@ function parseApprovedDomainList(value: string | undefined): string[] {
     const domain = item.trim().toLowerCase();
     if (
       seen.has(domain) ||
-      !isSafeHostname(domain) ||
+      !isSafeConfigurableDomain(domain) ||
       domain.includes(":") ||
       domain.includes("/") ||
       domain.includes("*")
@@ -184,6 +202,26 @@ function parseApprovedDomainList(value: string | undefined): string[] {
   }
 
   return domains;
+}
+
+function isSafeConfigurableDomain(domain: string): boolean {
+  if (!isSafeHostname(domain)) {
+    return false;
+  }
+
+  const labels = domain.split(".");
+  const topLevelDomain = labels.at(-1);
+  if (
+    labels.length < 2 ||
+    !topLevelDomain ||
+    !CONFIGURABLE_SOURCE_TLDS.has(topLevelDomain)
+  ) {
+    return false;
+  }
+
+  return !RESERVED_EXAMPLE_DOMAINS.some(
+    (reserved) => domain === reserved || domain.endsWith(`.${reserved}`),
+  );
 }
 
 function getApprovedDomains(options: SourceUrlOptions): Set<string> {
@@ -335,9 +373,24 @@ function truncateUnicode(value: string, maxLength: number): string {
   return value.slice(0, end);
 }
 
+function truncateUtf8(value: string, maxBytes: number): string {
+  let bytes = 0;
+  let result = "";
+  for (const character of value) {
+    const characterBytes = UTF8_ENCODER.encode(character).byteLength;
+    if (bytes + characterBytes > maxBytes) {
+      break;
+    }
+    bytes += characterBytes;
+    result += character;
+  }
+  return result;
+}
+
 function boundedError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return truncateUnicode(normalizeWhitespace(message), MAX_ERROR_LENGTH);
+  const boundedInput = truncateUnicode(message, MAX_ERROR_LENGTH * 4);
+  return truncateUtf8(normalizeWhitespace(boundedInput), MAX_ERROR_LENGTH);
 }
 
 function positiveIntegerOrDefault(
@@ -349,26 +402,39 @@ function positiveIntegerOrDefault(
     : fallback;
 }
 
-async function cancelBody(response: Response): Promise<void> {
+function cancelBody(response: Response): void {
   try {
-    await response.body?.cancel();
+    void response.body?.cancel().catch(() => undefined);
   } catch {
     // Cancellation is best-effort after a redirect or rejected response.
+  }
+}
+
+function cancelReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reason: unknown,
+): void {
+  try {
+    void reader.cancel(reason).catch(() => undefined);
+  } catch {
+    // Cancellation is best-effort for streams that ignore cancellation.
   }
 }
 
 async function readBoundedBody(
   response: Response,
   maxBytes: number,
+  timeoutPromise: Promise<typeof SOURCE_TIMEOUT>,
 ): Promise<
   | { status: "ok"; bytes: number; text: string }
+  | { status: "timeout" }
   | { status: "too_large" }
 > {
   const declaredLength = response.headers.get("content-length");
   if (declaredLength && /^\d+$/.test(declaredLength)) {
     const bytes = Number(declaredLength);
     if (Number.isSafeInteger(bytes) && bytes > maxBytes) {
-      await cancelBody(response);
+      cancelBody(response);
       return { status: "too_large" };
     }
   }
@@ -383,26 +449,33 @@ async function readBoundedBody(
 
   try {
     while (true) {
-      const read = await reader.read();
+      const read = await Promise.race([reader.read(), timeoutPromise]);
+      if (read === SOURCE_TIMEOUT) {
+        cancelReader(
+          reader,
+          new DOMException("Source fetch timed out", "AbortError"),
+        );
+        return { status: "timeout" };
+      }
       if (read.done) {
         break;
       }
       bytes += read.value.byteLength;
       if (bytes > maxBytes) {
-        await reader.cancel();
+        cancelReader(reader, new Error("Source exceeded the byte limit"));
         return { status: "too_large" };
       }
       chunks.push(read.value);
     }
   } catch (error) {
-    try {
-      await reader.cancel(error);
-    } catch {
-      // Preserve the original stream error.
-    }
+    cancelReader(reader, error);
     throw error;
   } finally {
-    reader.releaseLock();
+    try {
+      reader.releaseLock();
+    } catch {
+      // A non-cooperative pending read can retain the lock after timeout.
+    }
   }
 
   const body = new Uint8Array(bytes);
@@ -491,7 +564,14 @@ export async function fetchSourceEvidence(
     DEFAULT_MAX_REDIRECTS,
   );
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let resolveTimeout: (value: typeof SOURCE_TIMEOUT) => void = () => undefined;
+  const timeoutPromise = new Promise<typeof SOURCE_TIMEOUT>((resolve) => {
+    resolveTimeout = resolve;
+  });
+  const timeout = setTimeout(() => {
+    controller.abort();
+    resolveTimeout(SOURCE_TIMEOUT);
+  }, timeoutMs);
   const redirects: string[] = [];
   const visited = new Set([requestedUrl]);
   let currentUrl = requestedUrl;
@@ -500,13 +580,23 @@ export async function fetchSourceEvidence(
     while (true) {
       let response: Response;
       try {
-        response = await fetchImpl(currentUrl, {
-          redirect: "manual",
-          signal: controller.signal,
-          headers: {
-            accept: "text/html, application/xhtml+xml, text/plain;q=0.9",
-          },
-        });
+        const fetchResult = await Promise.race([
+          fetchImpl(currentUrl, {
+            redirect: "manual",
+            signal: controller.signal,
+            headers: {
+              accept: "text/html, application/xhtml+xml, text/plain;q=0.9",
+            },
+          }),
+          timeoutPromise,
+        ]);
+        if (fetchResult === SOURCE_TIMEOUT) {
+          return {
+            ...resultBase(requestedUrl, currentUrl, redirects),
+            status: "timeout",
+          };
+        }
+        response = fetchResult;
       } catch (error) {
         if (controller.signal.aborted) {
           return {
@@ -523,7 +613,7 @@ export async function fetchSourceEvidence(
 
       if (REDIRECT_STATUSES.has(response.status)) {
         const location = response.headers.get("location");
-        await cancelBody(response);
+        cancelBody(response);
         if (!location || hasExplicitPort(location)) {
           return {
             ...resultBase(requestedUrl, currentUrl, redirects),
@@ -572,7 +662,7 @@ export async function fetchSourceEvidence(
       }
 
       if (!response.ok) {
-        await cancelBody(response);
+        cancelBody(response);
         return {
           ...resultBase(requestedUrl, currentUrl, redirects),
           status: "http_error",
@@ -583,7 +673,7 @@ export async function fetchSourceEvidence(
       const rawContentType = response.headers.get("content-type") ?? "";
       const contentType = rawContentType.split(";", 1)[0].trim().toLowerCase();
       if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
-        await cancelBody(response);
+        cancelBody(response);
         return {
           ...resultBase(requestedUrl, currentUrl, redirects),
           status: "content_type_error",
@@ -593,7 +683,7 @@ export async function fetchSourceEvidence(
 
       let body: Awaited<ReturnType<typeof readBoundedBody>>;
       try {
-        body = await readBoundedBody(response, maxBytes);
+        body = await readBoundedBody(response, maxBytes, timeoutPromise);
       } catch (error) {
         if (controller.signal.aborted) {
           return {
@@ -613,6 +703,12 @@ export async function fetchSourceEvidence(
           ...resultBase(requestedUrl, currentUrl, redirects),
           status: "too_large",
           maxBytes,
+        };
+      }
+      if (body.status === "timeout") {
+        return {
+          ...resultBase(requestedUrl, currentUrl, redirects),
+          status: "timeout",
         };
       }
 
