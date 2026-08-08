@@ -1,20 +1,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  DAILY_REVIEW_MAX_INPUT_TOKENS_PER_REQUEST,
   DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
+  DAILY_REVIEW_MAX_OUTPUT_TOKENS_PER_REQUEST,
   DAILY_REVIEW_MAX_QUESTIONS_PER_RUN,
+  DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS,
   DAILY_REVIEW_MAX_REQUEST_USAGE,
   DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+  DAILY_REVIEW_MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
   DAILY_REVIEW_PRICING,
   checkDailyQuestionReviewBudget,
   estimateDailyQuestionReviewCostMicrodollars,
   getChicagoCalendarMonthRange,
+  getDailyQuestionReviewMaxRunReservationMicrodollars,
   getDailyQuestionReviewMonthlyBudgetCents,
   runWithDailyQuestionReviewBudgetPreflight,
   sumCurrentMonthReviewSpendMicrodollars,
 } from "@/lib/server/dailyQuestionReviewBudget";
 
 const ORIGINAL_BUDGET = process.env.DAILY_REVIEW_MONTHLY_BUDGET_CENTS;
+const ORIGINAL_TIME_ZONE = process.env.TZ;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -23,6 +29,12 @@ afterEach(() => {
     delete process.env.DAILY_REVIEW_MONTHLY_BUDGET_CENTS;
   } else {
     process.env.DAILY_REVIEW_MONTHLY_BUDGET_CENTS = ORIGINAL_BUDGET;
+  }
+
+  if (ORIGINAL_TIME_ZONE === undefined) {
+    delete process.env.TZ;
+  } else {
+    process.env.TZ = ORIGINAL_TIME_ZONE;
   }
 });
 
@@ -139,7 +151,19 @@ describe("daily review pricing", () => {
 
     expect(DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION).toBe(2);
     expect(DAILY_REVIEW_MAX_QUESTIONS_PER_RUN).toBe(5);
-    expect(DAILY_REVIEW_MAX_REQUEST_USAGE.outputTokens).toBe(1_800);
+    expect(DAILY_REVIEW_MAX_INPUT_TOKENS_PER_REQUEST).toBe(40_000);
+    expect(DAILY_REVIEW_MAX_OUTPUT_TOKENS_PER_REQUEST).toBe(1_800);
+    expect(DAILY_REVIEW_MAX_WEB_SEARCH_CALLS_PER_RESPONSE).toBe(10);
+    expect(DAILY_REVIEW_MAX_REQUEST_USAGE).toEqual({
+      inputTokens: 40_000,
+      cachedInputTokens: 0,
+      outputTokens: 1_800,
+      webSearchCalls: 10,
+    });
+    expect(DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS).toBe(227_000);
+    expect(
+      getDailyQuestionReviewMaxRunReservationMicrodollars("gpt-5.6-terra"),
+    ).toBe(2_270_000);
     expect(DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS).toBe(
       maxRequestCost *
         DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION *
@@ -148,6 +172,17 @@ describe("daily review pricing", () => {
     expect(Number.isSafeInteger(DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS)).toBe(
       true,
     );
+    expect(DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS).toBeLessThan(
+      10_000_000,
+    );
+  });
+
+  it("does not derive a reservation for an unpriced model", () => {
+    expect(
+      getDailyQuestionReviewMaxRunReservationMicrodollars(
+        "gpt-5.6-terra-latest",
+      ),
+    ).toBeNull();
   });
 });
 
@@ -351,6 +386,70 @@ describe("persisted monthly spend", () => {
     ).toBe(0);
   });
 
+  it.each([
+    "2026-08-10T12:00:00",
+    "2026-08-10 12:00:00Z",
+    "2026-02-30T12:00:00.000Z",
+    "2026-08-10T24:00:00.000Z",
+    "2026-08-10T12:00:00.000+15:00",
+    "2026-08-10T12:00:00.000+05:60",
+  ])("rejects malformed or timezone-less occurredAt value %s", (occurredAt) => {
+    expect(
+      sumCurrentMonthReviewSpendMicrodollars(
+        [
+          {
+            id: occurredAt,
+            status: "completed",
+            occurredAt,
+            estimatedCostMicrodollars: 100,
+          },
+        ],
+        now,
+      ),
+    ).toBe(0);
+  });
+
+  it("accepts valid numeric-offset timestamps", () => {
+    expect(
+      sumCurrentMonthReviewSpendMicrodollars(
+        [
+          {
+            id: "offset",
+            status: "completed",
+            occurredAt: "2026-08-01T00:00:00.000-05:00",
+            estimatedCostMicrodollars: 100,
+          },
+        ],
+        now,
+      ),
+    ).toBe(100);
+  });
+
+  it("filters persisted timestamps independently of the process timezone", () => {
+    const records = [
+      {
+        id: "explicit",
+        status: "completed",
+        occurredAt: "2026-08-01T05:00:00.000Z",
+        estimatedCostMicrodollars: 100,
+      },
+      {
+        id: "timezone-less",
+        status: "completed",
+        occurredAt: "2026-08-01T05:00:00.000",
+        estimatedCostMicrodollars: 900,
+      },
+    ];
+
+    process.env.TZ = "America/Los_Angeles";
+    const losAngelesSpend = sumCurrentMonthReviewSpendMicrodollars(records, now);
+    process.env.TZ = "Asia/Tokyo";
+    const tokyoSpend = sumCurrentMonthReviewSpendMicrodollars(records, now);
+
+    expect(losAngelesSpend).toBe(100);
+    expect(tokyoSpend).toBe(100);
+  });
+
   it("deduplicates run IDs and conservatively uses the greatest valid cost", () => {
     expect(
       sumCurrentMonthReviewSpendMicrodollars(
@@ -399,8 +498,27 @@ describe("persisted monthly spend", () => {
 describe("budget preflight", () => {
   const now = new Date("2026-08-15T12:00:00.000Z");
 
+  it("derives the default reservation from the active priced model", () => {
+    expect(
+      checkDailyQuestionReviewBudget({
+        model: "gpt-5.6-terra",
+        now,
+        monthlyBudgetCents: 1_000,
+        records: [],
+      }),
+    ).toEqual({
+      allowed: true,
+      spentMicrodollars: 0,
+      limitMicrodollars: 10_000_000,
+      remainingMicrodollars: 10_000_000,
+      reservedMicrodollars: 2_270_000,
+      reason: "within_budget",
+    });
+  });
+
   it("allows equality and reports all integer microdollar values", () => {
     const result = checkDailyQuestionReviewBudget({
+      model: "gpt-5.6-terra",
       now,
       monthlyBudgetCents: 100,
       reservedMicrodollars: 250_000,
@@ -426,6 +544,7 @@ describe("budget preflight", () => {
 
   it("blocks when reservation is one microdollar over remaining budget", () => {
     const result = checkDailyQuestionReviewBudget({
+      model: "gpt-5.6-terra",
       now,
       monthlyBudgetCents: 100,
       reservedMicrodollars: 250_001,
@@ -445,6 +564,7 @@ describe("budget preflight", () => {
 
   it("blocks when recorded spend already exceeds the limit", () => {
     const result = checkDailyQuestionReviewBudget({
+      model: "gpt-5.6-terra",
       now,
       monthlyBudgetCents: 100,
       reservedMicrodollars: 0,
@@ -468,6 +588,7 @@ describe("budget preflight", () => {
   it("fails closed for an invalid current time", () => {
     expect(
       checkDailyQuestionReviewBudget({
+        model: "gpt-5.6-terra",
         now: new Date("invalid"),
         monthlyBudgetCents: 100,
         reservedMicrodollars: 1,
@@ -487,6 +608,7 @@ describe("budget preflight", () => {
     const callback = vi.fn(async () => "called");
 
     const result = await runWithDailyQuestionReviewBudgetPreflight({
+      model: "gpt-5.6-terra",
       now,
       monthlyBudgetCents: 1,
       reservedMicrodollars: 10_001,
@@ -508,6 +630,7 @@ describe("budget preflight", () => {
     const callback = vi.fn(async () => "verified");
 
     const result = await runWithDailyQuestionReviewBudgetPreflight({
+      model: "gpt-5.6-terra",
       now,
       monthlyBudgetCents: 100,
       reservedMicrodollars: 1,
@@ -518,5 +641,31 @@ describe("budget preflight", () => {
     expect(callback).toHaveBeenCalledTimes(1);
     expect(result.value).toBe("verified");
     expect(result.budget.allowed).toBe(true);
+  });
+
+  it("blocks an unsupported model before invoking the callback", async () => {
+    const callback = vi.fn(async () => "called");
+
+    const result = await runWithDailyQuestionReviewBudgetPreflight({
+      model: "gpt-5.6-terra-latest",
+      now,
+      monthlyBudgetCents: 100,
+      reservedMicrodollars: 0,
+      records: [],
+      operation: callback,
+    });
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      value: null,
+      budget: {
+        allowed: false,
+        spentMicrodollars: 0,
+        limitMicrodollars: 1_000_000,
+        remainingMicrodollars: 1_000_000,
+        reservedMicrodollars: 0,
+        reason: "unsupported_model",
+      },
+    });
   });
 });

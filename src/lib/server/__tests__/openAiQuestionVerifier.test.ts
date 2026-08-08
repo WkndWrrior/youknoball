@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createTestOnlyOpenAiQuestionVerifier,
+  MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE,
   OpenAiQuestionVerifierError,
   type OpenAiQuestionVerifierInput,
 } from "@/lib/server/openAiQuestionVerifier";
@@ -64,6 +65,8 @@ function responseBody(
     outputTokens?: number;
     cachedTokens?: number;
     searchCalls?: number;
+    searchSources?: Array<{ url: string; title: string }>;
+    annotations?: unknown[];
   } = {},
 ) {
   return {
@@ -76,19 +79,22 @@ function responseBody(
         status: "completed",
         action: {
           type: "search",
-          sources: [
+          sources: (options.searchSources ?? [
             {
-              type: "url",
               url: "https://www.espn.com/nba/story/example",
               title: "ESPN recap",
             },
-          ],
+          ]).map((source) => ({ type: "url", ...source })),
         },
       })),
       {
         type: "message",
         role: "assistant",
-        content: [{ type: "output_text", text: JSON.stringify(value) }],
+        content: [{
+          type: "output_text",
+          text: JSON.stringify(value),
+          annotations: options.annotations ?? [],
+        }],
       },
     ],
     usage: {
@@ -138,7 +144,7 @@ describe("OpenAI question verifier", () => {
 
   it("reads configuration at call time and sends the exact bounded Responses request", async () => {
     vi.stubEnv("OPENAI_API_KEY", "first-key");
-    vi.stubEnv("DAILY_REVIEW_OPENAI_MODEL", "gpt-test-model");
+    vi.stubEnv("DAILY_REVIEW_OPENAI_MODEL", "gpt-5.6-terra");
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(jsonResponse(responseBody(finding())));
@@ -157,7 +163,7 @@ describe("OpenAI question verifier", () => {
     });
     const body = getRequestBody(fetchMock);
     expect(body).toMatchObject({
-      model: "gpt-test-model",
+      model: "gpt-5.6-terra",
       reasoning: { effort: "medium" },
       store: false,
       max_output_tokens: 1800,
@@ -186,6 +192,21 @@ describe("OpenAI question verifier", () => {
       additionalProperties: false,
       required: ["url", "title", "support"],
     });
+  });
+
+  it.each([
+    "gpt-unknown-unpriced",
+    " gpt-5.6-terra ",
+    "gpt-5.6-terra\n",
+  ])("fails closed before fetch when model %j is not approved", async (model) => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    vi.stubEnv("DAILY_REVIEW_OPENAI_MODEL", model);
+    const fetchMock = vi.fn<typeof fetch>();
+
+    await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({
+      code: "unsupported_model",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses gpt-5.6-terra by default and includes the exact question context", async () => {
@@ -251,6 +272,74 @@ describe("OpenAI question verifier", () => {
     expect(result.webSearchCalls).toBe(0);
   });
 
+  it("rejects fabricated and unapproved evidence URLs on the saved-evidence pass", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    for (const url of [
+      "https://www.nba.com/news/fabricated",
+      "https://unapproved.example.net/fabricated",
+      "https://www.nba.com/news/example#fragment",
+      "https://user@www.nba.com/news/example",
+      "https://www.nba.com:443/news/example",
+    ]) {
+      const invalid = finding();
+      invalid.evidence[0]!.url = url;
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(jsonResponse(responseBody(invalid)));
+
+      await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({
+        code: "invalid_finding",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("matches safe canonical forms of saved requested and final URLs", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const rootInput: OpenAiQuestionVerifierInput = {
+      ...input,
+      question: {
+        ...input.question,
+        source_notes: "https://www.nba.com",
+      },
+      savedEvidence: [{
+        status: "fetched",
+        requestedUrl: "https://www.nba.com",
+        finalUrl: "https://www.nba.com",
+        redirects: [],
+        title: "NBA",
+        excerpt: "Bravo won the championship.",
+        bytes: 32,
+        contentType: "text/html",
+      }],
+    };
+    const canonical = finding();
+    canonical.evidence[0]!.url = "https://www.nba.com/";
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(responseBody(canonical)));
+
+    const result = await createVerifier(fetchMock).verifyQuestion(rootInput);
+
+    expect(result.finding.evidence[0]?.url).toBe("https://www.nba.com/");
+  });
+
+  it("canonicalizes and deduplicates evidence URLs actually supplied to the model", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const duplicate = finding();
+    duplicate.evidence.push({ ...duplicate.evidence[0]! });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(responseBody(duplicate)));
+
+    const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+    expect(result.finding.evidence).toHaveLength(1);
+    expect(result.finding.evidence[0]?.url).toBe(
+      "https://www.nba.com/news/example",
+    );
+  });
+
   it("performs exactly one approved-domain web fallback after unable_to_verify", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const fetchMock = vi
@@ -301,6 +390,95 @@ describe("OpenAI question verifier", () => {
     });
   });
 
+  it("accepts fallback evidence only when the URL was returned by that search response", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const searched = finding("passed");
+    searched.evidence[0] = {
+      url: "https://www.espn.com/nba/story/example",
+      title: "ESPN recap",
+      support: "The ESPN report directly supports Bravo.",
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(finding("unable_to_verify"))),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(searched, { searchCalls: 1 })),
+      );
+
+    const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+    expect(result.finding.evidence[0]?.url).toBe(
+      "https://www.espn.com/nba/story/example",
+    );
+  });
+
+  it("accepts approved fallback evidence returned in url_citation annotations", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const annotated = finding("passed");
+    annotated.evidence[0] = {
+      url: "https://www.ncaa.com/news/basketball-men/article/example",
+      title: "NCAA report",
+      support: "The NCAA report directly supports Bravo.",
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(finding("unable_to_verify"))),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(annotated, {
+          annotations: [{
+            type: "url_citation",
+            url: "https://www.ncaa.com/news/basketball-men/article/example",
+            title: "NCAA report",
+            start_index: 0,
+            end_index: 10,
+          }],
+        })),
+      );
+
+    const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+    expect(result.finding.evidence[0]?.url).toBe(
+      "https://www.ncaa.com/news/basketball-men/article/example",
+    );
+  });
+
+  it("rejects fallback citations that were fabricated or came from an unapproved source", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    for (const testCase of [
+      {
+        evidenceUrl: "https://www.espn.com/nba/story/not-returned",
+        searchUrl: "https://www.espn.com/nba/story/returned",
+      },
+      {
+        evidenceUrl: "https://unapproved.example.net/story",
+        searchUrl: "https://unapproved.example.net/story",
+      },
+    ]) {
+      const resultFinding = finding("passed");
+      resultFinding.evidence[0]!.url = testCase.evidenceUrl;
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          jsonResponse(responseBody(finding("unable_to_verify"))),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse(responseBody(resultFinding, {
+            searchCalls: 1,
+            searchSources: [{ url: testCase.searchUrl, title: "Returned" }],
+          })),
+        );
+
+      await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({
+        code: "invalid_finding",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    }
+  });
+
   it.each(["passed", "risk"] as const)(
     "does not search after a valid %s finding",
     async (verdict) => {
@@ -340,6 +518,27 @@ describe("OpenAI question verifier", () => {
       });
       expect(fetchMock).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it.each([
+    ["incomplete", "incomplete"],
+    ["failed", "response_failed"],
+    ["queued", "unexpected_status"],
+    ["in_progress", "unexpected_status"],
+    ["something_new", "unexpected_status"],
+    [undefined, "unexpected_status"],
+  ])("rejects response status %s even when output text is valid", async (status, code) => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const body = responseBody(finding()) as Record<string, unknown>;
+    if (status === undefined) {
+      delete body.status;
+    } else {
+      body.status = status;
+    }
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+
+    await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({ code });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -424,6 +623,59 @@ describe("OpenAI question verifier", () => {
     expect(networkFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("redacts the configured key from top-level API errors on successful HTTP responses", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "super-secret-value");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        status: "completed",
+        error: { message: "top-level echo: super-secret-value" },
+        output: [],
+      }),
+    );
+
+    const error = await createVerifier(fetchMock)
+      .verifyQuestion(input)
+      .catch((value: unknown) => value);
+
+    expect(error).toBeInstanceOf(OpenAiQuestionVerifierError);
+    expect(error).toMatchObject({ code: "api_error" });
+    expect(String(error)).not.toContain("super-secret-value");
+  });
+
+  it("accepts at most the reserved web-search-call count and rejects excess", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    expect(MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE).toBe(10);
+    const acceptedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(finding("unable_to_verify"))),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(finding(), {
+          searchCalls: MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE,
+        })),
+      );
+    const accepted = await createVerifier(acceptedFetch).verifyQuestion(input);
+    expect(accepted.webSearchCalls).toBe(
+      MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE,
+    );
+
+    const excessiveFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(finding("unable_to_verify"))),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(finding(), {
+          searchCalls: MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE + 1,
+        })),
+      );
+    await expect(createVerifier(excessiveFetch).verifyQuestion(input)).rejects.toMatchObject({
+      code: "excessive_web_search_calls",
+    });
+    expect(excessiveFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("stops after the single fallback even when search still cannot verify", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const fetchMock = vi
@@ -446,7 +698,7 @@ describe("OpenAI question verifier", () => {
       .mockResolvedValue(jsonResponse(responseBody(finding())));
     const hugeInput: OpenAiQuestionVerifierInput = {
       ...input,
-      savedEvidence: Array.from({ length: 20 }, (_, index) => ({
+      savedEvidence: [input.savedEvidence[0], ...Array.from({ length: 19 }, (_, index) => ({
         status: "fetched" as const,
         requestedUrl: `https://www.nba.com/news/${index}`,
         finalUrl: `https://www.nba.com/news/${index}`,
@@ -455,7 +707,7 @@ describe("OpenAI question verifier", () => {
         excerpt: `source ${index} ${"🏆".repeat(20_000)}`,
         bytes: 100_000,
         contentType: "text/html",
-      })),
+      }))],
     };
 
     await createVerifier(fetchMock).verifyQuestion(hugeInput);

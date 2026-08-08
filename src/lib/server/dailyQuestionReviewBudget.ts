@@ -29,11 +29,17 @@ export interface DailyQuestionReviewUsage {
   webSearchCalls?: number;
 }
 
+// Includes headroom beyond the verifier's 32,000-byte prompt cap for
+// instructions, schema, tool metadata, and conservative tokenization.
+export const DAILY_REVIEW_MAX_INPUT_TOKENS_PER_REQUEST = 40_000;
+export const DAILY_REVIEW_MAX_OUTPUT_TOKENS_PER_REQUEST = 1_800;
+export const DAILY_REVIEW_MAX_WEB_SEARCH_CALLS_PER_RESPONSE = 10;
+
 export const DAILY_REVIEW_MAX_REQUEST_USAGE = {
-  inputTokens: 16_000,
+  inputTokens: DAILY_REVIEW_MAX_INPUT_TOKENS_PER_REQUEST,
   cachedInputTokens: 0,
-  outputTokens: 1_800,
-  webSearchCalls: 1,
+  outputTokens: DAILY_REVIEW_MAX_OUTPUT_TOKENS_PER_REQUEST,
+  webSearchCalls: DAILY_REVIEW_MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
 } as const;
 
 export const DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION = 2;
@@ -66,6 +72,7 @@ export interface PersistedDailyQuestionReviewCost {
 
 export type DailyQuestionReviewBudgetReason =
   | "within_budget"
+  | "unsupported_model"
   | "monthly_budget_exceeded"
   | "reservation_exceeds_remaining"
   | "invalid_current_time"
@@ -124,17 +131,20 @@ function integerCeilDivide(numerator: number, denominator: number): number {
   return numerator % denominator === 0 ? quotient : quotient + 1;
 }
 
+function isDailyReviewPricedModel(
+  model: string,
+): model is DailyReviewPricedModel {
+  return Object.prototype.hasOwnProperty.call(DAILY_REVIEW_PRICING.models, model);
+}
+
 export function estimateDailyQuestionReviewCostMicrodollars(
   usage: DailyQuestionReviewUsage,
 ): number {
-  const pricing = DAILY_REVIEW_PRICING.models[
-    usage.model as DailyReviewPricedModel
-  ];
-
-  if (!pricing) {
+  if (!isDailyReviewPricedModel(usage.model)) {
     throw new RangeError(`No approved pricing for model ${usage.model}.`);
   }
 
+  const pricing = DAILY_REVIEW_PRICING.models[usage.model];
   const inputTokens = requireUsageCounter(usage.inputTokens, "inputTokens");
   const cachedInputTokens = requireUsageCounter(
     usage.cachedInputTokens,
@@ -200,10 +210,39 @@ export const DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS =
     ...DAILY_REVIEW_MAX_REQUEST_USAGE,
   });
 
+export function getDailyQuestionReviewMaxRunReservationMicrodollars(
+  model: string,
+): number | null {
+  if (!isDailyReviewPricedModel(model)) {
+    return null;
+  }
+
+  const requestReservation = estimateDailyQuestionReviewCostMicrodollars({
+    model,
+    ...DAILY_REVIEW_MAX_REQUEST_USAGE,
+  });
+  const maxCallsPerRun = checkedMultiply(
+    DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
+    DAILY_REVIEW_MAX_QUESTIONS_PER_RUN,
+    "Maximum review calls per run",
+  );
+
+  return checkedMultiply(
+    requestReservation,
+    maxCallsPerRun,
+    "Maximum review reservation",
+  );
+}
+
+const TERRA_MAX_RUN_RESERVATION_MICRODOLLARS =
+  getDailyQuestionReviewMaxRunReservationMicrodollars("gpt-5.6-terra");
+
+if (TERRA_MAX_RUN_RESERVATION_MICRODOLLARS === null) {
+  throw new Error("The default daily review model must have approved pricing.");
+}
+
 export const DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS =
-  DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS *
-  DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION *
-  DAILY_REVIEW_MAX_QUESTIONS_PER_RUN;
+  TERRA_MAX_RUN_RESERVATION_MICRODOLLARS;
 
 function getChicagoDateTimeParts(date: Date) {
   const parts = CHICAGO_DATE_TIME_FORMATTER.formatToParts(date);
@@ -293,6 +332,68 @@ export function getDailyQuestionReviewMonthlyBudgetCents(
   return parsed;
 }
 
+const EXPLICIT_OFFSET_ISO_TIMESTAMP_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
+function getDaysInMonth(year: number, month: number): number {
+  const daysByMonth = [
+    31,
+    isLeapYear(year) ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+
+  return daysByMonth[month - 1] ?? 0;
+}
+
+function parseExplicitOffsetIsoTimestamp(value: string): string | null {
+  const match = EXPLICIT_OFFSET_ISO_TIMESTAMP_PATTERN.exec(value);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[7] === "Z" ? 0 : Number(match[9]);
+  const offsetMinute = match[7] === "Z" ? 0 : Number(match[10]);
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > getDaysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 14 ||
+    offsetMinute > 59 ||
+    (offsetHour === 14 && offsetMinute !== 0)
+  ) {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
+}
+
 function parsePersistedCostRecord(
   value: unknown,
 ): PersistedDailyQuestionReviewCost | null {
@@ -308,16 +409,16 @@ function parsePersistedCostRecord(
     return null;
   }
 
-  const occurredAt = new Date(value.occurredAt);
+  const occurredAt = parseExplicitOffsetIsoTimestamp(value.occurredAt);
 
-  if (Number.isNaN(occurredAt.getTime())) {
+  if (!occurredAt) {
     return null;
   }
 
   return {
     id: value.id,
     status: value.status,
-    occurredAt: occurredAt.toISOString(),
+    occurredAt,
     estimatedCostMicrodollars: value.estimatedCostMicrodollars,
   };
 }
@@ -387,6 +488,7 @@ function normalizeBudgetCents(value: number | undefined): number {
 }
 
 export function checkDailyQuestionReviewBudget(options: {
+  model: string;
   records: readonly unknown[];
   now?: Date;
   monthlyBudgetCents?: number;
@@ -394,9 +496,22 @@ export function checkDailyQuestionReviewBudget(options: {
 }): DailyQuestionReviewBudgetResult {
   const limitMicrodollars =
     normalizeBudgetCents(options.monthlyBudgetCents) * MICRODOLLARS_PER_CENT;
+  const modelReservationMicrodollars =
+    getDailyQuestionReviewMaxRunReservationMicrodollars(options.model);
+
+  if (modelReservationMicrodollars === null) {
+    return {
+      allowed: false,
+      spentMicrodollars: 0,
+      limitMicrodollars,
+      remainingMicrodollars: limitMicrodollars,
+      reservedMicrodollars: 0,
+      reason: "unsupported_model",
+    };
+  }
+
   const reservedMicrodollars =
-    options.reservedMicrodollars ??
-    DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS;
+    options.reservedMicrodollars ?? modelReservationMicrodollars;
   const now = options.now ?? new Date();
 
   if (!isNonnegativeSafeInteger(reservedMicrodollars)) {
@@ -463,6 +578,7 @@ export function checkDailyQuestionReviewBudget(options: {
 }
 
 export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
+  model: string;
   records: readonly unknown[];
   operation: () => Promise<T> | T;
   now?: Date;

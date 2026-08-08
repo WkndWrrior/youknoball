@@ -31,9 +31,10 @@ const MAX_PROMPT_JSON_BYTES = 32_000;
 const MAX_SOURCE_EXCERPT_BYTES = 4_000;
 const MAX_SOURCE_TITLE_BYTES = 600;
 const MAX_SAVED_EVIDENCE_ITEMS = 20;
-const MAX_MODEL_STRING_BYTES = 100;
 const UTF8_ENCODER = new TextEncoder();
 const UTF8_DECODER = new TextDecoder();
+
+export const MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE = 10;
 
 const WEB_SEARCH_DOMAINS = [
   "baseball-reference.com",
@@ -168,6 +169,7 @@ export interface OpenAiQuestionVerifier {
 
 export type OpenAiQuestionVerifierErrorCode =
   | "api_error"
+  | "excessive_web_search_calls"
   | "http_error"
   | "incomplete"
   | "invalid_finding"
@@ -178,8 +180,11 @@ export type OpenAiQuestionVerifierErrorCode =
   | "network_error"
   | "non_json_response"
   | "refused"
+  | "response_failed"
   | "response_too_large"
-  | "timeout";
+  | "timeout"
+  | "unexpected_status"
+  | "unsupported_model";
 
 export class OpenAiQuestionVerifierError extends Error {
   readonly code: OpenAiQuestionVerifierErrorCode;
@@ -272,16 +277,18 @@ function isBoundedString(value: unknown, maxLength: number): value is string {
   );
 }
 
-function isHttpsUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password;
-  } catch {
-    return false;
+function canonicalApprovedUrl(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
   }
+  const validation = validateSourceUrl(value);
+  return validation.ok ? validation.url : null;
 }
 
-function parseModelFinding(value: unknown): ModelFinding | null {
+function parseModelFinding(
+  value: unknown,
+  allowedEvidenceUrls: ReadonlySet<string>,
+): ModelFinding | null {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -312,19 +319,28 @@ function parseModelFinding(value: unknown): ModelFinding | null {
   }
 
   const evidence: ModelEvidence[] = [];
+  const seenEvidenceUrls = new Set<string>();
   for (const item of value.evidence) {
+    const canonicalUrl = isRecord(item)
+      ? canonicalApprovedUrl(item.url)
+      : null;
     if (
       !isRecord(item) ||
       !hasExactKeys(item, ["url", "title", "support"]) ||
       !isBoundedString(item.url, MAX_REVIEW_EVIDENCE_URL_LENGTH) ||
-      !isHttpsUrl(item.url) ||
+      !canonicalUrl ||
+      !allowedEvidenceUrls.has(canonicalUrl) ||
       !isBoundedString(item.title, MAX_REVIEW_EVIDENCE_TITLE_LENGTH) ||
       !isBoundedString(item.support, MAX_REVIEW_EVIDENCE_EXCERPT_LENGTH)
     ) {
       return null;
     }
+    if (seenEvidenceUrls.has(canonicalUrl)) {
+      continue;
+    }
+    seenEvidenceUrls.add(canonicalUrl);
     evidence.push({
-      url: item.url.trim(),
+      url: canonicalUrl,
       title: item.title.trim(),
       support: item.support.trim(),
     });
@@ -499,37 +515,68 @@ function parseUsage(value: unknown): OpenAiQuestionVerifierUsage {
 function collectSearchMetadata(output: unknown): {
   calls: number;
   sources: OpenAiQuestionVerifierSource[];
+  urls: Set<string>;
 } {
   if (!Array.isArray(output)) {
-    return { calls: 0, sources: [] };
+    return { calls: 0, sources: [], urls: new Set() };
   }
-  let calls = 0;
+  const calls = output.reduce(
+    (total, item) =>
+      total + (isRecord(item) && item.type === "web_search_call" ? 1 : 0),
+    0,
+  );
+  if (calls > MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE) {
+    throw new OpenAiQuestionVerifierError(
+      "excessive_web_search_calls",
+      "OpenAI response exceeded the reserved web-search-call limit",
+      { retryable: true },
+    );
+  }
   const sources: OpenAiQuestionVerifierSource[] = [];
-  const seen = new Set<string>();
+  const urls = new Set<string>();
+  const addSource = (urlValue: unknown, titleValue: unknown) => {
+    const url = canonicalApprovedUrl(urlValue);
+    if (!url || urls.has(url)) {
+      return;
+    }
+    urls.add(url);
+    const title = isBoundedString(
+      titleValue,
+      MAX_REVIEW_EVIDENCE_TITLE_LENGTH,
+    )
+      ? titleValue.trim()
+      : new URL(url).hostname;
+    sources.push({ url, title });
+  };
   for (const item of output) {
-    if (!isRecord(item) || item.type !== "web_search_call") {
+    if (!isRecord(item)) {
       continue;
     }
-    calls += 1;
-    const action = isRecord(item.action) ? item.action : null;
-    if (!action || !Array.isArray(action.sources)) {
+    if (item.type === "web_search_call") {
+      const action = isRecord(item.action) ? item.action : null;
+      if (action && Array.isArray(action.sources)) {
+        for (const source of action.sources) {
+          if (isRecord(source)) {
+            addSource(source.url, source.title);
+          }
+        }
+      }
+    }
+    if (!Array.isArray(item.content)) {
       continue;
     }
-    for (const source of action.sources) {
-      if (
-        !isRecord(source) ||
-        !isBoundedString(source.url, MAX_REVIEW_EVIDENCE_URL_LENGTH) ||
-        !isHttpsUrl(source.url) ||
-        !isBoundedString(source.title, MAX_REVIEW_EVIDENCE_TITLE_LENGTH) ||
-        seen.has(source.url)
-      ) {
+    for (const content of item.content) {
+      if (!isRecord(content) || !Array.isArray(content.annotations)) {
         continue;
       }
-      seen.add(source.url);
-      sources.push({ url: source.url.trim(), title: source.title.trim() });
+      for (const annotation of content.annotations) {
+        if (isRecord(annotation) && annotation.type === "url_citation") {
+          addSource(annotation.url, annotation.title);
+        }
+      }
     }
   }
-  return { calls, sources };
+  return { calls, sources, urls };
 }
 
 function getOutputText(output: unknown): { text: string | null; refused: boolean } {
@@ -615,7 +662,12 @@ function parseJsonBody(text: string): unknown {
   }
 }
 
-function parseCompletedResponse(value: unknown): ParsedResponse {
+function parseCompletedResponse(
+  value: unknown,
+  savedEvidenceUrls: ReadonlySet<string>,
+  apiKey: string,
+  webSearchEnabled: boolean,
+): ParsedResponse {
   if (!isRecord(value)) {
     throw new OpenAiQuestionVerifierError(
       "non_json_response",
@@ -623,21 +675,45 @@ function parseCompletedResponse(value: unknown): ParsedResponse {
       { retryable: true },
     );
   }
-  if (isRecord(value.error)) {
+  if (value.status !== "completed") {
+    if (value.status === "incomplete") {
+      throw new OpenAiQuestionVerifierError(
+        "incomplete",
+        "OpenAI could not complete the verification response",
+        { retryable: true },
+      );
+    }
+    if (value.status === "failed") {
+      throw new OpenAiQuestionVerifierError(
+        "response_failed",
+        "OpenAI reported a failed verification response",
+        { retryable: true },
+      );
+    }
     throw new OpenAiQuestionVerifierError(
-      "api_error",
-      `OpenAI API error: ${boundedErrorDetail(String(value.error.message ?? "unknown error"))}`,
+      "unexpected_status",
+      "OpenAI response was not in the completed state",
       { retryable: true },
     );
   }
-  if (value.status === "incomplete") {
+  if (isRecord(value.error)) {
     throw new OpenAiQuestionVerifierError(
-      "incomplete",
-      "OpenAI could not complete the verification response",
+      "api_error",
+      `OpenAI API error: ${boundedErrorDetail(
+        String(value.error.message ?? "unknown error"),
+        apiKey,
+      )}`,
       { retryable: true },
     );
   }
   const output = value.output;
+  const search = collectSearchMetadata(output);
+  const allowedEvidenceUrls = new Set(savedEvidenceUrls);
+  if (webSearchEnabled) {
+    for (const url of search.urls) {
+      allowedEvidenceUrls.add(url);
+    }
+  }
   const outputText = getOutputText(output);
   if (outputText.refused) {
     throw new OpenAiQuestionVerifierError(
@@ -663,7 +739,7 @@ function parseCompletedResponse(value: unknown): ParsedResponse {
       { retryable: true },
     );
   }
-  const finding = parseModelFinding(rawFinding);
+  const finding = parseModelFinding(rawFinding, allowedEvidenceUrls);
   if (!finding) {
     throw new OpenAiQuestionVerifierError(
       "invalid_finding",
@@ -671,13 +747,30 @@ function parseCompletedResponse(value: unknown): ParsedResponse {
       { retryable: true },
     );
   }
-  const search = collectSearchMetadata(output);
   return {
     finding,
     usage: parseUsage(value.usage),
     webSearchCalls: search.calls,
     sources: search.sources,
   };
+}
+
+function getSavedEvidenceUrls(
+  input: OpenAiQuestionVerifierInput,
+): Set<string> {
+  const urls = new Set<string>();
+  for (const source of input.savedEvidence) {
+    if (source.status !== "fetched") {
+      continue;
+    }
+    for (const candidate of [source.requestedUrl, source.finalUrl]) {
+      const canonical = canonicalApprovedUrl(candidate);
+      if (canonical) {
+        urls.add(canonical);
+      }
+    }
+  }
+  return urls;
 }
 
 function getWebSearchDomains(input: OpenAiQuestionVerifierInput): string[] {
@@ -699,12 +792,15 @@ function getWebSearchDomains(input: OpenAiQuestionVerifierInput): string[] {
 }
 
 function getModel(): string {
-  const configured = process.env.DAILY_REVIEW_OPENAI_MODEL?.trim();
-  if (!configured) {
+  const configured = process.env.DAILY_REVIEW_OPENAI_MODEL;
+  if (configured === undefined || configured.trim() === "") {
     return DEFAULT_MODEL;
   }
-  if (byteLength(configured) > MAX_MODEL_STRING_BYTES || /[\r\n]/u.test(configured)) {
-    return DEFAULT_MODEL;
+  if (configured !== DEFAULT_MODEL) {
+    throw new OpenAiQuestionVerifierError(
+      "unsupported_model",
+      "DAILY_REVIEW_OPENAI_MODEL is not an approved priced model",
+    );
   }
   return configured;
 }
@@ -848,7 +944,12 @@ async function performRequest(
         { retryable: response.status === 429 || response.status >= 500, httpStatus: response.status },
       );
     }
-    return parseCompletedResponse(parsed);
+    return parseCompletedResponse(
+      parsed,
+      getSavedEvidenceUrls(input),
+      apiKey,
+      webSearchEnabled,
+    );
   })();
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
