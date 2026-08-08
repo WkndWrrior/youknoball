@@ -1,6 +1,335 @@
 create unique index if not exists daily_challenges_id_challenge_date_unique
   on public.daily_challenges (id, challenge_date);
 
+create or replace function public.daily_challenge_is_complete(
+  p_challenge_id uuid
+)
+returns boolean
+language sql
+security definer
+set search_path = public, pg_temp
+as $function$
+  select count(*) = 5
+    and count(distinct i.slot) = 5
+    and min(i.slot) = 1
+    and max(i.slot) = 5
+    and count(distinct i.question_id) = 5
+    and count(*) filter (
+      where jsonb_typeof(i.question_snapshot) = 'object'
+        and i.question_snapshot ?& array[
+          'id',
+          'question_text',
+          'option_a',
+          'option_b',
+          'option_c',
+          'option_d',
+          'correct_option',
+          'sport',
+          'difficulty',
+          'source_notes'
+        ]
+        and jsonb_typeof(i.question_snapshot->'id') = 'string'
+        and i.question_snapshot->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and i.question_snapshot->>'id' = i.question_id::text
+        and jsonb_typeof(i.question_snapshot->'question_text') = 'string'
+        and btrim(i.question_snapshot->>'question_text') <> ''
+        and char_length(btrim(i.question_snapshot->>'question_text')) between 1 and 1000
+        and jsonb_typeof(i.question_snapshot->'option_a') = 'string'
+        and char_length(btrim(i.question_snapshot->>'option_a')) between 1 and 500
+        and jsonb_typeof(i.question_snapshot->'option_b') = 'string'
+        and char_length(btrim(i.question_snapshot->>'option_b')) between 1 and 500
+        and jsonb_typeof(i.question_snapshot->'option_c') = 'string'
+        and char_length(btrim(i.question_snapshot->>'option_c')) between 1 and 500
+        and jsonb_typeof(i.question_snapshot->'option_d') = 'string'
+        and char_length(btrim(i.question_snapshot->>'option_d')) between 1 and 500
+        and i.question_snapshot->>'correct_option' in ('A', 'B', 'C', 'D')
+        and i.question_snapshot->>'difficulty' in ('easy', 'medium', 'hard')
+        and jsonb_typeof(i.question_snapshot->'sport') = 'object'
+        and i.question_snapshot->'sport' ?& array['slug', 'name']
+        and jsonb_typeof(i.question_snapshot->'sport'->'slug') = 'string'
+        and char_length(btrim(i.question_snapshot->'sport'->>'slug')) between 1 and 50
+        and jsonb_typeof(i.question_snapshot->'sport'->'name') = 'string'
+        and char_length(btrim(i.question_snapshot->'sport'->>'name')) between 1 and 100
+        and (
+          jsonb_typeof(i.question_snapshot->'source_notes') = 'null'
+          or (
+            jsonb_typeof(i.question_snapshot->'source_notes') = 'string'
+            and char_length(btrim(i.question_snapshot->>'source_notes')) <= 4000
+          )
+        )
+    ) = 5
+  from public.daily_challenge_items i
+  where i.daily_challenge_id = p_challenge_id;
+$function$;
+
+revoke all on function public.daily_challenge_is_complete(uuid)
+  from public, anon, authenticated;
+
+create or replace function public.prepare_daily_challenge_draft(
+  p_challenge_date date,
+  p_generation_method text,
+  p_rules_version text,
+  p_generated_at timestamptz,
+  p_items jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $function$
+declare
+  canonical_id uuid;
+  canonical_status text;
+  canonical_published_at timestamptz;
+  payload_count bigint;
+  payload_slot_count bigint;
+  payload_question_count bigint;
+  valid_payload_count bigint;
+begin
+  if p_challenge_date is null
+    or p_generation_method is null
+    or p_generation_method not in ('manual', 'semi_auto', 'auto')
+    or p_rules_version is null
+    or char_length(btrim(p_rules_version)) not between 1 and 100
+    or p_generated_at is null
+    or p_items is null
+    or jsonb_typeof(p_items) <> 'array'
+  then
+    return jsonb_build_object('outcome', 'incomplete', 'challenge_id', null);
+  end if;
+
+  if jsonb_array_length(p_items) <> 5 then
+    return jsonb_build_object('outcome', 'incomplete', 'challenge_id', null);
+  end if;
+
+  select
+    count(*),
+    count(distinct case
+      when item->>'slot' ~ '^[1-5]$' then (item->>'slot')::smallint
+    end),
+    count(distinct lower(item->>'question_id')),
+    count(*) filter (
+      where jsonb_typeof(item) = 'object'
+        and item ?& array['slot', 'question_id', 'question_snapshot']
+        and jsonb_typeof(item->'slot') = 'number'
+        and item->>'slot' ~ '^[1-5]$'
+        and jsonb_typeof(item->'question_id') = 'string'
+        and item->>'question_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and jsonb_typeof(item->'question_snapshot') = 'object'
+        and item->'question_snapshot' ?& array[
+          'id',
+          'question_text',
+          'option_a',
+          'option_b',
+          'option_c',
+          'option_d',
+          'correct_option',
+          'sport',
+          'difficulty',
+          'source_notes'
+        ]
+        and jsonb_typeof(item->'question_snapshot'->'id') = 'string'
+        and item->'question_snapshot'->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and item->'question_snapshot'->>'id' = item->>'question_id'
+        and jsonb_typeof(item->'question_snapshot'->'question_text') = 'string'
+        and char_length(btrim(item->'question_snapshot'->>'question_text')) between 1 and 1000
+        and jsonb_typeof(item->'question_snapshot'->'option_a') = 'string'
+        and char_length(btrim(item->'question_snapshot'->>'option_a')) between 1 and 500
+        and jsonb_typeof(item->'question_snapshot'->'option_b') = 'string'
+        and char_length(btrim(item->'question_snapshot'->>'option_b')) between 1 and 500
+        and jsonb_typeof(item->'question_snapshot'->'option_c') = 'string'
+        and char_length(btrim(item->'question_snapshot'->>'option_c')) between 1 and 500
+        and jsonb_typeof(item->'question_snapshot'->'option_d') = 'string'
+        and char_length(btrim(item->'question_snapshot'->>'option_d')) between 1 and 500
+        and item->'question_snapshot'->>'correct_option' in ('A', 'B', 'C', 'D')
+        and item->'question_snapshot'->>'difficulty' in ('easy', 'medium', 'hard')
+        and jsonb_typeof(item->'question_snapshot'->'sport') = 'object'
+        and item->'question_snapshot'->'sport' ?& array['slug', 'name']
+        and jsonb_typeof(item->'question_snapshot'->'sport'->'slug') = 'string'
+        and char_length(btrim(item->'question_snapshot'->'sport'->>'slug')) between 1 and 50
+        and jsonb_typeof(item->'question_snapshot'->'sport'->'name') = 'string'
+        and char_length(btrim(item->'question_snapshot'->'sport'->>'name')) between 1 and 100
+        and (
+          jsonb_typeof(item->'question_snapshot'->'source_notes') = 'null'
+          or (
+            jsonb_typeof(item->'question_snapshot'->'source_notes') = 'string'
+            and char_length(btrim(item->'question_snapshot'->>'source_notes')) <= 4000
+          )
+        )
+    )
+  into payload_count, payload_slot_count, payload_question_count, valid_payload_count
+  from jsonb_array_elements(p_items) as payload(item);
+
+  if payload_count <> 5
+    or payload_slot_count <> 5
+    or payload_question_count <> 5
+    or valid_payload_count <> 5
+  then
+    return jsonb_build_object('outcome', 'incomplete', 'challenge_id', null);
+  end if;
+
+  select c.id, c.status, c.published_at
+  into canonical_id, canonical_status, canonical_published_at
+  from public.daily_challenges c
+  where c.challenge_date = p_challenge_date
+  for update;
+
+  if found then
+    if canonical_status = 'generated'
+      and canonical_published_at is null
+      and public.daily_challenge_is_complete(canonical_id)
+    then
+      return jsonb_build_object('outcome', 'existing', 'challenge_id', canonical_id);
+    end if;
+
+    return jsonb_build_object(
+      'outcome',
+      case
+        when canonical_status = 'generated' and canonical_published_at is null
+          then 'incomplete'
+        else 'conflict'
+      end,
+      'challenge_id',
+      canonical_id
+    );
+  end if;
+
+  begin
+    insert into public.daily_challenges (
+      challenge_date,
+      status,
+      generation_method,
+      rules_version,
+      generated_at,
+      published_at
+    )
+    values (
+      p_challenge_date,
+      'generated',
+      p_generation_method,
+      btrim(p_rules_version),
+      p_generated_at,
+      null
+    )
+    returning id into canonical_id;
+  exception
+    when unique_violation then
+      select c.id, c.status, c.published_at
+      into canonical_id, canonical_status, canonical_published_at
+      from public.daily_challenges c
+      where c.challenge_date = p_challenge_date
+      for update;
+
+      if not found then
+        return jsonb_build_object('outcome', 'conflict', 'challenge_id', null);
+      end if;
+
+      if canonical_status = 'generated'
+        and canonical_published_at is null
+        and public.daily_challenge_is_complete(canonical_id)
+      then
+        return jsonb_build_object('outcome', 'existing', 'challenge_id', canonical_id);
+      end if;
+
+      return jsonb_build_object(
+        'outcome',
+        case
+          when canonical_status = 'generated' and canonical_published_at is null
+            then 'incomplete'
+          else 'conflict'
+        end,
+        'challenge_id',
+        canonical_id
+      );
+  end;
+
+  insert into public.daily_challenge_items (
+    daily_challenge_id,
+    slot,
+    question_id,
+    question_snapshot
+  )
+  select
+    canonical_id,
+    (item->>'slot')::smallint,
+    (item->>'question_id')::uuid,
+    item->'question_snapshot'
+  from jsonb_array_elements(p_items) as payload(item)
+  order by (item->>'slot')::smallint;
+
+  if not public.daily_challenge_is_complete(canonical_id) then
+    delete from public.daily_challenges
+    where id = canonical_id;
+    return jsonb_build_object('outcome', 'incomplete', 'challenge_id', null);
+  end if;
+
+  return jsonb_build_object('outcome', 'created', 'challenge_id', canonical_id);
+end;
+$function$;
+
+revoke all on function public.prepare_daily_challenge_draft(date, text, text, timestamptz, jsonb)
+  from public, anon, authenticated;
+
+grant execute on function public.prepare_daily_challenge_draft(date, text, text, timestamptz, jsonb)
+  to service_role;
+
+comment on function public.prepare_daily_challenge_draft(date, text, text, timestamptz, jsonb) is
+  'Service-role-only atomic preparation of one complete unpublished canonical Daily 5 draft.';
+
+create or replace function public.cleanup_stale_daily_challenge(
+  p_challenge_id uuid,
+  p_challenge_date date,
+  p_generated_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $function$
+declare
+  challenge_date_value date;
+  challenge_status text;
+  challenge_generated_at timestamptz;
+  challenge_published_at timestamptz;
+begin
+  select c.challenge_date, c.status, c.generated_at, c.published_at
+  into challenge_date_value, challenge_status, challenge_generated_at, challenge_published_at
+  from public.daily_challenges c
+  where c.id = p_challenge_id
+  for update;
+
+  if not found then
+    return jsonb_build_object('outcome', 'missing', 'challenge_id', null);
+  end if;
+
+  if challenge_date_value <> p_challenge_date
+    or challenge_status <> 'generated'
+    or challenge_generated_at is distinct from p_generated_at
+    or challenge_published_at is not null
+  then
+    return jsonb_build_object('outcome', 'conflict', 'challenge_id', p_challenge_id);
+  end if;
+
+  if public.daily_challenge_is_complete(p_challenge_id) then
+    return jsonb_build_object('outcome', 'complete', 'challenge_id', p_challenge_id);
+  end if;
+
+  delete from public.daily_challenges
+  where id = p_challenge_id;
+
+  return jsonb_build_object('outcome', 'deleted', 'challenge_id', p_challenge_id);
+end;
+$function$;
+
+revoke all on function public.cleanup_stale_daily_challenge(uuid, date, timestamptz)
+  from public, anon, authenticated;
+
+grant execute on function public.cleanup_stale_daily_challenge(uuid, date, timestamptz)
+  to service_role;
+
+comment on function public.cleanup_stale_daily_challenge(uuid, date, timestamptz) is
+  'Service-role-only atomic cleanup of an unchanged and still-incomplete generated Daily 5 draft.';
+
 create or replace function public.publish_daily_challenge(
   p_challenge_id uuid,
   p_challenge_date date,
@@ -14,12 +343,6 @@ as $function$
 declare
   challenge_status text;
   challenge_published_at timestamptz;
-  item_count bigint;
-  slot_count bigint;
-  first_slot smallint;
-  last_slot smallint;
-  question_count bigint;
-  valid_item_count bigint;
 begin
   if p_published_at is null then
     return 'conflict';
@@ -44,67 +367,7 @@ begin
     return 'conflict';
   end if;
 
-  select
-    count(*),
-    count(distinct i.slot),
-    min(i.slot),
-    max(i.slot),
-    count(distinct i.question_id),
-    count(*) filter (
-      where jsonb_typeof(i.question_snapshot) = 'object'
-        and i.question_snapshot ?& array[
-          'id',
-          'question_text',
-          'option_a',
-          'option_b',
-          'option_c',
-          'option_d',
-          'correct_option',
-          'sport',
-          'difficulty',
-          'source_notes'
-        ]
-        and jsonb_typeof(i.question_snapshot->'id') = 'string'
-        and i.question_snapshot->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-        and lower(i.question_snapshot->>'id') = i.question_id::text
-        and jsonb_typeof(i.question_snapshot->'question_text') = 'string'
-        and btrim(i.question_snapshot->>'question_text') <> ''
-        and char_length(btrim(i.question_snapshot->>'question_text')) <= 1000
-        and jsonb_typeof(i.question_snapshot->'option_a') = 'string'
-        and char_length(btrim(i.question_snapshot->>'option_a')) between 1 and 500
-        and jsonb_typeof(i.question_snapshot->'option_b') = 'string'
-        and char_length(btrim(i.question_snapshot->>'option_b')) between 1 and 500
-        and jsonb_typeof(i.question_snapshot->'option_c') = 'string'
-        and char_length(btrim(i.question_snapshot->>'option_c')) between 1 and 500
-        and jsonb_typeof(i.question_snapshot->'option_d') = 'string'
-        and char_length(btrim(i.question_snapshot->>'option_d')) between 1 and 500
-        and i.question_snapshot->>'correct_option' in ('A', 'B', 'C', 'D')
-        and i.question_snapshot->>'difficulty' in ('easy', 'medium', 'hard')
-        and jsonb_typeof(i.question_snapshot->'sport') = 'object'
-        and i.question_snapshot->'sport' ?& array['slug', 'name']
-        and jsonb_typeof(i.question_snapshot->'sport'->'slug') = 'string'
-        and char_length(btrim(i.question_snapshot->'sport'->>'slug')) between 1 and 50
-        and jsonb_typeof(i.question_snapshot->'sport'->'name') = 'string'
-        and char_length(btrim(i.question_snapshot->'sport'->>'name')) between 1 and 100
-        and (
-          jsonb_typeof(i.question_snapshot->'source_notes') = 'null'
-          or (
-            jsonb_typeof(i.question_snapshot->'source_notes') = 'string'
-            and char_length(i.question_snapshot->>'source_notes') <= 4000
-          )
-        )
-    )
-  into item_count, slot_count, first_slot, last_slot, question_count, valid_item_count
-  from public.daily_challenge_items i
-  where i.daily_challenge_id = p_challenge_id;
-
-  if item_count <> 5
-    or slot_count <> 5
-    or first_slot <> 1
-    or last_slot <> 5
-    or question_count <> 5
-    or valid_item_count <> 5
-  then
+  if not public.daily_challenge_is_complete(p_challenge_id) then
     return 'incomplete';
   end if;
 

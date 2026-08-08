@@ -105,7 +105,6 @@ const GENERATED_CHALLENGE_STATUS = "published";
 const GENERATED_CHALLENGE_METHOD = "auto";
 const GENERATED_CHALLENGE_RULES_VERSION = "v1";
 const GENERATED_CHALLENGE_STALE_AFTER_MS = 2 * 60 * 1000;
-const CANONICAL_REREAD_DELAYS_MS = [10, 25, 50] as const;
 
 type FiveItems<T> = [T, T, T, T, T];
 
@@ -240,10 +239,6 @@ function isCanonicalStoreUnavailableError(error: PostgrestError | null) {
 
 function isSportQuizStoreUnavailableError(error: PostgrestError | null) {
   return error?.code === "42P01" || error?.code === "PGRST205";
-}
-
-function isConflictError(error: PostgrestError | null) {
-  return Boolean(error && error.code === "23505");
 }
 
 function isStaleGeneratedAt(generatedAt: string | null) {
@@ -679,30 +674,6 @@ async function getCanonicalChallengeForDate(
   };
 }
 
-function delay(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-async function rereadCanonicalChallengeWithBackoff(
-  challengeDate: string,
-  initialState: CanonicalChallengeReadState,
-) {
-  let state = initialState;
-
-  for (const delayMs of CANONICAL_REREAD_DELAYS_MS) {
-    if (state.kind !== "generation_in_progress") {
-      return state;
-    }
-
-    await delay(delayMs);
-    state = await getCanonicalChallengeForDate(challengeDate);
-  }
-
-  return state;
-}
-
 function hasQuestionSnapshotShape(
   value: unknown,
 ): value is StoredQuestionSnapshot {
@@ -846,73 +817,128 @@ async function loadReusableQuestionCandidates(
   return { kind: "ready" as const, candidates };
 }
 
-async function persistGeneratedChallengeDraft(
+type AtomicDraftMutationResult = {
+  outcome: "created" | "existing" | "conflict" | "incomplete";
+  challengeId: string | null;
+};
+
+type AtomicStaleCleanupResult = {
+  outcome: "deleted" | "complete" | "conflict" | "missing";
+  challengeId: string | null;
+};
+
+const atomicDraftMutationOutcomes = new Set<AtomicDraftMutationResult["outcome"]>([
+  "created",
+  "existing",
+  "conflict",
+  "incomplete",
+]);
+
+const atomicStaleCleanupOutcomes = new Set<AtomicStaleCleanupResult["outcome"]>([
+  "deleted",
+  "complete",
+  "conflict",
+  "missing",
+]);
+
+function parseAtomicMutationResult<TOutcome extends string>(
+  value: unknown,
+  outcomes: ReadonlySet<TOutcome>,
+): { outcome: TOutcome; challengeId: string | null } | null {
+  if (
+    !isRecord(value) ||
+    typeof value.outcome !== "string" ||
+    !outcomes.has(value.outcome as TOutcome) ||
+    (typeof value.challenge_id !== "string" && value.challenge_id !== null)
+  ) {
+    return null;
+  }
+
+  return {
+    outcome: value.outcome as TOutcome,
+    challengeId: value.challenge_id,
+  };
+}
+
+async function persistGeneratedChallengeDraftAtomically(
   adminClient: ReturnType<typeof supabaseAdmin>,
   challengeDate: string,
   generatedQuestions: GeneratedDailyChallengeQuestion[],
 ) {
   const generatedAt = new Date().toISOString();
 
-  const { data: challenge, error: challengeError } = await adminClient
-    .from("daily_challenges")
-    .insert({
-      challenge_date: challengeDate,
-      status: "generated",
-      generation_method: GENERATED_CHALLENGE_METHOD,
-      rules_version: GENERATED_CHALLENGE_RULES_VERSION,
-      generated_at: generatedAt,
-      published_at: null,
-    })
-    .select(CANONICAL_CHALLENGE_COLUMNS)
-    .single();
-
-  if (isCanonicalStoreUnavailableError(challengeError)) {
-    return isConflictError(challengeError)
-      ? { kind: "conflict" as const }
-      : { kind: "bridge_fallback" as const };
-  }
-
-  const canonicalChallenge = normalizeCanonicalChallenge(challenge);
-  if (!canonicalChallenge) {
-    return { kind: "bridge_fallback" as const };
-  }
-
   const itemRows = generatedQuestions.map((question) => ({
-    daily_challenge_id: canonicalChallenge.id,
     slot: question.slot,
     question_id: question.id,
     question_snapshot: withoutSlot(question),
   }));
 
-  const { error: itemError } = await adminClient
-    .from("daily_challenge_items")
-    .insert(itemRows);
-
-  if (isCanonicalStoreUnavailableError(itemError)) {
-    await adminClient
-      .from("daily_challenges")
-      .delete()
-      .eq("id", canonicalChallenge.id);
-
-    return isConflictError(itemError)
-      ? { kind: "conflict" as const }
-      : { kind: "bridge_fallback" as const };
-  }
-
   const questions = toCompleteDraftQuestions(itemRows);
   if (!questions) {
-    await adminClient
-      .from("daily_challenges")
-      .delete()
-      .eq("id", canonicalChallenge.id);
     return { kind: "bridge_fallback" as const };
   }
 
-  return {
-    kind: "draft_ready" as const,
-    challengeId: canonicalChallenge.id,
-    questions,
-  };
+  const { data, error } = await adminClient.rpc("prepare_daily_challenge_draft", {
+    p_challenge_date: challengeDate,
+    p_generation_method: GENERATED_CHALLENGE_METHOD,
+    p_rules_version: GENERATED_CHALLENGE_RULES_VERSION,
+    p_generated_at: generatedAt,
+    p_items: itemRows,
+  });
+
+  if (isCanonicalStoreUnavailableError(error)) {
+    return { kind: "bridge_fallback" as const };
+  }
+
+  const mutation = parseAtomicMutationResult(data, atomicDraftMutationOutcomes);
+  if (!mutation) {
+    return { kind: "bridge_fallback" as const };
+  }
+
+  if (mutation.outcome === "created" && mutation.challengeId) {
+    return {
+      kind: "draft_ready" as const,
+      challengeId: mutation.challengeId,
+      questions,
+    };
+  }
+
+  return getCanonicalChallengeForDate(challengeDate);
+}
+
+async function cleanupStaleCanonicalChallenge(
+  adminClient: ReturnType<typeof supabaseAdmin>,
+  challengeDate: string,
+  staleChallenge: {
+    challengeId: string;
+    generatedAt: string;
+  },
+) {
+  const { data, error } = await adminClient.rpc("cleanup_stale_daily_challenge", {
+    p_challenge_id: staleChallenge.challengeId,
+    p_challenge_date: challengeDate,
+    p_generated_at: staleChallenge.generatedAt,
+  });
+
+  if (isCanonicalStoreUnavailableError(error)) {
+    return { kind: "bridge_fallback" as const };
+  }
+
+  const cleanup = parseAtomicMutationResult(data, atomicStaleCleanupOutcomes);
+  if (!cleanup) {
+    return { kind: "bridge_fallback" as const };
+  }
+
+  if (cleanup.outcome === "deleted") {
+    return { kind: "deleted" as const };
+  }
+
+  const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
+  if (cleanup.outcome === "missing" && canonicalChallenge.kind === "missing") {
+    return { kind: "deleted" as const };
+  }
+
+  return canonicalChallenge;
 }
 
 async function generateAndPersistCanonicalChallengeForDate(
@@ -925,31 +951,13 @@ async function generateAndPersistCanonicalChallengeForDate(
   const adminClient = supabaseAdmin();
 
   if (staleChallenge) {
-    const { data: deletedChallenge, error: cleanupError } = await adminClient
-      .from("daily_challenges")
-      .delete()
-      .eq("id", staleChallenge.challengeId)
-      .eq("status", "generated")
-      .is("published_at", null)
-      .eq("generated_at", staleChallenge.generatedAt)
-      .select("id")
-      .maybeSingle();
-
-    if (isCanonicalStoreUnavailableError(cleanupError)) {
-      if (!isConflictError(cleanupError)) {
-        return { kind: "bridge_fallback" as const };
-      }
-    }
-
-    if (
-      !isRecord(deletedChallenge) ||
-      deletedChallenge.id !== staleChallenge.challengeId
-    ) {
-      const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
-      return rereadCanonicalChallengeWithBackoff(
-        challengeDate,
-        canonicalChallenge,
-      );
+    const cleanup = await cleanupStaleCanonicalChallenge(
+      adminClient,
+      challengeDate,
+      staleChallenge,
+    );
+    if (cleanup.kind !== "deleted") {
+      return cleanup;
     }
   }
 
@@ -972,24 +980,11 @@ async function generateAndPersistCanonicalChallengeForDate(
     return { kind: "unavailable" as const };
   }
 
-  const persisted = await persistGeneratedChallengeDraft(
+  const persisted = await persistGeneratedChallengeDraftAtomically(
     adminClient,
     challengeDate,
     generatedQuestions,
   );
-
-  if (persisted.kind === "conflict") {
-    const refreshedChallenge = await getCanonicalChallengeForDate(challengeDate);
-    return rereadCanonicalChallengeWithBackoff(
-      challengeDate,
-      refreshedChallenge,
-    );
-  }
-
-  if (persisted.kind === "draft_ready") {
-    return persisted;
-  }
-
   return persisted;
 }
 
@@ -1040,10 +1035,7 @@ async function publishDraftForServing(
   }
 
   if (publication.kind === "conflict") {
-    const canonicalChallenge = await rereadCanonicalChallengeWithBackoff(
-      challengeDate,
-      await getCanonicalChallengeForDate(challengeDate),
-    );
+    const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
     if (canonicalChallenge.kind === "ready") {
       return {
         dailyChallengeId: canonicalChallenge.challengeId,
@@ -1063,10 +1055,7 @@ export async function prepareDailyChallengeDraftForDate(
 ): Promise<PreparedDailyChallengeDraft> {
   assertValidChallengeDate(challengeDate);
 
-  const canonicalChallenge = await rereadCanonicalChallengeWithBackoff(
-    challengeDate,
-    await getCanonicalChallengeForDate(challengeDate),
-  );
+  const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
   if (canonicalChallenge.kind === "draft_ready") {
     return toPreparedDailyChallengeDraft(challengeDate, canonicalChallenge);
   }
@@ -1097,10 +1086,7 @@ async function resolveServeableChallengeForDate(
 ): Promise<ServeableChallengeForDate> {
   assertValidChallengeDate(challengeDate);
 
-  const canonicalChallenge = await rereadCanonicalChallengeWithBackoff(
-    challengeDate,
-    await getCanonicalChallengeForDate(challengeDate),
-  );
+  const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
   if (canonicalChallenge.kind === "ready") {
     return {
       dailyChallengeId: canonicalChallenge.challengeId,

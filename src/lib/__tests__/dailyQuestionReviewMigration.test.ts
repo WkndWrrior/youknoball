@@ -469,7 +469,7 @@ describe("nightly question verification migration", () => {
     expect(migration).toContain("max(i.slot)");
     expect(migration).toContain("count(distinct i.question_id)");
     expect(migration).toContain(
-      "lower(i.question_snapshot->>'id') = i.question_id::text",
+      "i.question_snapshot->>'id' = i.question_id::text",
     );
     expect(migration).toContain(
       "i.question_snapshot->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'",
@@ -496,6 +496,80 @@ describe("nightly question verification migration", () => {
     );
     expect(migration).not.toMatch(
       /grant execute on function public\.publish_daily_challenge\([^;]+\) to (?:public|anon|authenticated)/i,
+    );
+  });
+
+  it("prepares the challenge row and all five immutable items in one service-role transaction", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const statement = normalizedStatement(
+      migration,
+      "create or replace function public.prepare_daily_challenge_draft",
+    );
+
+    expect(statement).toMatch(
+      /prepare_daily_challenge_draft\( p_challenge_date date, p_generation_method text, p_rules_version text, p_generated_at timestamptz, p_items jsonb \) returns jsonb/i,
+    );
+    expect(statement).toContain("security definer");
+    expect(statement).toContain("set search_path = public, pg_temp");
+    expect(statement).toContain("jsonb_array_length(p_items) <> 5");
+    expect(statement).toContain("count(distinct case");
+    expect(statement).toContain("then (item->>'slot')::smallint");
+    expect(statement).toContain("count(distinct lower(item->>'question_id'))");
+    expect(statement).toContain(
+      "item->'question_snapshot'->>'id' = item->>'question_id'",
+    );
+    expect(statement).toContain("insert into public.daily_challenges");
+    expect(statement).toContain("insert into public.daily_challenge_items");
+    expect(statement).toContain("when unique_violation");
+    expect(statement).toMatch(/where c\.challenge_date = p_challenge_date[\s\S]*for update/);
+    expect(statement).toContain("'outcome', 'created'");
+    expect(statement).toContain("'outcome', 'existing'");
+    expect(statement).toContain("'outcome', 'conflict'");
+    expect(statement).toContain("'outcome', 'incomplete'");
+    expect(statement).not.toContain("status = 'published'");
+    expect(statement).not.toContain("published_at =");
+    expect(migration).toMatch(
+      /revoke all on function public\.prepare_daily_challenge_draft\(date, text, text, timestamptz, jsonb\)\s+from public, anon, authenticated/,
+    );
+    expect(migration).toMatch(
+      /grant execute on function public\.prepare_daily_challenge_draft\(date, text, text, timestamptz, jsonb\)\s+to service_role/,
+    );
+    expect(migration).not.toMatch(
+      /grant execute on function public\.prepare_daily_challenge_draft\([^;]+\) to (?:public|anon|authenticated)/i,
+    );
+  });
+
+  it("cleans stale incomplete drafts atomically without deleting a completed race winner", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const statement = normalizedStatement(
+      migration,
+      "create or replace function public.cleanup_stale_daily_challenge",
+    );
+
+    expect(statement).toMatch(
+      /cleanup_stale_daily_challenge\( p_challenge_id uuid, p_challenge_date date, p_generated_at timestamptz \) returns jsonb/i,
+    );
+    expect(statement).toContain("security definer");
+    expect(statement).toContain("set search_path = public, pg_temp");
+    expect(statement).toMatch(/where c\.id = p_challenge_id[\s\S]*for update/);
+    expect(statement).toContain("challenge_date_value <> p_challenge_date");
+    expect(statement).toContain(
+      "challenge_generated_at is distinct from p_generated_at",
+    );
+    expect(statement).toContain("public.daily_challenge_is_complete(p_challenge_id)");
+    expect(statement).toContain("delete from public.daily_challenges");
+    expect(statement).toContain("'outcome', 'deleted'");
+    expect(statement).toContain("'outcome', 'complete'");
+    expect(statement).toContain("'outcome', 'conflict'");
+    expect(statement).toContain("'outcome', 'missing'");
+    expect(migration).toMatch(
+      /revoke all on function public\.cleanup_stale_daily_challenge\(uuid, date, timestamptz\)\s+from public, anon, authenticated/,
+    );
+    expect(migration).toMatch(
+      /grant execute on function public\.cleanup_stale_daily_challenge\(uuid, date, timestamptz\)\s+to service_role/,
+    );
+    expect(migration).not.toMatch(
+      /grant execute on function public\.cleanup_stale_daily_challenge\([^;]+\) to (?:public|anon|authenticated)/i,
     );
   });
 });
