@@ -121,6 +121,19 @@ function htmlResponse(
   });
 }
 
+function singleByteHtmlResponse(
+  body: string,
+  contentType = "text/html",
+): Response {
+  return new Response(
+    Uint8Array.from(body, (character) => character.charCodeAt(0)),
+    {
+      status: 200,
+      headers: { "content-type": contentType },
+    },
+  );
+}
+
 describe("approved question source URLs", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -1120,6 +1133,53 @@ describe("saved source evidence fetching", () => {
   });
 
   it.each([
+    {
+      label: "UTF-8",
+      body: Uint8Array.from([
+        0xef,
+        0xbb,
+        0xbf,
+        ...new TextEncoder().encode("Café"),
+      ]),
+      transportCharset: "windows-1252",
+    },
+    {
+      label: "UTF-16LE",
+      body: Uint8Array.from([
+        0xff,
+        0xfe,
+        0x43,
+        0x00,
+        0x61,
+        0x00,
+        0x66,
+        0x00,
+        0xe9,
+        0x00,
+      ]),
+      transportCharset: "utf-8",
+    },
+  ])(
+    "uses a $label BOM before a conflicting HTTP charset",
+    async ({ body, transportCharset }) => {
+      const fetchMock = asFetch(async () =>
+        new Response(body, {
+          status: 200,
+          headers: {
+            "content-type": `text/plain; charset=${transportCharset}`,
+          },
+        }),
+      );
+
+      await expect(
+        fetchSourceEvidence("https://www.espn.com/story", {
+          fetchImpl: fetchMock,
+        }),
+      ).resolves.toMatchObject({ status: "fetched", excerpt: "Café" });
+    },
+  );
+
+  it.each([
     '<meta charset="windows-1252">',
     '<meta http-equiv="Content-Type" content="text/html; charset=windows-1252">',
   ])("sniffs legacy HTML encoding from %s", async (meta) => {
@@ -1155,6 +1215,93 @@ describe("saved source evidence fetching", () => {
       title: "Café",
       excerpt: "Café",
     });
+  });
+
+  it.each([
+    [
+      "comment",
+      '<!-- <meta charset="utf-8"> --><meta charset="windows-1252">',
+    ],
+    [
+      "script",
+      '<script>const fake = \'<meta charset="utf-8">\';</script><meta charset="windows-1252">',
+    ],
+    [
+      "style",
+      '<style>.fake::after { content: \'<meta charset="utf-8">\'; }</style><meta charset="windows-1252">',
+    ],
+  ])(
+    "ignores a fake meta charset inside a %s before a real declaration",
+    async (_label, declarations) => {
+      const fetchMock = asFetch(async () =>
+        singleByteHtmlResponse(
+          `<html><head>${declarations}<title>Café</title></head><body>Café</body></html>`,
+        ),
+      );
+
+      await expect(
+        fetchSourceEvidence("https://www.espn.com/story", {
+          fetchImpl: fetchMock,
+        }),
+      ).resolves.toMatchObject({
+        status: "fetched",
+        title: "Café",
+        excerpt: "Café",
+      });
+    },
+  );
+
+  it.each([
+    ["comment", '<!-- <meta charset="windows-1252">'],
+    ["script", '<script><meta charset="windows-1252">'],
+  ])(
+    "does not leak a fake meta charset from an unclosed %s",
+    async (_label, unclosedMarkup) => {
+      const fetchMock = asFetch(async () =>
+        singleByteHtmlResponse(
+          `<html><body>Café</body>${unclosedMarkup}`,
+        ),
+      );
+
+      const result = await fetchSourceEvidence("https://www.espn.com/story", {
+        fetchImpl: fetchMock,
+      });
+
+      expect(result).toMatchObject({ status: "fetched" });
+      if (result.status === "fetched") {
+        expect(result.excerpt).not.toContain("Café");
+      }
+    },
+  );
+
+  it("keeps HTTP charset precedence over HTML meta when no BOM exists", async () => {
+    const fetchMock = asFetch(async () =>
+      singleByteHtmlResponse(
+        '<html><head><meta charset="utf-8"></head><body>Café</body></html>',
+        "text/html; charset=windows-1252",
+      ),
+    );
+
+    await expect(
+      fetchSourceEvidence("https://www.espn.com/story", {
+        fetchImpl: fetchMock,
+      }),
+    ).resolves.toMatchObject({ status: "fetched", excerpt: "Café" });
+  });
+
+  it("falls back to UTF-8 when no BOM, HTTP charset, or meta exists", async () => {
+    const fetchMock = asFetch(async () =>
+      new Response(new TextEncoder().encode("<html><body>Café</body></html>"), {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+
+    await expect(
+      fetchSourceEvidence("https://www.espn.com/story", {
+        fetchImpl: fetchMock,
+      }),
+    ).resolves.toMatchObject({ status: "fetched", excerpt: "Café" });
   });
 
   it("rejects unsupported content types", async () => {

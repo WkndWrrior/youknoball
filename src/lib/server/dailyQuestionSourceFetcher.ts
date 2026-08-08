@@ -15,6 +15,18 @@ const MAX_SOURCE_URL_LENGTH = 2_048;
 const MAX_SOURCE_CONCURRENCY = 4;
 const DEFAULT_CLEANUP_TIMEOUT_MS = 250;
 const MAX_CHARSET_SNIFF_BYTES = 4_096;
+const META_PRESCAN_RAW_TEXT_ELEMENTS = new Set([
+  "iframe",
+  "noembed",
+  "noframes",
+  "noscript",
+  "plaintext",
+  "script",
+  "style",
+  "textarea",
+  "title",
+  "xmp",
+]);
 const SOURCE_TIMEOUT = Symbol("source_timeout");
 const CLEANUP_TIMEOUT = Symbol("cleanup_timeout");
 const UTF8_ENCODER = new TextEncoder();
@@ -958,6 +970,87 @@ function parseMetaAttributes(tag: string): Map<string, string> {
   return attributes;
 }
 
+interface PrescannedHtmlTag {
+  end: number;
+  isClosing: boolean;
+  name: string;
+}
+
+function findHtmlTagEnd(input: string, start: number): number | null {
+  let quote: '"' | "'" | null = null;
+  for (let index = start; index < input.length; index += 1) {
+    const character = input[index];
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      return index;
+    }
+  }
+  return null;
+}
+
+function prescanHtmlTag(
+  input: string,
+  start: number,
+): PrescannedHtmlTag | null {
+  let cursor = start + 1;
+  const isClosing = input[cursor] === "/";
+  if (isClosing) {
+    cursor += 1;
+  }
+  if (!/[a-z]/i.test(input[cursor] ?? "")) {
+    const end = findHtmlTagEnd(input, cursor);
+    return end === null ? null : { end, isClosing, name: "" };
+  }
+
+  const nameStart = cursor;
+  while (/[a-z0-9:-]/i.test(input[cursor] ?? "")) {
+    cursor += 1;
+  }
+  const end = findHtmlTagEnd(input, cursor);
+  if (end === null) {
+    return null;
+  }
+  return {
+    end,
+    isClosing,
+    name: input.slice(nameStart, cursor).toLowerCase(),
+  };
+}
+
+function findRawTextElementEnd(
+  input: string,
+  lowerInput: string,
+  name: string,
+  start: number,
+): number | null {
+  const closingPrefix = `</${name}`;
+  let searchFrom = start;
+  while (searchFrom < input.length) {
+    const closingStart = lowerInput.indexOf(closingPrefix, searchFrom);
+    if (closingStart < 0) {
+      return null;
+    }
+    const boundary = lowerInput[closingStart + closingPrefix.length] ?? "";
+    if (boundary && !/[\t\n\f\r />]/.test(boundary)) {
+      searchFrom = closingStart + closingPrefix.length;
+      continue;
+    }
+    const closingTag = prescanHtmlTag(input, closingStart);
+    if (!closingTag) {
+      return null;
+    }
+    return closingTag.end + 1;
+  }
+  return null;
+}
+
 function sniffHtmlMetaCharset(data: Uint8Array): string | null {
   const bounded = data.subarray(
     0,
@@ -968,19 +1061,62 @@ function sniffHtmlMetaCharset(data: Uint8Array): string | null {
     initialHtml += String.fromCharCode(byte);
   }
 
-  for (const match of initialHtml.matchAll(/<meta\s+[^>]*>/gi)) {
-    const attributes = parseMetaAttributes(match[0]);
-    const charset = attributes.get("charset");
-    if (charset) {
-      return charset;
+  const lowerHtml = initialHtml.toLowerCase();
+  let cursor = 0;
+  while (cursor < initialHtml.length) {
+    const tagStart = initialHtml.indexOf("<", cursor);
+    if (tagStart < 0) {
+      return null;
     }
-    if (attributes.get("http-equiv")?.toLowerCase() === "content-type") {
-      const contentCharset = extractCharsetParameter(
-        attributes.get("content") ?? "",
-      );
-      if (contentCharset) {
-        return contentCharset;
+    if (initialHtml.startsWith("<!--", tagStart)) {
+      const commentEnd = initialHtml.indexOf("-->", tagStart + 4);
+      if (commentEnd < 0) {
+        return null;
       }
+      cursor = commentEnd + 3;
+      continue;
+    }
+
+    const tag = prescanHtmlTag(initialHtml, tagStart);
+    if (!tag) {
+      return null;
+    }
+    cursor = tag.end + 1;
+    if (tag.isClosing || !tag.name) {
+      continue;
+    }
+    if (tag.name === "meta") {
+      const attributes = parseMetaAttributes(
+        initialHtml.slice(tagStart, tag.end + 1),
+      );
+      const charset = attributes.get("charset");
+      if (charset) {
+        return charset;
+      }
+      if (attributes.get("http-equiv")?.toLowerCase() === "content-type") {
+        const contentCharset = extractCharsetParameter(
+          attributes.get("content") ?? "",
+        );
+        if (contentCharset) {
+          return contentCharset;
+        }
+      }
+      continue;
+    }
+    if (META_PRESCAN_RAW_TEXT_ELEMENTS.has(tag.name)) {
+      if (tag.name === "plaintext") {
+        return null;
+      }
+      const rawTextEnd = findRawTextElementEnd(
+        initialHtml,
+        lowerHtml,
+        tag.name,
+        cursor,
+      );
+      if (rawTextEnd === null) {
+        return null;
+      }
+      cursor = rawTextEnd;
     }
   }
   return null;
@@ -993,8 +1129,8 @@ function decodeSourceBody(
 ): string {
   const declaredCharset = extractCharsetParameter(rawContentType);
   const charset =
-    declaredCharset ??
     sniffBomCharset(data) ??
+    declaredCharset ??
     (contentType === "text/html" || contentType === "application/xhtml+xml"
       ? sniffHtmlMetaCharset(data)
       : null) ??
