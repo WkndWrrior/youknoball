@@ -1,4 +1,5 @@
 const CHALLENGE_TIME_ZONE = "America/Chicago";
+const NIGHTLY_REVIEW_HOUR = 18;
 const CHICAGO_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: CHALLENGE_TIME_ZONE,
   year: "numeric",
@@ -51,6 +52,21 @@ function getPreviousChicagoDate(parts: {
   };
 }
 
+function getNextChicagoDate(parts: {
+  year: number;
+  month: number;
+  day: number;
+}) {
+  const chicagoMiddayUtc = Date.UTC(parts.year, parts.month - 1, parts.day, 12);
+  const nextDay = new Date(chicagoMiddayUtc + 24 * 60 * 60 * 1000);
+
+  return {
+    year: nextDay.getUTCFullYear(),
+    month: nextDay.getUTCMonth() + 1,
+    day: nextDay.getUTCDate(),
+  };
+}
+
 export function getTodayIsoDate() {
   const chicagoNow = getChicagoDateTimeParts(new Date());
 
@@ -59,6 +75,22 @@ export function getTodayIsoDate() {
   }
 
   return formatIsoDateFromParts(chicagoNow);
+}
+
+export function getNightlyReviewSchedule(now: Date): {
+  shouldRun: boolean;
+  challengeDate: string;
+} {
+  if (Number.isNaN(now.getTime())) {
+    throw new RangeError("Nightly review schedule requires a valid Date.");
+  }
+
+  const chicagoNow = getChicagoDateTimeParts(now);
+
+  return {
+    shouldRun: chicagoNow.hour === NIGHTLY_REVIEW_HOUR,
+    challengeDate: formatIsoDateFromParts(getNextChicagoDate(chicagoNow)),
+  };
 }
 
 export function formatChallengeDate(date: string) {
