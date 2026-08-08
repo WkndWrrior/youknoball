@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   generateDailyChallengeQuestions,
   scoreDailyChallengeSelection,
+  selectDailyChallengeReplacement,
 } from "@/lib/server/dailyChallengeGenerator";
 import type { QuestionSnapshot } from "@/lib/dailyChallenge";
 
@@ -318,5 +319,279 @@ describe("generateDailyChallengeQuestions", () => {
     });
 
     expect(result).toHaveLength(5);
+  });
+});
+
+function makeSelection(
+  questions: Array<
+    [id: string, difficulty: QuestionSnapshot["difficulty"], sportName: string]
+  > = [
+    ["easy_nba", "easy", "NBA"],
+    ["easy_nfl", "easy", "NFL"],
+    ["medium_cbb", "medium", "CBB"],
+    ["hard_mlb", "hard", "MLB"],
+    ["hard_nhl", "hard", "NHL"],
+  ],
+) {
+  return questions.map(([id, difficulty, sportName], index) => ({
+    ...makeQuestion(id, difficulty, sportName),
+    slot: index + 1,
+  }));
+}
+
+describe("selectDailyChallengeReplacement", () => {
+  it("selects the flagged slot difficulty without changing the selected lineup", () => {
+    const selection = makeSelection();
+    const replacement = makeQuestion("medium_nascar", "medium", "NASCAR");
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 3,
+        candidates: [
+          makeQuestion("easy_wnba", "easy", "WNBA"),
+          replacement,
+          makeQuestion("hard_cfb", "hard", "CFB"),
+        ],
+      }),
+    ).toEqual(replacement);
+    expect(selection.map((question) => question.id)).toEqual([
+      "easy_nba",
+      "easy_nfl",
+      "medium_cbb",
+      "hard_mlb",
+      "hard_nhl",
+    ]);
+  });
+
+  it("excludes every selected question ID, including self-replacement", () => {
+    const selection = makeSelection();
+    const valid = makeQuestion("medium_nascar", "medium", "NASCAR");
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 3,
+        candidates: [
+          makeQuestion("medium_cbb", "medium", "CBB"),
+          makeQuestion("hard_mlb", "medium", "MLB"),
+          valid,
+        ],
+      })?.id,
+    ).toBe(valid.id);
+  });
+
+  it("avoids a recent question when a composition-equivalent fresh option exists", () => {
+    const selection = makeSelection();
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 3,
+        candidates: [
+          makeQuestion("recent_cfb", "medium", "CFB"),
+          makeQuestion("fresh_cfb", "medium", "CFB"),
+        ],
+        recentQuestionIds: ["recent_cfb"],
+      })?.id,
+    ).toBe("fresh_cfb");
+  });
+
+  it("preserves NBA and NFL target coverage", () => {
+    const selection = makeSelection();
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 1,
+        candidates: [
+          makeQuestion("fresh_cfb", "easy", "CFB"),
+          makeQuestion("recent_nba", "easy", "NBA"),
+        ],
+        recentQuestionIds: ["recent_nba"],
+      })?.id,
+    ).toBe("recent_nba");
+  });
+
+  it("preserves sport diversity when a same-difficulty option can", () => {
+    const selection = makeSelection();
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 3,
+        candidates: [
+          makeQuestion("fresh_nba", "medium", "NBA"),
+          makeQuestion("recent_cfb", "medium", "CFB"),
+        ],
+        recentQuestionIds: ["recent_cfb"],
+      })?.id,
+    ).toBe("recent_cfb");
+  });
+
+  it("preserves the max-two-per-sport condition when possible", () => {
+    const selection = makeSelection([
+      ["easy_nba", "easy", "NBA"],
+      ["easy_nfl", "easy", "NFL"],
+      ["medium_cbb", "medium", "CBB"],
+      ["hard_nba", "hard", "NBA"],
+      ["hard_nhl", "hard", "NHL"],
+    ]);
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 5,
+        candidates: [
+          makeQuestion("fresh_nba", "hard", "NBA"),
+          makeQuestion("recent_mlb", "hard", "MLB"),
+        ],
+        recentQuestionIds: ["recent_mlb"],
+      })?.id,
+    ).toBe("recent_mlb");
+  });
+
+  it("chooses a preserving candidate over a lexically earlier degrading candidate", () => {
+    const selection = makeSelection();
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 3,
+        candidates: [
+          makeQuestion("a_nba", "medium", "NBA"),
+          makeQuestion("z_cfb", "medium", "CFB"),
+        ],
+      })?.id,
+    ).toBe("z_cfb");
+  });
+
+  it("scores the resulting full five when removal changes composition", () => {
+    const selection = makeSelection([
+      ["easy_nba", "easy", "NBA"],
+      ["easy_nfl", "easy", "NFL"],
+      ["medium_nba", "medium", "NBA"],
+      ["hard_mlb", "hard", "MLB"],
+      ["hard_nhl", "hard", "NHL"],
+    ]);
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 3,
+        candidates: [
+          makeQuestion("fresh_nfl", "medium", "NFL"),
+          makeQuestion("recent_cbb", "medium", "CBB"),
+        ],
+        recentQuestionIds: ["recent_cbb"],
+      })?.id,
+    ).toBe("recent_cbb");
+  });
+
+  it("uses question ID as a stable final tie-break independent of candidate order", () => {
+    const selection = makeSelection();
+    const candidates = [
+      makeQuestion("z_cfb", "medium", "CFB"),
+      makeQuestion("a_wnba", "medium", "WNBA"),
+    ];
+    const input = {
+      selection,
+      flaggedSlot: 3,
+      candidates,
+    };
+
+    expect(selectDailyChallengeReplacement(input)?.id).toBe("a_wnba");
+    expect(
+      selectDailyChallengeReplacement({
+        ...input,
+        candidates: [...candidates].reverse(),
+      })?.id,
+    ).toBe("a_wnba");
+  });
+
+  it("returns null when no same-difficulty nonduplicate candidate exists", () => {
+    const selection = makeSelection();
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 3,
+        candidates: [
+          makeQuestion("medium_cbb", "medium", "CBB"),
+          makeQuestion("easy_cfb", "easy", "CFB"),
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for an invalid flagged slot or invalid five-question selection", () => {
+    const selection = makeSelection();
+    const candidate = makeQuestion("medium_cfb", "medium", "CFB");
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 0,
+        candidates: [candidate],
+      }),
+    ).toBeNull();
+    expect(
+      selectDailyChallengeReplacement({
+        selection: selection.slice(0, 4),
+        flaggedSlot: 3,
+        candidates: [candidate],
+      }),
+    ).toBeNull();
+    expect(
+      selectDailyChallengeReplacement({
+        selection: selection.map((question) => ({ ...question, slot: 1 })),
+        flaggedSlot: 3,
+        candidates: [candidate],
+      }),
+    ).toBeNull();
+  });
+
+  it("does not mutate the selection, candidates, or recent question IDs", () => {
+    const selection = makeSelection();
+    const candidates = [
+      makeQuestion("z_cfb", "medium", "CFB"),
+      makeQuestion("a_wnba", "medium", "WNBA"),
+    ];
+    const recentQuestionIds = ["z_cfb"];
+    const selectionBefore = structuredClone(selection);
+    const candidatesBefore = structuredClone(candidates);
+    const recentBefore = [...recentQuestionIds];
+
+    selectDailyChallengeReplacement({
+      selection,
+      flaggedSlot: 3,
+      candidates,
+      recentQuestionIds,
+    });
+
+    expect(selection).toEqual(selectionBefore);
+    expect(candidates).toEqual(candidatesBefore);
+    expect(recentQuestionIds).toEqual(recentBefore);
+  });
+
+  it("ignores candidates that are not ready and daily eligible", () => {
+    const selection = makeSelection();
+    const retired = {
+      ...makeQuestion("a_cfb", "medium", "CFB"),
+      status: "retired" as const,
+    };
+    const ineligible = {
+      ...makeQuestion("b_wnba", "medium", "WNBA"),
+      eligible_for_daily: false,
+    };
+    const valid = makeQuestion("z_nascar", "medium", "NASCAR");
+
+    expect(
+      selectDailyChallengeReplacement({
+        selection,
+        flaggedSlot: 3,
+        candidates: [retired, ineligible, valid],
+      })?.id,
+    ).toBe(valid.id);
   });
 });
