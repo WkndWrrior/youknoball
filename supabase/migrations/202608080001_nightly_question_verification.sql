@@ -1,6 +1,35 @@
 create unique index if not exists daily_challenges_id_challenge_date_unique
   on public.daily_challenges (id, challenge_date);
 
+create or replace function public.daily_challenge_text_is_valid(
+  p_value text,
+  p_max_length integer,
+  p_require_nonempty boolean
+)
+returns boolean
+language sql
+immutable
+strict
+set search_path = public, pg_temp
+as $function$
+  select p_max_length >= 0
+    and char_length(
+      regexp_replace(
+        regexp_replace(p_value, '^[[:space:]]+', '', 'g'),
+        '[[:space:]]+$',
+        '',
+        'g'
+      )
+    ) <= p_max_length
+    and (
+      not p_require_nonempty
+      or p_value ~ '[^[:space:]]'
+    );
+$function$;
+
+revoke all on function public.daily_challenge_text_is_valid(text, integer, boolean)
+  from public, anon, authenticated;
+
 create or replace function public.daily_challenge_is_complete(
   p_challenge_id uuid
 )
@@ -32,29 +61,60 @@ as $function$
         and i.question_snapshot->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
         and i.question_snapshot->>'id' = i.question_id::text
         and jsonb_typeof(i.question_snapshot->'question_text') = 'string'
-        and btrim(i.question_snapshot->>'question_text') <> ''
-        and char_length(btrim(i.question_snapshot->>'question_text')) between 1 and 1000
+        and public.daily_challenge_text_is_valid(
+          i.question_snapshot->>'question_text',
+          1000,
+          true
+        )
         and jsonb_typeof(i.question_snapshot->'option_a') = 'string'
-        and char_length(btrim(i.question_snapshot->>'option_a')) between 1 and 500
+        and public.daily_challenge_text_is_valid(
+          i.question_snapshot->>'option_a',
+          500,
+          true
+        )
         and jsonb_typeof(i.question_snapshot->'option_b') = 'string'
-        and char_length(btrim(i.question_snapshot->>'option_b')) between 1 and 500
+        and public.daily_challenge_text_is_valid(
+          i.question_snapshot->>'option_b',
+          500,
+          true
+        )
         and jsonb_typeof(i.question_snapshot->'option_c') = 'string'
-        and char_length(btrim(i.question_snapshot->>'option_c')) between 1 and 500
+        and public.daily_challenge_text_is_valid(
+          i.question_snapshot->>'option_c',
+          500,
+          true
+        )
         and jsonb_typeof(i.question_snapshot->'option_d') = 'string'
-        and char_length(btrim(i.question_snapshot->>'option_d')) between 1 and 500
+        and public.daily_challenge_text_is_valid(
+          i.question_snapshot->>'option_d',
+          500,
+          true
+        )
         and i.question_snapshot->>'correct_option' in ('A', 'B', 'C', 'D')
         and i.question_snapshot->>'difficulty' in ('easy', 'medium', 'hard')
         and jsonb_typeof(i.question_snapshot->'sport') = 'object'
         and i.question_snapshot->'sport' ?& array['slug', 'name']
         and jsonb_typeof(i.question_snapshot->'sport'->'slug') = 'string'
-        and char_length(btrim(i.question_snapshot->'sport'->>'slug')) between 1 and 50
+        and public.daily_challenge_text_is_valid(
+          i.question_snapshot->'sport'->>'slug',
+          50,
+          true
+        )
         and jsonb_typeof(i.question_snapshot->'sport'->'name') = 'string'
-        and char_length(btrim(i.question_snapshot->'sport'->>'name')) between 1 and 100
+        and public.daily_challenge_text_is_valid(
+          i.question_snapshot->'sport'->>'name',
+          100,
+          true
+        )
         and (
           jsonb_typeof(i.question_snapshot->'source_notes') = 'null'
           or (
             jsonb_typeof(i.question_snapshot->'source_notes') = 'string'
-            and char_length(btrim(i.question_snapshot->>'source_notes')) <= 4000
+            and public.daily_challenge_text_is_valid(
+              i.question_snapshot->>'source_notes',
+              4000,
+              false
+            )
           )
         )
     ) = 5
@@ -132,28 +192,60 @@ begin
         and item->'question_snapshot'->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
         and item->'question_snapshot'->>'id' = item->>'question_id'
         and jsonb_typeof(item->'question_snapshot'->'question_text') = 'string'
-        and char_length(btrim(item->'question_snapshot'->>'question_text')) between 1 and 1000
+        and public.daily_challenge_text_is_valid(
+          item->'question_snapshot'->>'question_text',
+          1000,
+          true
+        )
         and jsonb_typeof(item->'question_snapshot'->'option_a') = 'string'
-        and char_length(btrim(item->'question_snapshot'->>'option_a')) between 1 and 500
+        and public.daily_challenge_text_is_valid(
+          item->'question_snapshot'->>'option_a',
+          500,
+          true
+        )
         and jsonb_typeof(item->'question_snapshot'->'option_b') = 'string'
-        and char_length(btrim(item->'question_snapshot'->>'option_b')) between 1 and 500
+        and public.daily_challenge_text_is_valid(
+          item->'question_snapshot'->>'option_b',
+          500,
+          true
+        )
         and jsonb_typeof(item->'question_snapshot'->'option_c') = 'string'
-        and char_length(btrim(item->'question_snapshot'->>'option_c')) between 1 and 500
+        and public.daily_challenge_text_is_valid(
+          item->'question_snapshot'->>'option_c',
+          500,
+          true
+        )
         and jsonb_typeof(item->'question_snapshot'->'option_d') = 'string'
-        and char_length(btrim(item->'question_snapshot'->>'option_d')) between 1 and 500
+        and public.daily_challenge_text_is_valid(
+          item->'question_snapshot'->>'option_d',
+          500,
+          true
+        )
         and item->'question_snapshot'->>'correct_option' in ('A', 'B', 'C', 'D')
         and item->'question_snapshot'->>'difficulty' in ('easy', 'medium', 'hard')
         and jsonb_typeof(item->'question_snapshot'->'sport') = 'object'
         and item->'question_snapshot'->'sport' ?& array['slug', 'name']
         and jsonb_typeof(item->'question_snapshot'->'sport'->'slug') = 'string'
-        and char_length(btrim(item->'question_snapshot'->'sport'->>'slug')) between 1 and 50
+        and public.daily_challenge_text_is_valid(
+          item->'question_snapshot'->'sport'->>'slug',
+          50,
+          true
+        )
         and jsonb_typeof(item->'question_snapshot'->'sport'->'name') = 'string'
-        and char_length(btrim(item->'question_snapshot'->'sport'->>'name')) between 1 and 100
+        and public.daily_challenge_text_is_valid(
+          item->'question_snapshot'->'sport'->>'name',
+          100,
+          true
+        )
         and (
           jsonb_typeof(item->'question_snapshot'->'source_notes') = 'null'
           or (
             jsonb_typeof(item->'question_snapshot'->'source_notes') = 'string'
-            and char_length(btrim(item->'question_snapshot'->>'source_notes')) <= 4000
+            and public.daily_challenge_text_is_valid(
+              item->'question_snapshot'->>'source_notes',
+              4000,
+              false
+            )
           )
         )
     )
@@ -366,6 +458,13 @@ begin
   if challenge_status <> 'generated' or challenge_published_at is not null then
     return 'conflict';
   end if;
+
+  -- All mutation RPCs lock the parent first, then item rows in slot order.
+  perform 1
+  from public.daily_challenge_items i
+  where i.daily_challenge_id = p_challenge_id
+  order by i.slot
+  for update;
 
   if not public.daily_challenge_is_complete(p_challenge_id) then
     return 'incomplete';

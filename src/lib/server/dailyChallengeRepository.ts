@@ -142,7 +142,7 @@ type CanonicalChallengeReadState =
   | {
       kind: "retryable_generated";
       challengeId: string;
-      generatedAt: string;
+      generatedAt: string | null;
     }
   | {
       kind: "generation_in_progress";
@@ -155,6 +155,7 @@ type CanonicalChallengeRow = {
   status: string;
   generated_at: string | null;
   published_at: string | null;
+  created_at: string | null;
 };
 
 type CanonicalChallengeItemRow = {
@@ -241,17 +242,26 @@ function isSportQuizStoreUnavailableError(error: PostgrestError | null) {
   return error?.code === "42P01" || error?.code === "PGRST205";
 }
 
-function isStaleGeneratedAt(generatedAt: string | null) {
-  if (!generatedAt) {
-    return false;
+function parseTimestamp(value: string | null) {
+  if (!value) {
+    return null;
   }
 
-  const generatedTime = Date.parse(generatedAt);
-  if (Number.isNaN(generatedTime)) {
-    return false;
-  }
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
 
-  return Date.now() - generatedTime >= GENERATED_CHALLENGE_STALE_AFTER_MS;
+function getGeneratedChallengeTiming(challenge: CanonicalChallengeRow) {
+  const generatedTime = parseTimestamp(challenge.generated_at);
+  const createdTime = parseTimestamp(challenge.created_at);
+  const stalenessReference = generatedTime ?? createdTime;
+
+  return {
+    generatedAt: challenge.generated_at,
+    isStale:
+      stalenessReference === null ||
+      Date.now() - stalenessReference >= GENERATED_CHALLENGE_STALE_AFTER_MS,
+  };
 }
 
 function normalizeCanonicalChallenge(
@@ -261,15 +271,24 @@ function normalizeCanonicalChallenge(
     return null;
   }
 
+  const createdAt =
+    typeof value.created_at === "string"
+      ? value.created_at
+      : value.created_at === null || value.created_at === undefined
+        ? null
+        : undefined;
+
   return typeof value.id === "string" &&
     typeof value.status === "string" &&
     (typeof value.generated_at === "string" || value.generated_at === null) &&
-    (typeof value.published_at === "string" || value.published_at === null)
+    (typeof value.published_at === "string" || value.published_at === null) &&
+    createdAt !== undefined
     ? {
         id: value.id,
         status: value.status,
         generated_at: value.generated_at,
         published_at: value.published_at,
+        created_at: createdAt,
       }
     : null;
 }
@@ -624,11 +643,12 @@ async function getCanonicalChallengeForDate(
       };
     }
 
-    return isStaleGeneratedAt(canonicalChallenge.generated_at)
+    const timing = getGeneratedChallengeTiming(canonicalChallenge);
+    return timing.isStale
       ? {
           kind: "retryable_generated",
           challengeId: canonicalChallenge.id,
-          generatedAt: canonicalChallenge.generated_at as string,
+          generatedAt: timing.generatedAt,
         }
       : {
           kind: "generation_in_progress",
@@ -678,14 +698,6 @@ function hasQuestionSnapshotShape(
   value: unknown,
 ): value is StoredQuestionSnapshot {
   return hasCanonicalSnapshotShape(value);
-}
-
-function toGeneratedChallengeQuestions(
-  generatedQuestions: PreparedDailyChallengeQuestion[],
-) {
-  return generatedQuestions.map((question) =>
-    toChallengeQuestion(question, question.slot),
-  );
 }
 
 function withoutSlot(
@@ -817,47 +829,79 @@ async function loadReusableQuestionCandidates(
   return { kind: "ready" as const, candidates };
 }
 
-type AtomicDraftMutationResult = {
-  outcome: "created" | "existing" | "conflict" | "incomplete";
-  challengeId: string | null;
-};
+type AtomicDraftMutationResult =
+  | {
+      outcome: "created" | "existing";
+      challengeId: string;
+    }
+  | {
+      outcome: "conflict" | "incomplete";
+      challengeId: string | null;
+    };
 
-type AtomicStaleCleanupResult = {
-  outcome: "deleted" | "complete" | "conflict" | "missing";
-  challengeId: string | null;
-};
+type AtomicStaleCleanupResult =
+  | {
+      outcome: "deleted" | "complete" | "conflict";
+      challengeId: string;
+    }
+  | {
+      outcome: "missing";
+      challengeId: null;
+    };
 
-const atomicDraftMutationOutcomes = new Set<AtomicDraftMutationResult["outcome"]>([
-  "created",
-  "existing",
-  "conflict",
-  "incomplete",
-]);
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const atomicStaleCleanupOutcomes = new Set<AtomicStaleCleanupResult["outcome"]>([
-  "deleted",
-  "complete",
-  "conflict",
-  "missing",
-]);
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
 
-function parseAtomicMutationResult<TOutcome extends string>(
+function parseAtomicDraftMutationResult(
   value: unknown,
-  outcomes: ReadonlySet<TOutcome>,
-): { outcome: TOutcome; challengeId: string | null } | null {
-  if (
-    !isRecord(value) ||
-    typeof value.outcome !== "string" ||
-    !outcomes.has(value.outcome as TOutcome) ||
-    (typeof value.challenge_id !== "string" && value.challenge_id !== null)
-  ) {
+): AtomicDraftMutationResult | null {
+  if (!isRecord(value) || typeof value.outcome !== "string") {
     return null;
   }
 
-  return {
-    outcome: value.outcome as TOutcome,
-    challengeId: value.challenge_id,
-  };
+  if (value.outcome === "created" || value.outcome === "existing") {
+    return isUuid(value.challenge_id)
+      ? { outcome: value.outcome, challengeId: value.challenge_id }
+      : null;
+  }
+
+  if (value.outcome === "conflict" || value.outcome === "incomplete") {
+    return value.challenge_id === null || isUuid(value.challenge_id)
+      ? { outcome: value.outcome, challengeId: value.challenge_id }
+      : null;
+  }
+
+  return null;
+}
+
+function parseAtomicStaleCleanupResult(
+  value: unknown,
+): AtomicStaleCleanupResult | null {
+  if (!isRecord(value) || typeof value.outcome !== "string") {
+    return null;
+  }
+
+  if (value.outcome === "missing") {
+    return value.challenge_id === null
+      ? { outcome: "missing", challengeId: null }
+      : null;
+  }
+
+  if (
+    value.outcome === "deleted" ||
+    value.outcome === "complete" ||
+    value.outcome === "conflict"
+  ) {
+    return isUuid(value.challenge_id)
+      ? { outcome: value.outcome, challengeId: value.challenge_id }
+      : null;
+  }
+
+  return null;
 }
 
 async function persistGeneratedChallengeDraftAtomically(
@@ -890,7 +934,7 @@ async function persistGeneratedChallengeDraftAtomically(
     return { kind: "bridge_fallback" as const };
   }
 
-  const mutation = parseAtomicMutationResult(data, atomicDraftMutationOutcomes);
+  const mutation = parseAtomicDraftMutationResult(data);
   if (!mutation) {
     return { kind: "bridge_fallback" as const };
   }
@@ -911,7 +955,7 @@ async function cleanupStaleCanonicalChallenge(
   challengeDate: string,
   staleChallenge: {
     challengeId: string;
-    generatedAt: string;
+    generatedAt: string | null;
   },
 ) {
   const { data, error } = await adminClient.rpc("cleanup_stale_daily_challenge", {
@@ -924,7 +968,7 @@ async function cleanupStaleCanonicalChallenge(
     return { kind: "bridge_fallback" as const };
   }
 
-  const cleanup = parseAtomicMutationResult(data, atomicStaleCleanupOutcomes);
+  const cleanup = parseAtomicStaleCleanupResult(data);
   if (!cleanup) {
     return { kind: "bridge_fallback" as const };
   }
@@ -945,7 +989,7 @@ async function generateAndPersistCanonicalChallengeForDate(
   challengeDate: string,
   staleChallenge?: {
     challengeId: string;
-    generatedAt: string;
+    generatedAt: string | null;
   },
 ) {
   const adminClient = supabaseAdmin();
@@ -1027,14 +1071,7 @@ async function publishDraftForServing(
     new Date().toISOString(),
   );
 
-  if (publication.kind === "published") {
-    return {
-      dailyChallengeId: draft.challengeId,
-      questions: toGeneratedChallengeQuestions(draft.questions),
-    };
-  }
-
-  if (publication.kind === "conflict") {
+  if (publication.kind === "published" || publication.kind === "conflict") {
     const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
     if (canonicalChallenge.kind === "ready") {
       return {

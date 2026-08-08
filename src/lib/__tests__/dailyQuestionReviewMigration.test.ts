@@ -456,6 +456,10 @@ describe("nightly question verification migration", () => {
 
   it("publishes only complete generated challenges through a service-role-only RPC", async () => {
     const migration = await readFile(migrationPath, "utf8");
+    const statement = normalizedStatement(
+      migration,
+      "create or replace function public.publish_daily_challenge",
+    );
 
     expect(migration).toMatch(
       /create or replace function public\.publish_daily_challenge\(\s*p_challenge_id uuid,\s*p_challenge_date date,\s*p_published_at timestamptz\s*\)\s*returns text/i,
@@ -463,6 +467,15 @@ describe("nightly question verification migration", () => {
     expect(migration).toContain("security definer");
     expect(migration).toMatch(
       /from public\.daily_challenges[\s\S]*id = p_challenge_id[\s\S]*challenge_date = p_challenge_date[\s\S]*for update/,
+    );
+    expect(statement).toMatch(
+      /from public\.daily_challenge_items i where i\.daily_challenge_id = p_challenge_id order by i\.slot for update/,
+    );
+    expect(statement.indexOf("from public.daily_challenges")).toBeLessThan(
+      statement.indexOf("from public.daily_challenge_items i"),
+    );
+    expect(statement.indexOf("from public.daily_challenge_items i")).toBeLessThan(
+      statement.indexOf("public.daily_challenge_is_complete(p_challenge_id)"),
     );
     expect(migration).toContain("count(distinct i.slot)");
     expect(migration).toContain("min(i.slot)");
@@ -478,7 +491,7 @@ describe("nightly question verification migration", () => {
       /i\.question_snapshot \?& array\[[\s\S]*'question_text'[\s\S]*'correct_option'[\s\S]*'source_notes'[\s\S]*\]/,
     );
     expect(migration).toContain("jsonb_typeof(i.question_snapshot->'sport') = 'object'");
-    expect(migration).toContain("btrim(i.question_snapshot->>'question_text') <> ''");
+    expect(migration).toContain("public.daily_challenge_text_is_valid(");
     expect(migration).toContain("return 'incomplete'");
     expect(migration).toContain("return 'conflict'");
     expect(migration).toContain("return 'published'");
@@ -570,6 +583,34 @@ describe("nightly question verification migration", () => {
     );
     expect(migration).not.toMatch(
       /grant execute on function public\.cleanup_stale_daily_challenge\([^;]+\) to (?:public|anon|authenticated)/i,
+    );
+  });
+
+  it("uses one POSIX-whitespace-aware bounded text contract for draft payloads", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const helper = normalizedStatement(
+      migration,
+      "create or replace function public.daily_challenge_text_is_valid",
+    );
+    const completeness = normalizedStatement(
+      migration,
+      "create or replace function public.daily_challenge_is_complete",
+    );
+    const preparation = normalizedStatement(
+      migration,
+      "create or replace function public.prepare_daily_challenge_draft",
+    );
+
+    expect(helper).toContain("[[:space:]]");
+    expect(helper).toContain("regexp_replace");
+    expect(helper).toContain("p_require_nonempty");
+    for (const statement of [completeness, preparation]) {
+      expect(statement).toContain("public.daily_challenge_text_is_valid");
+      expect(statement).not.toMatch(/char_length\(btrim\([^)]*question_text/);
+      expect(statement).not.toMatch(/char_length\(btrim\([^)]*option_[abcd]/);
+    }
+    expect(migration).toMatch(
+      /revoke all on function public\.daily_challenge_text_is_valid\(text, integer, boolean\)\s+from public, anon, authenticated/,
     );
   });
 });

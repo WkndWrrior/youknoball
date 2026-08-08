@@ -99,6 +99,17 @@ const QUESTION_IDS = [
   "00000000-0000-4000-8000-000000000005",
 ] as const;
 
+const CHALLENGE_IDS = {
+  generated1: "10000000-0000-4000-8000-000000000001",
+  generated2: "10000000-0000-4000-8000-000000000002",
+  winner: "10000000-0000-4000-8000-000000000003",
+  canonical: "10000000-0000-4000-8000-000000000004",
+  stale1: "10000000-0000-4000-8000-000000000005",
+  stale2: "10000000-0000-4000-8000-000000000006",
+  retryable1: "10000000-0000-4000-8000-000000000007",
+  retryable2: "10000000-0000-4000-8000-000000000008",
+} as const;
+
 const canonicalRows = [
   {
     id: "canonical_1",
@@ -301,7 +312,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
       error: null,
     });
     const prepareRpc = createThenableQuery({
-      data: { outcome: "created", challenge_id: "generated_challenge_1" },
+      data: { outcome: "created", challenge_id: CHALLENGE_IDS.generated1 },
       error: null,
     });
     const adminClient = createClientMock({
@@ -315,7 +326,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
     generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
 
     await expect(prepareDailyChallengeDraftForDate("2026-04-02")).resolves.toEqual({
-      challengeId: "generated_challenge_1",
+      challengeId: CHALLENGE_IDS.generated1,
       challengeDate: "2026-04-02",
       questionIds: generatedQuestions.map((question) => question.id),
       questions: preparedQuestions,
@@ -362,7 +373,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
         createThenableQuery({ data: [], error: null }),
         createThenableQuery({
           data: {
-            id: "winner_challenge",
+            id: CHALLENGE_IDS.winner,
             status: "generated",
             generated_at: "2026-04-01T23:00:00Z",
             published_at: null,
@@ -381,11 +392,11 @@ describe("prepareDailyChallengeDraftForDate", () => {
     };
     const prepareRpcs = [
       createThenableQuery({
-        data: { outcome: "created", challenge_id: "winner_challenge" },
+        data: { outcome: "created", challenge_id: CHALLENGE_IDS.winner },
         error: null,
       }),
       createThenableQuery({
-        data: { outcome: "existing", challenge_id: "winner_challenge" },
+        data: { outcome: "existing", challenge_id: CHALLENGE_IDS.winner },
         error: null,
       }),
     ];
@@ -403,7 +414,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
 
     expect(first).toEqual(second);
     expect(first).toMatchObject({
-      challengeId: "winner_challenge",
+      challengeId: CHALLENGE_IDS.winner,
       questionIds: [...QUESTION_IDS],
     });
     expect(adminClient.rpc).toHaveBeenCalledTimes(2);
@@ -415,7 +426,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
   it("keeps a stale draft when atomic cleanup observes it became complete", async () => {
     const staleGeneratedAt = "2026-04-01T00:00:00Z";
     const staleRow = {
-      id: "stale_generated_1",
+      id: CHALLENGE_IDS.stale1,
       status: "generated",
       generated_at: staleGeneratedAt,
       published_at: null,
@@ -435,7 +446,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
       daily_challenge_items: [staleItemsRead, completedItemsRead],
     }, {
       cleanup_stale_daily_challenge: createThenableQuery({
-        data: { outcome: "complete", challenge_id: "stale_generated_1" },
+        data: { outcome: "complete", challenge_id: CHALLENGE_IDS.stale1 },
         error: null,
       }),
     });
@@ -443,14 +454,14 @@ describe("prepareDailyChallengeDraftForDate", () => {
     supabaseAdmin.mockReturnValue(adminClient);
 
     await expect(prepareDailyChallengeDraftForDate("2026-04-02")).resolves.toMatchObject({
-      challengeId: "stale_generated_1",
+      challengeId: CHALLENGE_IDS.stale1,
       questionIds: [...QUESTION_IDS],
     });
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "cleanup_stale_daily_challenge",
       {
         p_challenge_date: "2026-04-02",
-        p_challenge_id: "stale_generated_1",
+        p_challenge_id: CHALLENGE_IDS.stale1,
         p_generated_at: staleGeneratedAt,
       },
     );
@@ -471,7 +482,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
       slot: index + 1,
     }));
     const generatedRow = {
-      id: "generated_challenge_1",
+      id: CHALLENGE_IDS.generated1,
       challenge_date: "2026-04-02",
       status: "generated",
       generation_method: "auto",
@@ -493,7 +504,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
       questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
     }, {
       prepare_daily_challenge_draft: createThenableQuery({
-        data: { outcome: "created", challenge_id: "generated_challenge_1" },
+        data: { outcome: "created", challenge_id: CHALLENGE_IDS.generated1 },
         error: null,
       }),
     });
@@ -518,7 +529,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
       daily_challenges: [
         createThenableQuery({
           data: {
-            id: "stale_generated_1",
+            id: CHALLENGE_IDS.stale1,
             status: "generated",
             generated_at: "2026-04-01T00:00:00Z",
             published_at: null,
@@ -531,11 +542,11 @@ describe("prepareDailyChallengeDraftForDate", () => {
       questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
     }, {
       cleanup_stale_daily_challenge: createThenableQuery({
-        data: { outcome: "deleted", challenge_id: "stale_generated_1" },
+        data: { outcome: "deleted", challenge_id: CHALLENGE_IDS.stale1 },
         error: null,
       }),
       prepare_daily_challenge_draft: createThenableQuery({
-        data: { outcome: "created", challenge_id: "generated_challenge_2" },
+        data: { outcome: "created", challenge_id: CHALLENGE_IDS.generated2 },
         error: null,
       }),
     });
@@ -544,7 +555,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
     generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
 
     await expect(prepareDailyChallengeDraftForDate("2026-04-02")).resolves.toMatchObject({
-      challengeId: "generated_challenge_2",
+      challengeId: CHALLENGE_IDS.generated2,
       challengeDate: "2026-04-02",
       questionIds: generatedQuestions.map((question) => question.id),
     });
@@ -561,6 +572,162 @@ describe("prepareDailyChallengeDraftForDate", () => {
     );
   });
 
+  it.each([
+    {
+      label: "null generated_at using an old created_at fallback",
+      generatedAt: null,
+      createdAt: "2026-04-01T00:00:00Z",
+      expectedGeneratedAt: null,
+    },
+    {
+      label: "invalid generated_at using an old created_at fallback",
+      generatedAt: "not-a-timestamp",
+      createdAt: "2026-04-01T00:00:00Z",
+      expectedGeneratedAt: "not-a-timestamp",
+    },
+    {
+      label: "invalid generated_at and created_at defensively",
+      generatedAt: "not-a-timestamp",
+      createdAt: "also-not-a-timestamp",
+      expectedGeneratedAt: "not-a-timestamp",
+    },
+  ])("recovers an incomplete generated row with $label", async ({
+    generatedAt,
+    createdAt,
+    expectedGeneratedAt,
+  }) => {
+    const generatedQuestions = reusableQuestionRows.map((question, index) => ({
+      ...question,
+      slot: index + 1,
+    }));
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({
+          data: {
+            id: CHALLENGE_IDS.stale1,
+            status: "generated",
+            generated_at: generatedAt,
+            created_at: createdAt,
+            published_at: null,
+          },
+          error: null,
+        }),
+        createThenableQuery({ data: [], error: null }),
+      ],
+      daily_challenge_items: createThenableQuery({ data: [], error: null }),
+      questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
+    }, {
+      cleanup_stale_daily_challenge: createThenableQuery({
+        data: { outcome: "deleted", challenge_id: CHALLENGE_IDS.stale1 },
+        error: null,
+      }),
+      prepare_daily_challenge_draft: createThenableQuery({
+        data: { outcome: "created", challenge_id: CHALLENGE_IDS.generated2 },
+        error: null,
+      }),
+    });
+
+    supabaseAdmin.mockReturnValue(adminClient);
+    generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
+
+    await expect(prepareDailyChallengeDraftForDate("2026-04-02")).resolves.toMatchObject({
+      challengeId: CHALLENGE_IDS.generated2,
+      questionIds: [...QUESTION_IDS],
+    });
+    expect(adminClient.rpc).toHaveBeenCalledWith(
+      "cleanup_stale_daily_challenge",
+      {
+        p_challenge_date: "2026-04-02",
+        p_challenge_id: CHALLENGE_IDS.stale1,
+        p_generated_at: expectedGeneratedAt,
+      },
+    );
+  });
+
+  it.each([
+    { outcome: "created", challengeId: "not-a-uuid" },
+    { outcome: "existing", challengeId: null },
+    { outcome: "conflict", challengeId: "not-a-uuid" },
+    { outcome: "incomplete", challengeId: "not-a-uuid" },
+  ])("rejects malformed $outcome atomic draft results", async ({
+    outcome,
+    challengeId,
+  }) => {
+    const generatedQuestions = reusableQuestionRows.map((question, index) => ({
+      ...question,
+      slot: index + 1,
+    }));
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({ data: null, error: null }),
+        createThenableQuery({ data: [], error: null }),
+      ],
+      questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
+    }, {
+      prepare_daily_challenge_draft: createThenableQuery({
+        data: { outcome, challenge_id: challengeId },
+        error: null,
+      }),
+    });
+
+    supabaseAdmin.mockReturnValue(adminClient);
+    generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
+
+    await expect(prepareDailyChallengeDraftForDate("2026-04-02")).rejects.toThrow(
+      "Unable to prepare the Daily 5 draft",
+    );
+  });
+
+  it.each([
+    { outcome: "deleted", challengeId: null },
+    { outcome: "complete", challengeId: "not-a-uuid" },
+    { outcome: "conflict", challengeId: null },
+    { outcome: "missing", challengeId: CHALLENGE_IDS.stale1 },
+  ])("rejects malformed $outcome atomic cleanup results", async ({
+    outcome,
+    challengeId,
+  }) => {
+    const generatedQuestions = reusableQuestionRows.map((question, index) => ({
+      ...question,
+      slot: index + 1,
+    }));
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({
+          data: {
+            id: CHALLENGE_IDS.stale1,
+            status: "generated",
+            generated_at: "2026-04-01T00:00:00Z",
+            created_at: "2026-04-01T00:00:00Z",
+            published_at: null,
+          },
+          error: null,
+        }),
+        createThenableQuery({ data: null, error: null }),
+        createThenableQuery({ data: [], error: null }),
+      ],
+      daily_challenge_items: createThenableQuery({ data: [], error: null }),
+      questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
+    }, {
+      cleanup_stale_daily_challenge: createThenableQuery({
+        data: { outcome, challenge_id: challengeId },
+        error: null,
+      }),
+      prepare_daily_challenge_draft: createThenableQuery({
+        data: { outcome: "created", challenge_id: CHALLENGE_IDS.generated2 },
+        error: null,
+      }),
+    });
+
+    supabaseAdmin.mockReturnValue(adminClient);
+    generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
+
+    await expect(prepareDailyChallengeDraftForDate("2026-04-02")).rejects.toThrow(
+      "Unable to prepare the Daily 5 draft",
+    );
+    expect(generateDailyChallengeQuestions).not.toHaveBeenCalled();
+  });
+
   it("re-reads and returns the canonical complete draft after the atomic RPC finds it", async () => {
     const generatedQuestions = reusableQuestionRows.map((question, index) => ({
       ...question,
@@ -572,7 +739,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
         createThenableQuery({ data: [], error: null }),
         createThenableQuery({
           data: {
-            id: "canonical_challenge",
+            id: CHALLENGE_IDS.canonical,
             status: "generated",
             generated_at: "2026-04-01T23:00:00Z",
             published_at: null,
@@ -587,7 +754,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
       questions: createThenableQuery({ data: reusableQuestionRows, error: null }),
     }, {
       prepare_daily_challenge_draft: createThenableQuery({
-        data: { outcome: "existing", challenge_id: "canonical_challenge" },
+        data: { outcome: "existing", challenge_id: CHALLENGE_IDS.canonical },
         error: null,
       }),
     });
@@ -596,7 +763,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
     generateDailyChallengeQuestions.mockReturnValue(generatedQuestions);
 
     await expect(prepareDailyChallengeDraftForDate("2026-04-02")).resolves.toMatchObject({
-      challengeId: "canonical_challenge",
+      challengeId: CHALLENGE_IDS.canonical,
       challengeDate: "2026-04-02",
       questionIds: reusableQuestionRows.map((question) => question.id),
     });
@@ -614,7 +781,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
     const adminClient = createClientMock({
       daily_challenges: createThenableQuery({
         data: {
-          id: "generated_challenge_1",
+          id: CHALLENGE_IDS.generated1,
           status: "generated",
           generated_at: new Date().toISOString(),
           published_at: null,
@@ -650,7 +817,7 @@ describe("prepareDailyChallengeDraftForDate", () => {
     const adminClient = createClientMock({
       daily_challenges: createThenableQuery({
         data: {
-          id: "generated_challenge_1",
+          id: CHALLENGE_IDS.generated1,
           status: "generated",
           generated_at: new Date().toISOString(),
           published_at: null,
@@ -697,20 +864,49 @@ describe("draft publication", () => {
 
   it("promotes a complete generated draft before serving it publicly", async () => {
     const publishRpc = createThenableQuery({ data: "published", error: null });
+    const persistedRows = canonicalRows.map((row, index) =>
+      index === 0
+        ? {
+            ...row,
+            question_snapshot: {
+              ...row.question_snapshot,
+              question_text: "Persisted publication payload",
+            },
+          }
+        : row,
+    );
+    const persistedQuestions = canonicalQuestions.map((question, index) =>
+      index === 0
+        ? { ...question, question_text: "Persisted publication payload" }
+        : question,
+    );
     const adminClient = createClientMock({
-      daily_challenges: createThenableQuery({
-        data: {
-          id: "generated_challenge_1",
-          status: "generated",
-          generated_at: "2026-04-01T23:00:00Z",
-          published_at: null,
-        },
-        error: null,
-      }),
-      daily_challenge_items: createThenableQuery({
-        data: completeDraftRows,
-        error: null,
-      }),
+      daily_challenges: [
+        createThenableQuery({
+          data: {
+            id: CHALLENGE_IDS.generated1,
+            status: "generated",
+            generated_at: "2026-04-01T23:00:00Z",
+            created_at: "2026-04-01T23:00:00Z",
+            published_at: null,
+          },
+          error: null,
+        }),
+        createThenableQuery({
+          data: {
+            id: CHALLENGE_IDS.generated1,
+            status: "published",
+            generated_at: "2026-04-01T23:00:00Z",
+            created_at: "2026-04-01T23:00:00Z",
+            published_at: "2026-04-02T05:00:00Z",
+          },
+          error: null,
+        }),
+      ],
+      daily_challenge_items: [
+        createThenableQuery({ data: completeDraftRows, error: null }),
+        createThenableQuery({ data: persistedRows, error: null }),
+      ],
     }, {
       publish_daily_challenge: publishRpc,
     });
@@ -721,15 +917,57 @@ describe("draft publication", () => {
     await expect(
       getChallengeResolutionForDate(client as never, "2026-04-02"),
     ).resolves.toEqual({
-      dailyChallengeId: "generated_challenge_1",
-      questions: canonicalQuestions,
+      dailyChallengeId: CHALLENGE_IDS.generated1,
+      questions: persistedQuestions,
     });
 
     expect(adminClient.rpc).toHaveBeenCalledWith("publish_daily_challenge", {
-      p_challenge_id: "generated_challenge_1",
+      p_challenge_id: CHALLENGE_IDS.generated1,
       p_challenge_date: "2026-04-02",
       p_published_at: expect.any(String),
     });
+  });
+
+  it("does not expose the old draft when publication succeeds but the persisted reread is not ready", async () => {
+    const publishRpc = createThenableQuery({ data: "published", error: null });
+    const adminClient = createClientMock({
+      daily_challenges: [
+        createThenableQuery({
+          data: {
+            id: CHALLENGE_IDS.generated1,
+            status: "generated",
+            generated_at: "2026-04-01T23:00:00Z",
+            created_at: "2026-04-01T23:00:00Z",
+            published_at: null,
+          },
+          error: null,
+        }),
+        createThenableQuery({
+          data: {
+            id: CHALLENGE_IDS.generated1,
+            status: "generated",
+            generated_at: "2026-04-01T23:00:00Z",
+            created_at: "2026-04-01T23:00:00Z",
+            published_at: null,
+          },
+          error: null,
+        }),
+      ],
+      daily_challenge_items: [
+        createThenableQuery({ data: completeDraftRows, error: null }),
+        createThenableQuery({ data: [], error: null }),
+      ],
+      daily_challenge_questions: createThenableQuery({ data: legacyRows, error: null }),
+    }, {
+      publish_daily_challenge: publishRpc,
+    });
+    const client = createClientMock({});
+
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    await expect(
+      getChallengeResolutionForDate(client as never, "2026-04-02"),
+    ).resolves.toEqual({ dailyChallengeId: null, questions: legacyRows });
   });
 
   it("never serves a draft that the publication RPC reports as incomplete", async () => {
@@ -737,7 +975,7 @@ describe("draft publication", () => {
     const adminClient = createClientMock({
       daily_challenges: createThenableQuery({
         data: {
-          id: "generated_challenge_1",
+          id: CHALLENGE_IDS.generated1,
           status: "generated",
           generated_at: "2026-04-01T23:00:00Z",
           published_at: null,
@@ -767,7 +1005,7 @@ describe("draft publication", () => {
       daily_challenges: [
         createThenableQuery({
           data: {
-            id: "generated_challenge_1",
+            id: CHALLENGE_IDS.generated1,
             status: "generated",
             generated_at: "2026-04-01T23:00:00Z",
             published_at: null,
@@ -776,7 +1014,7 @@ describe("draft publication", () => {
         }),
         createThenableQuery({
           data: {
-            id: "generated_challenge_1",
+            id: CHALLENGE_IDS.generated1,
             status: "published",
             generated_at: "2026-04-01T23:00:00Z",
             published_at: "2026-04-02T05:00:00Z",
@@ -798,7 +1036,7 @@ describe("draft publication", () => {
     await expect(
       getChallengeResolutionForDate(client as never, "2026-04-02"),
     ).resolves.toEqual({
-      dailyChallengeId: "generated_challenge_1",
+      dailyChallengeId: CHALLENGE_IDS.generated1,
       questions: canonicalQuestions,
     });
   });
@@ -808,7 +1046,7 @@ describe("draft publication", () => {
       daily_challenges: [
         createThenableQuery({
           data: {
-            id: "generated_challenge_1",
+            id: CHALLENGE_IDS.generated1,
             status: "generated",
             generated_at: "2026-04-01T00:00:00Z",
             published_at: null,
@@ -817,7 +1055,7 @@ describe("draft publication", () => {
         }),
         createThenableQuery({
           data: {
-            id: "generated_challenge_1",
+            id: CHALLENGE_IDS.generated1,
             status: "published",
             generated_at: "2026-04-01T00:00:00Z",
             published_at: "2026-04-02T05:00:00Z",
@@ -832,7 +1070,7 @@ describe("draft publication", () => {
       daily_challenge_questions: createThenableQuery({ data: [], error: null }),
     }, {
       cleanup_stale_daily_challenge: createThenableQuery({
-        data: { outcome: "conflict", challenge_id: "generated_challenge_1" },
+        data: { outcome: "conflict", challenge_id: CHALLENGE_IDS.generated1 },
         error: null,
       }),
     });
@@ -843,13 +1081,13 @@ describe("draft publication", () => {
     await expect(
       getChallengeResolutionForDate(client as never, "2026-04-02"),
     ).resolves.toEqual({
-      dailyChallengeId: "generated_challenge_1",
+      dailyChallengeId: CHALLENGE_IDS.generated1,
       questions: canonicalQuestions,
     });
 
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "cleanup_stale_daily_challenge",
-      expect.objectContaining({ p_challenge_id: "generated_challenge_1" }),
+      expect.objectContaining({ p_challenge_id: CHALLENGE_IDS.generated1 }),
     );
   });
 });
@@ -1745,7 +1983,7 @@ describe("getChallengeForDate", () => {
       daily_challenges: [
         createThenableQuery({
           data: {
-            id: "stale_generated_1",
+            id: CHALLENGE_IDS.stale1,
             challenge_date: "2026-04-01",
             status: "generated",
             generation_method: "auto",
@@ -1760,8 +1998,21 @@ describe("getChallengeForDate", () => {
           data: [],
           error: null,
         }),
+        createThenableQuery({
+          data: {
+            id: CHALLENGE_IDS.generated2,
+            status: "published",
+            generated_at: "2026-04-01T00:00:00Z",
+            created_at: "2026-04-01T00:00:00Z",
+            published_at: "2026-04-01T05:00:00Z",
+          },
+          error: null,
+        }),
       ],
-      daily_challenge_items: createThenableQuery({ data: [], error: null }),
+      daily_challenge_items: [
+        createThenableQuery({ data: [], error: null }),
+        createThenableQuery({ data: canonicalRows, error: null }),
+      ],
       questions: createThenableQuery({
         data: reusableQuestionRows,
         error: null,
@@ -1772,11 +2023,11 @@ describe("getChallengeForDate", () => {
       }),
     }, {
       cleanup_stale_daily_challenge: createThenableQuery({
-        data: { outcome: "deleted", challenge_id: "stale_generated_1" },
+        data: { outcome: "deleted", challenge_id: CHALLENGE_IDS.stale1 },
         error: null,
       }),
       prepare_daily_challenge_draft: createThenableQuery({
-        data: { outcome: "created", challenge_id: "generated_challenge_2" },
+        data: { outcome: "created", challenge_id: CHALLENGE_IDS.generated2 },
         error: null,
       }),
       publish_daily_challenge: publishRpc,
@@ -1803,7 +2054,7 @@ describe("getChallengeForDate", () => {
 
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "cleanup_stale_daily_challenge",
-      expect.objectContaining({ p_challenge_id: "stale_generated_1" }),
+      expect.objectContaining({ p_challenge_id: CHALLENGE_IDS.stale1 }),
     );
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "prepare_daily_challenge_draft",
@@ -1812,7 +2063,7 @@ describe("getChallengeForDate", () => {
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "publish_daily_challenge",
       expect.objectContaining({
-        p_challenge_id: "generated_challenge_2",
+        p_challenge_id: CHALLENGE_IDS.generated2,
         p_challenge_date: "2026-04-01",
       }),
     );
@@ -1866,7 +2117,7 @@ describe("getChallengeForDate", () => {
     }));
     const retryableRows = [
       {
-        id: "retryable_generated_1",
+        id: CHALLENGE_IDS.retryable1,
         slot: 1,
         question_snapshot: reusableQuestionRows[0],
       },
@@ -1884,7 +2135,7 @@ describe("getChallengeForDate", () => {
         }),
         createThenableQuery({
           data: {
-            id: "retryable_generated_1",
+            id: CHALLENGE_IDS.retryable1,
             challenge_date: "2026-04-01",
             status: "generated",
             generation_method: "auto",
@@ -1929,7 +2180,7 @@ describe("getChallengeForDate", () => {
       }),
     }, {
       prepare_daily_challenge_draft: createThenableQuery({
-        data: { outcome: "conflict", challenge_id: "retryable_generated_1" },
+        data: { outcome: "conflict", challenge_id: CHALLENGE_IDS.retryable1 },
         error: null,
       }),
     });
@@ -1968,7 +2219,7 @@ describe("getChallengeForDate", () => {
     }));
     const retryableRows = [
       {
-        id: "retryable_generated_1",
+        id: CHALLENGE_IDS.retryable1,
         slot: 1,
         question_snapshot: reusableQuestionRows[0],
       },
@@ -1978,7 +2229,7 @@ describe("getChallengeForDate", () => {
       daily_challenges: [
         createThenableQuery({
           data: {
-            id: "stale_generated_2",
+            id: CHALLENGE_IDS.stale2,
             challenge_date: "2026-04-02",
             status: "generated",
             generation_method: "auto",
@@ -1995,7 +2246,7 @@ describe("getChallengeForDate", () => {
         }),
         createThenableQuery({
           data: {
-            id: "retryable_generated_2",
+            id: CHALLENGE_IDS.retryable2,
             challenge_date: "2026-04-02",
             status: "generated",
             generation_method: "auto",
@@ -2044,11 +2295,11 @@ describe("getChallengeForDate", () => {
       }),
     }, {
       cleanup_stale_daily_challenge: createThenableQuery({
-        data: { outcome: "deleted", challenge_id: "stale_generated_2" },
+        data: { outcome: "deleted", challenge_id: CHALLENGE_IDS.stale2 },
         error: null,
       }),
       prepare_daily_challenge_draft: createThenableQuery({
-        data: { outcome: "conflict", challenge_id: "retryable_generated_2" },
+        data: { outcome: "conflict", challenge_id: CHALLENGE_IDS.retryable2 },
         error: null,
       }),
     });
@@ -2074,7 +2325,7 @@ describe("getChallengeForDate", () => {
 
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "cleanup_stale_daily_challenge",
-      expect.objectContaining({ p_challenge_id: "stale_generated_2" }),
+      expect.objectContaining({ p_challenge_id: CHALLENGE_IDS.stale2 }),
     );
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "prepare_daily_challenge_draft",
@@ -2101,7 +2352,21 @@ describe("getChallengeForDate", () => {
           data: [],
           error: null,
         }),
+        createThenableQuery({
+          data: {
+            id: CHALLENGE_IDS.generated1,
+            status: "published",
+            generated_at: "2026-04-01T00:00:00Z",
+            created_at: "2026-04-01T00:00:00Z",
+            published_at: "2026-04-01T05:00:00Z",
+          },
+          error: null,
+        }),
       ],
+      daily_challenge_items: createThenableQuery({
+        data: canonicalRows,
+        error: null,
+      }),
       questions: createThenableQuery({
         data: reusableQuestionRows,
         error: null,
@@ -2112,7 +2377,7 @@ describe("getChallengeForDate", () => {
       }),
     }, {
       prepare_daily_challenge_draft: createThenableQuery({
-        data: { outcome: "created", challenge_id: "generated_challenge_1" },
+        data: { outcome: "created", challenge_id: CHALLENGE_IDS.generated1 },
         error: null,
       }),
       publish_daily_challenge: publishRpc,
@@ -2142,7 +2407,7 @@ describe("getChallengeForDate", () => {
       recentQuestionIds: [],
     });
     expect(adminClient.from).toHaveBeenCalledWith("daily_challenges");
-    expect(adminClient.from).not.toHaveBeenCalledWith("daily_challenge_items");
+    expect(adminClient.from).toHaveBeenCalledWith("daily_challenge_items");
     expect(adminClient.from).toHaveBeenCalledWith("questions");
     expect(client.from).not.toHaveBeenCalled();
   });
@@ -2159,12 +2424,31 @@ describe("getChallengeForDate", () => {
       error: null,
     });
     const prepareRpc = createThenableQuery({
-      data: { outcome: "created", challenge_id: "generated_challenge_1" },
+      data: { outcome: "created", challenge_id: CHALLENGE_IDS.generated1 },
       error: null,
     });
     const publishRpc = createThenableQuery({ data: "published", error: null });
+    const publishedChallengeQuery = createThenableQuery({
+      data: {
+        id: CHALLENGE_IDS.generated1,
+        status: "published",
+        generated_at: "2026-04-01T00:00:00Z",
+        created_at: "2026-04-01T00:00:00Z",
+        published_at: "2026-04-01T05:00:00Z",
+      },
+      error: null,
+    });
+    const publishedItemsQuery = createThenableQuery({
+      data: canonicalRows,
+      error: null,
+    });
     const adminClient = createClientMock({
-      daily_challenges: [initialChallengeQuery, recentChallengesQuery],
+      daily_challenges: [
+        initialChallengeQuery,
+        recentChallengesQuery,
+        publishedChallengeQuery,
+      ],
+      daily_challenge_items: publishedItemsQuery,
       questions: questionQuery,
     }, {
       prepare_daily_challenge_draft: prepareRpc,
@@ -2193,14 +2477,15 @@ describe("getChallengeForDate", () => {
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "publish_daily_challenge",
       expect.objectContaining({
-        p_challenge_id: "generated_challenge_1",
+        p_challenge_id: CHALLENGE_IDS.generated1,
         p_challenge_date: "2026-04-01",
       }),
     );
     expect(initialChallengeQuery.insert).not.toHaveBeenCalled();
     expect(recentChallengesQuery.insert).not.toHaveBeenCalled();
     expect(questionQuery.insert).not.toHaveBeenCalled();
-    expect(adminClient.from).not.toHaveBeenCalledWith("daily_challenge_items");
+    expect(publishedChallengeQuery.insert).not.toHaveBeenCalled();
+    expect(publishedItemsQuery.insert).not.toHaveBeenCalled();
   });
 
   it("falls back to legacy questions when the canonical item table is missing after a published row is found", async () => {
