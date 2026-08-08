@@ -14,6 +14,7 @@ import {
   MAX_REVIEW_EMAIL_ATTEMPTS,
   MAX_REVIEW_EMAIL_FAILURE_CODE_LENGTH,
   MAX_REVIEW_EMAIL_FAILURE_MESSAGE_LENGTH,
+  MAX_REVIEW_EMAIL_METADATA_BYTES,
   MAX_REVIEW_EMAIL_PROVIDER_MESSAGE_ID_LENGTH,
   MAX_REVIEW_CONFLICT_LENGTH,
   MAX_REVIEW_CONFLICTS,
@@ -24,11 +25,13 @@ import {
   MAX_REVIEW_RUN_ERROR_CODE_LENGTH,
   MAX_REVIEW_RUN_ERROR_MESSAGE_LENGTH,
   MAX_REVIEW_RUN_ERRORS,
+  MAX_REVIEW_RUN_ERRORS_BYTES,
   MAX_SOURCE_FETCH_ERROR_CODE_LENGTH,
   MAX_SOURCE_FETCH_ERROR_MESSAGE_LENGTH,
   MAX_SOURCE_FETCH_RESULTS,
   parseDailyQuestionReviewAction,
   parseDailyQuestionReviewEmailMetadata,
+  parseDailyQuestionReplacementCandidate,
   parseDailyQuestionReviewRunErrors,
   parseDailyQuestionSourceFetchResults,
   parseDailyQuestionVerificationFinding,
@@ -264,6 +267,13 @@ describe("question snapshots", () => {
     expect(parseQuestionSnapshot(validSnapshot)).toEqual(validSnapshot);
   });
 
+  it("enforces an expected snapshot question id", () => {
+    expect(parseQuestionSnapshot(validSnapshot, QUESTION_ID)).toEqual(
+      validSnapshot,
+    );
+    expect(parseQuestionSnapshot(validSnapshot, REPLACEMENT_ID)).toBeNull();
+  });
+
   it("normalizes snapshot text and nullable source notes", () => {
     expect(
       parseQuestionSnapshot({
@@ -470,11 +480,32 @@ describe("structured run errors", () => {
       parseDailyQuestionReviewRunErrors(
         Array.from({ length: MAX_REVIEW_RUN_ERRORS }, () => ({
           ...validRunError,
-          code: "x".repeat(MAX_REVIEW_RUN_ERROR_CODE_LENGTH),
-          message: "🏀".repeat(MAX_REVIEW_RUN_ERROR_MESSAGE_LENGTH),
+          code: "boundary",
+          message: "A bounded error.",
         })),
       ),
     ).not.toBeNull();
+    expect(
+      parseDailyQuestionReviewRunErrors([
+        {
+          ...validRunError,
+          code: "x".repeat(MAX_REVIEW_RUN_ERROR_CODE_LENGTH),
+          message: "🏀".repeat(MAX_REVIEW_RUN_ERROR_MESSAGE_LENGTH),
+        },
+      ]),
+    ).not.toBeNull();
+  });
+
+  it("rejects errors whose UTF-8 JSON representation exceeds the SQL cap", () => {
+    const errors = Array.from({ length: MAX_REVIEW_RUN_ERRORS }, () => ({
+      ...validRunError,
+      message: "🏀".repeat(MAX_REVIEW_RUN_ERROR_MESSAGE_LENGTH),
+    }));
+
+    expect(new TextEncoder().encode(JSON.stringify(errors)).byteLength).toBeGreaterThan(
+      MAX_REVIEW_RUN_ERRORS_BYTES,
+    );
+    expect(parseDailyQuestionReviewRunErrors(errors)).toBeNull();
   });
 
   it.each([
@@ -560,11 +591,30 @@ describe("email delivery metadata", () => {
         lastAttemptAt: "2026-08-08T23:10:00.000Z",
         failure: {
           code: "x".repeat(MAX_REVIEW_EMAIL_FAILURE_CODE_LENGTH),
-          message: "🏀".repeat(MAX_REVIEW_EMAIL_FAILURE_MESSAGE_LENGTH),
+          message: "x".repeat(MAX_REVIEW_EMAIL_FAILURE_MESSAGE_LENGTH),
           occurredAt: "2026-08-08T23:10:00.000Z",
         },
       }),
     ).not.toBeNull();
+  });
+
+  it("rejects email metadata whose UTF-8 JSON representation exceeds the SQL cap", () => {
+    const metadata = {
+      provider: "resend",
+      providerMessageId: null,
+      attempts: 1,
+      lastAttemptAt: "2026-08-08T23:10:00.000Z",
+      failure: {
+        code: "provider_rejected",
+        message: "🏀".repeat(MAX_REVIEW_EMAIL_FAILURE_MESSAGE_LENGTH),
+        occurredAt: "2026-08-08T23:10:00.000Z",
+      },
+    };
+
+    expect(
+      new TextEncoder().encode(JSON.stringify(metadata)).byteLength,
+    ).toBeGreaterThan(MAX_REVIEW_EMAIL_METADATA_BYTES);
+    expect(parseDailyQuestionReviewEmailMetadata(metadata)).toBeNull();
   });
 
   it.each([
@@ -664,6 +714,71 @@ describe("replacement findings", () => {
         verdict: "passed",
         evidence: [],
       }),
+    ).toBeNull();
+  });
+});
+
+describe("replacement candidates", () => {
+  const replacementSnapshot = {
+    ...validSnapshot,
+    id: REPLACEMENT_ID,
+    question_text: "Which team won the 1983 NCAA men's title?",
+  };
+  const passedFinding = {
+    ...validFinding,
+    questionId: REPLACEMENT_ID,
+    verdict: "passed",
+    conflicts: [],
+  };
+  const validCandidate = {
+    questionId: REPLACEMENT_ID,
+    eligible: true,
+    snapshot: replacementSnapshot,
+    finding: passedFinding,
+  };
+
+  it("parses a same-difficulty preverified replacement", () => {
+    expect(
+      parseDailyQuestionReplacementCandidate(validCandidate, validSnapshot),
+    ).toEqual(validCandidate);
+  });
+
+  it("allows an ineligible candidate to retain a risk finding", () => {
+    const candidate = {
+      ...validCandidate,
+      eligible: false,
+      finding: { ...passedFinding, verdict: "risk" },
+    };
+
+    expect(
+      parseDailyQuestionReplacementCandidate(candidate, validSnapshot),
+    ).toEqual(candidate);
+  });
+
+  it.each([
+    [
+      "a candidate id that differs from its snapshot",
+      { ...validCandidate, snapshot: { ...replacementSnapshot, id: QUESTION_ID } },
+    ],
+    [
+      "a candidate id that differs from its finding",
+      { ...validCandidate, finding: { ...passedFinding, questionId: QUESTION_ID } },
+    ],
+    [
+      "a replacement with a different difficulty",
+      { ...validCandidate, snapshot: { ...replacementSnapshot, difficulty: "hard" } },
+    ],
+    [
+      "an eligible replacement with a risk finding",
+      { ...validCandidate, finding: { ...passedFinding, verdict: "risk" } },
+    ],
+    [
+      "an eligible replacement without evidence",
+      { ...validCandidate, finding: { ...passedFinding, evidence: [] } },
+    ],
+  ])("rejects %s", (_description, candidate) => {
+    expect(
+      parseDailyQuestionReplacementCandidate(candidate, validSnapshot),
     ).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ create table if not exists public.daily_question_review_runs (
     check (run_kind in ('scheduled')),
   model text not null check (char_length(model) between 1 and 100),
   verifier_version text not null check (char_length(verifier_version) between 1 and 100),
-  started_at timestamptz not null default timezone('utc', now()),
+  started_at timestamptz,
   completed_at timestamptz,
   input_tokens integer not null default 0 check (input_tokens >= 0),
   output_tokens integer not null default 0 check (output_tokens >= 0),
@@ -73,7 +73,56 @@ create table if not exists public.daily_question_review_runs (
   unique (review_date, run_kind),
   unique (challenge_date, run_kind),
   unique (id, daily_challenge_id),
-  check (review_date < challenge_date)
+  check (review_date < challenge_date),
+  check (
+    (
+      status = 'preparing'
+      and started_at is null
+      and completed_at is null
+    )
+    or (
+      status = 'running'
+      and started_at is not null
+      and completed_at is null
+    )
+    or (
+      status in ('completed', 'completed_with_flags')
+      and started_at is not null
+      and completed_at is not null
+      and completed_at >= started_at
+    )
+    or (
+      status = 'failed'
+      and completed_at is not null
+      and (started_at is null or completed_at >= started_at)
+    )
+  ),
+  check (
+    (
+      email_status = 'pending'
+      and email_sent_at is null
+      and (email_metadata->>'attempts')::integer = 0
+      and jsonb_typeof(email_metadata->'providerMessageId') = 'null'
+      and jsonb_typeof(email_metadata->'lastAttemptAt') = 'null'
+      and jsonb_typeof(email_metadata->'failure') = 'null'
+    )
+    or (
+      email_status = 'sent'
+      and email_sent_at is not null
+      and (email_metadata->>'attempts')::integer >= 1
+      and email_metadata->>'providerMessageId' is not null
+      and jsonb_typeof(email_metadata->'lastAttemptAt') = 'string'
+      and jsonb_typeof(email_metadata->'failure') = 'null'
+    )
+    or (
+      email_status = 'failed'
+      and email_sent_at is null
+      and (email_metadata->>'attempts')::integer >= 1
+      and jsonb_typeof(email_metadata->'providerMessageId') = 'null'
+      and jsonb_typeof(email_metadata->'lastAttemptAt') = 'string'
+      and jsonb_typeof(email_metadata->'failure') = 'object'
+    )
+  )
 );
 
 create table if not exists public.daily_question_review_items (
@@ -99,6 +148,7 @@ create table if not exists public.daily_question_review_items (
       ]
       and jsonb_typeof(question_snapshot->'id') = 'string'
       and question_snapshot->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      and (question_snapshot->>'id')::uuid = question_id
       and jsonb_typeof(question_snapshot->'question_text') = 'string'
       and char_length(btrim(question_snapshot->>'question_text')) between 1 and 1000
       and jsonb_typeof(question_snapshot->'option_a') = 'string'
@@ -195,7 +245,35 @@ create table if not exists public.daily_question_review_items (
       )
     ),
   replacement_finding jsonb
-    check (replacement_finding is null or jsonb_typeof(replacement_finding) = 'object'),
+    check (
+      replacement_finding is null
+      or (
+        jsonb_typeof(replacement_finding) = 'object'
+        and replacement_finding ?& array[
+          'questionId',
+          'verdict',
+          'confidence',
+          'explanation',
+          'conflicts',
+          'evidence',
+          'verifiedAt'
+        ]
+        and jsonb_typeof(replacement_finding->'questionId') = 'string'
+        and replacement_finding->>'questionId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and jsonb_typeof(replacement_finding->'verdict') = 'string'
+        and replacement_finding->>'verdict' in ('passed', 'risk', 'unable_to_verify')
+        and jsonb_typeof(replacement_finding->'confidence') = 'number'
+        and (replacement_finding->>'confidence')::numeric between 0 and 1
+        and jsonb_typeof(replacement_finding->'explanation') = 'string'
+        and char_length(btrim(replacement_finding->>'explanation')) between 1 and 2000
+        and jsonb_typeof(replacement_finding->'conflicts') = 'array'
+        and jsonb_array_length(replacement_finding->'conflicts') <= 10
+        and jsonb_typeof(replacement_finding->'evidence') = 'array'
+        and jsonb_array_length(replacement_finding->'evidence') <= 10
+        and jsonb_typeof(replacement_finding->'verifiedAt') = 'string'
+        and char_length(replacement_finding->>'verifiedAt') between 1 and 50
+      )
+    ),
   resolution text not null default 'pending'
     check (resolution in ('pending', 'kept', 'replaced')),
   resolved_by uuid references auth.users (id) on delete set null,
@@ -210,8 +288,20 @@ create table if not exists public.daily_question_review_items (
     references public.daily_question_review_runs (id, daily_challenge_id)
     on delete cascade,
   check (
-    (verdict is null and confidence is null and explanation is null)
-    or (verdict is not null and confidence is not null and explanation is not null)
+    (
+      review_status in ('pending', 'reviewing', 'failed')
+      and verdict is null
+      and confidence is null
+      and explanation is null
+      and jsonb_array_length(conflicts) = 0
+      and jsonb_array_length(evidence) = 0
+    )
+    or (
+      review_status = 'completed'
+      and verdict is not null
+      and confidence is not null
+      and explanation is not null
+    )
   ),
   check (
     verdict is null
@@ -228,14 +318,61 @@ create table if not exists public.daily_question_review_items (
     )
   ),
   check (
-    not replacement_eligible
+    (
+      replacement_question_id is null
+      and replacement_question_snapshot is null
+      and replacement_finding is null
+      and not replacement_eligible
+    )
     or (
       replacement_question_id is not null
       and replacement_question_snapshot is not null
       and replacement_finding is not null
+      and replacement_question_id <> question_id
+      and (replacement_question_snapshot->>'id')::uuid = replacement_question_id
+      and (replacement_finding->>'questionId')::uuid = replacement_question_id
+      and replacement_question_snapshot->>'difficulty' = question_snapshot->>'difficulty'
+      and (
+        not replacement_eligible
+        or (
+          replacement_finding->>'verdict' = 'passed'
+          and jsonb_array_length(replacement_finding->'evidence') > 0
+        )
+      )
+    )
+  ),
+  check (
+    (
+      resolution = 'pending'
+      and resolved_by is null
+      and resolved_at is null
+      and applied_at is null
+      and application_metadata = '{}'::jsonb
+    )
+    or (
+      resolution in ('kept', 'replaced')
+      and resolved_by is not null
+      and resolved_at is not null
+      and applied_at is not null
+      and resolved_at >= created_at
+      and applied_at >= resolved_at
     )
   )
 );
+
+drop trigger if exists daily_question_review_runs_set_updated_at
+  on public.daily_question_review_runs;
+create trigger daily_question_review_runs_set_updated_at
+before update on public.daily_question_review_runs
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists daily_question_review_items_set_updated_at
+  on public.daily_question_review_items;
+create trigger daily_question_review_items_set_updated_at
+before update on public.daily_question_review_items
+for each row
+execute function public.set_updated_at();
 
 create index if not exists daily_question_review_runs_status_review_date_idx
   on public.daily_question_review_runs (status, review_date desc);
@@ -260,6 +397,9 @@ alter table public.daily_question_review_items enable row level security;
 
 revoke all on public.daily_question_review_runs from public, anon, authenticated;
 revoke all on public.daily_question_review_items from public, anon, authenticated;
+
+grant select, insert, update on public.daily_question_review_runs to service_role;
+grant select, insert, update on public.daily_question_review_items to service_role;
 
 comment on table public.daily_question_review_runs is
   'Service-role-only operational record for each nightly Daily 5 verification run.';
@@ -296,9 +436,9 @@ select
   i.id as review_item_id,
   i.slot,
   i.question_id,
-  s.slug as sport,
-  s.name as sport_name,
-  q.difficulty,
+  i.question_snapshot->'sport'->>'slug' as sport,
+  i.question_snapshot->'sport'->>'name' as sport_name,
+  i.question_snapshot->>'difficulty' as difficulty,
   i.question_snapshot,
   i.review_status,
   i.verdict,
@@ -313,7 +453,6 @@ select
   i.replacement_finding,
   i.resolution,
   i.resolved_by,
-  p.display_name as resolver_display_name,
   i.resolved_at,
   i.application_metadata,
   i.applied_at,
@@ -321,15 +460,12 @@ select
   i.updated_at as item_updated_at
 from public.daily_question_review_runs r
 join public.daily_question_review_items i
-  on i.run_id = r.id
-join public.questions q
-  on q.id = i.question_id
-join public.sports s
-  on s.id = q.sport_id
-left join public.profiles p
-  on p.id = i.resolved_by;
+  on i.run_id = r.id;
 
 comment on view internal.daily_question_review is
   'Service-role-only owner review view for nightly Daily 5 verification findings and resolutions.';
 
 revoke all on internal.daily_question_review from public, anon, authenticated;
+
+grant usage on schema internal to service_role;
+grant select on internal.daily_question_review to service_role;

@@ -8,7 +8,95 @@ const migrationPath = path.join(
   "supabase/migrations/202608080001_nightly_question_verification.sql",
 );
 
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let quote: "single" | "double" | null = null;
+  let parenthesisDepth = 0;
+
+  for (let index = 0; index < sql.length; index += 1) {
+    const character = sql[index];
+    const nextCharacter = sql[index + 1];
+    current += character;
+
+    if (quote === "single") {
+      if (character === "'" && nextCharacter === "'") {
+        current += nextCharacter;
+        index += 1;
+      } else if (character === "'") {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (quote === "double") {
+      if (character === '"' && nextCharacter === '"') {
+        current += nextCharacter;
+        index += 1;
+      } else if (character === '"') {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === "'") {
+      quote = "single";
+    } else if (character === '"') {
+      quote = "double";
+    } else if (character === "(") {
+      parenthesisDepth += 1;
+    } else if (character === ")") {
+      parenthesisDepth -= 1;
+      if (parenthesisDepth < 0) {
+        throw new Error("SQL contains an unmatched closing parenthesis.");
+      }
+    } else if (character === ";" && parenthesisDepth === 0) {
+      statements.push(current.trim());
+      current = "";
+    }
+  }
+
+  if (quote || parenthesisDepth !== 0 || current.trim()) {
+    throw new Error("SQL contains an unterminated statement or delimiter.");
+  }
+
+  return statements;
+}
+
+function normalizedStatement(sql: string, prefix: string): string {
+  const statement = splitSqlStatements(sql).find((candidate) =>
+    candidate.toLowerCase().startsWith(prefix.toLowerCase()),
+  );
+
+  if (!statement) {
+    throw new Error(`Missing SQL statement: ${prefix}`);
+  }
+
+  return statement.replace(/\s+/g, " ");
+}
+
 describe("nightly question verification migration", () => {
+  it("contains structurally balanced, terminated SQL statements", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const statements = splitSqlStatements(migration);
+
+    expect(statements.length).toBeGreaterThanOrEqual(20);
+    expect(
+      statements.some((statement) =>
+        statement.startsWith(
+          "create table if not exists public.daily_question_review_runs",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      statements.some((statement) =>
+        statement.startsWith(
+          "create table if not exists public.daily_question_review_items",
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("creates private review run storage with bounded operational metadata", async () => {
     const migration = await readFile(migrationPath, "utf8");
 
@@ -29,7 +117,7 @@ describe("nightly question verification migration", () => {
     expect(migration).toContain("check (run_kind in ('scheduled'))");
     expect(migration).toContain("model text not null");
     expect(migration).toContain("verifier_version text not null");
-    expect(migration).toContain("started_at timestamptz not null");
+    expect(migration).toMatch(/\bstarted_at timestamptz,/);
     expect(migration).toContain("completed_at timestamptz");
     expect(migration).toContain("input_tokens integer not null default 0");
     expect(migration).toContain("output_tokens integer not null default 0");
@@ -63,6 +151,44 @@ describe("nightly question verification migration", () => {
     );
     expect(migration).toMatch(
       /comment on table public\.daily_question_review_runs is\s+'[^']*Service-role-only[^']*';/,
+    );
+  });
+
+  it("enforces coherent run and email lifecycle timestamps", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const runsTable = normalizedStatement(
+      migration,
+      "create table if not exists public.daily_question_review_runs",
+    );
+
+    expect(runsTable).toContain("started_at timestamptz,");
+    expect(runsTable).not.toContain("started_at timestamptz not null");
+    expect(runsTable).toContain(
+      "status = 'preparing' and started_at is null and completed_at is null",
+    );
+    expect(runsTable).toContain(
+      "status = 'running' and started_at is not null and completed_at is null",
+    );
+    expect(runsTable).toContain(
+      "status in ('completed', 'completed_with_flags') and started_at is not null and completed_at is not null",
+    );
+    expect(runsTable).toContain(
+      "status = 'failed' and completed_at is not null",
+    );
+    expect(runsTable).toContain(
+      "email_status = 'pending' and email_sent_at is null",
+    );
+    expect(runsTable).toContain(
+      "email_status = 'sent' and email_sent_at is not null",
+    );
+    expect(runsTable).toContain(
+      "email_metadata->>'providerMessageId' is not null",
+    );
+    expect(runsTable).toContain(
+      "email_status = 'failed' and email_sent_at is null",
+    );
+    expect(runsTable).toContain(
+      "jsonb_typeof(email_metadata->'failure') = 'object'",
     );
   });
 
@@ -161,6 +287,45 @@ describe("nightly question verification migration", () => {
     );
   });
 
+  it("enforces snapshot, replacement, and audit consistency", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const itemsTable = normalizedStatement(
+      migration,
+      "create table if not exists public.daily_question_review_items",
+    );
+
+    expect(itemsTable).toContain(
+      "(question_snapshot->>'id')::uuid = question_id",
+    );
+    expect(itemsTable).toContain(
+      "(replacement_question_snapshot->>'id')::uuid = replacement_question_id",
+    );
+    expect(itemsTable).toContain(
+      "(replacement_finding->>'questionId')::uuid = replacement_question_id",
+    );
+    expect(itemsTable).toContain(
+      "replacement_question_snapshot->>'difficulty' = question_snapshot->>'difficulty'",
+    );
+    expect(itemsTable).toContain(
+      "replacement_finding->>'verdict' = 'passed'",
+    );
+    expect(itemsTable).toContain(
+      "jsonb_array_length(replacement_finding->'evidence') > 0",
+    );
+    expect(itemsTable).toContain(
+      "review_status in ('pending', 'reviewing', 'failed') and verdict is null",
+    );
+    expect(itemsTable).toContain(
+      "review_status = 'completed' and verdict is not null",
+    );
+    expect(itemsTable).toContain(
+      "resolution = 'pending' and resolved_by is null and resolved_at is null and applied_at is null",
+    );
+    expect(itemsTable).toContain(
+      "resolution in ('kept', 'replaced') and resolved_by is not null and resolved_at is not null and applied_at is not null",
+    );
+  });
+
   it("adds indexes and keeps the tables and internal review view private", async () => {
     const migration = await readFile(migrationPath, "utf8");
 
@@ -198,8 +363,17 @@ describe("nightly question verification migration", () => {
     expect(migration).toContain("with (security_invoker = true)");
     expect(migration).toContain("from public.daily_question_review_runs r");
     expect(migration).toContain("join public.daily_question_review_items i");
-    expect(migration).toContain("join public.questions q");
-    expect(migration).toContain("join public.sports s");
+    expect(migration).not.toContain("join public.questions q");
+    expect(migration).not.toContain("join public.sports s");
+    expect(migration).toContain(
+      "i.question_snapshot->'sport'->>'slug' as sport",
+    );
+    expect(migration).toContain(
+      "i.question_snapshot->'sport'->>'name' as sport_name",
+    );
+    expect(migration).toContain(
+      "i.question_snapshot->>'difficulty' as difficulty",
+    );
     expect(migration).toContain(
       "revoke all on internal.daily_question_review from public, anon, authenticated",
     );
@@ -208,6 +382,32 @@ describe("nightly question verification migration", () => {
     );
     expect(migration).not.toMatch(
       /grant\s+[^;]*\bon\s+(?:table\s+)?(?:public\.(?:daily_question_review_runs|daily_question_review_items)|internal\.daily_question_review)\b[^;]*\bto\s+[^;]*\b(?:public|anon|authenticated)\b/i,
+    );
+    expect(migration).toContain(
+      "grant select, insert, update on public.daily_question_review_runs to service_role",
+    );
+    expect(migration).toContain(
+      "grant select, insert, update on public.daily_question_review_items to service_role",
+    );
+    expect(migration).toContain(
+      "grant usage on schema internal to service_role",
+    );
+    expect(migration).toContain(
+      "grant select on internal.daily_question_review to service_role",
+    );
+    expect(migration).not.toMatch(
+      /grant\s+(?:all|delete)[^;]*daily_question_review_(?:runs|items)[^;]*service_role/i,
+    );
+  });
+
+  it("maintains updated_at with the established trigger function", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+
+    expect(migration).toMatch(
+      /drop trigger if exists daily_question_review_runs_set_updated_at\s+on public\.daily_question_review_runs;\s+create trigger daily_question_review_runs_set_updated_at\s+before update on public\.daily_question_review_runs\s+for each row\s+execute function public\.set_updated_at\(\);/,
+    );
+    expect(migration).toMatch(
+      /drop trigger if exists daily_question_review_items_set_updated_at\s+on public\.daily_question_review_items;\s+create trigger daily_question_review_items_set_updated_at\s+before update on public\.daily_question_review_items\s+for each row\s+execute function public\.set_updated_at\(\);/,
     );
   });
 });

@@ -69,10 +69,12 @@ export const MAX_SOURCE_FETCH_ERROR_CODE_LENGTH = 100;
 export const MAX_SOURCE_FETCH_ERROR_MESSAGE_LENGTH = 1000;
 
 export const MAX_REVIEW_RUN_ERRORS = 20;
+export const MAX_REVIEW_RUN_ERRORS_BYTES = 20000;
 export const MAX_REVIEW_RUN_ERROR_CODE_LENGTH = 100;
 export const MAX_REVIEW_RUN_ERROR_MESSAGE_LENGTH = 1000;
 
 export const MAX_REVIEW_EMAIL_ATTEMPTS = 10;
+export const MAX_REVIEW_EMAIL_METADATA_BYTES = 4000;
 export const MAX_REVIEW_EMAIL_PROVIDER_MESSAGE_ID_LENGTH = 200;
 export const MAX_REVIEW_EMAIL_FAILURE_CODE_LENGTH = 100;
 export const MAX_REVIEW_EMAIL_FAILURE_MESSAGE_LENGTH = 1000;
@@ -171,6 +173,13 @@ export interface DailyQuestionReviewEmailMetadata {
   failure: DailyQuestionReviewEmailFailure | null;
 }
 
+export interface DailyQuestionReplacementCandidate {
+  questionId: string;
+  eligible: boolean;
+  snapshot: QuestionSnapshot;
+  finding: DailyQuestionVerificationFinding;
+}
+
 export interface KeepDailyQuestionReviewAction {
   action: "keep";
   reviewItemId: string;
@@ -200,6 +209,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasAtMostCodePoints(value: string, limit: number): boolean {
   return Array.from(value).length <= limit;
+}
+
+function countJsonbFormattingSpaces(value: unknown): number {
+  if (Array.isArray(value)) {
+    return (
+      Math.max(0, value.length - 1) +
+      value.reduce(
+        (total, item) => total + countJsonbFormattingSpaces(item),
+        0,
+      )
+    );
+  }
+
+  if (isRecord(value)) {
+    const entries = Object.entries(value);
+    return (
+      entries.length +
+      Math.max(0, entries.length - 1) +
+      entries.reduce(
+        (total, [, item]) => total + countJsonbFormattingSpaces(item),
+        0,
+      )
+    );
+  }
+
+  return 0;
+}
+
+function getJsonbTextByteLength(value: unknown): number {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return (
+    new TextEncoder().encode(serialized).byteLength +
+    countJsonbFormattingSpaces(value)
+  );
 }
 
 function parseBoundedString(value: unknown, limit: number): string | null {
@@ -319,10 +366,15 @@ function isQuestionAnswerOption(
   return value === "A" || value === "B" || value === "C" || value === "D";
 }
 
-export function parseQuestionSnapshot(value: unknown): QuestionSnapshot | null {
+export function parseQuestionSnapshot(
+  value: unknown,
+  expectedQuestionId?: string,
+): QuestionSnapshot | null {
   if (
     !isRecord(value) ||
     !isUuid(value.id) ||
+    (expectedQuestionId !== undefined &&
+      (!isUuid(expectedQuestionId) || value.id !== expectedQuestionId)) ||
     !isQuestionAnswerOption(value.correct_option) ||
     !isQuestionDifficulty(value.difficulty) ||
     !isRecord(value.sport)
@@ -473,6 +525,42 @@ export function parseReplacementFinding(
   return parseDailyQuestionVerificationFinding(value);
 }
 
+export function parseDailyQuestionReplacementCandidate(
+  value: unknown,
+  originalSnapshotValue: unknown,
+): DailyQuestionReplacementCandidate | null {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.questionId) ||
+    typeof value.eligible !== "boolean"
+  ) {
+    return null;
+  }
+
+  const originalSnapshot = parseQuestionSnapshot(originalSnapshotValue);
+  const snapshot = parseQuestionSnapshot(value.snapshot, value.questionId);
+  const finding = parseReplacementFinding(value.finding);
+
+  if (
+    !originalSnapshot ||
+    !snapshot ||
+    !finding ||
+    finding.questionId !== value.questionId ||
+    snapshot.difficulty !== originalSnapshot.difficulty ||
+    (value.eligible &&
+      (finding.verdict !== "passed" || finding.evidence.length === 0))
+  ) {
+    return null;
+  }
+
+  return {
+    questionId: value.questionId,
+    eligible: value.eligible,
+    snapshot,
+    finding,
+  };
+}
+
 function parseSourceFetchError(
   value: unknown,
 ): DailyQuestionSourceFetchError | null {
@@ -618,7 +706,10 @@ export function parseDailyQuestionReviewRunErrors(
     return null;
   }
 
-  return errors as DailyQuestionReviewRunError[];
+  const parsedErrors = errors as DailyQuestionReviewRunError[];
+  return getJsonbTextByteLength(parsedErrors) <= MAX_REVIEW_RUN_ERRORS_BYTES
+    ? parsedErrors
+    : null;
 }
 
 function parseEmailFailure(
@@ -683,13 +774,17 @@ export function parseDailyQuestionReviewEmailMetadata(
     return null;
   }
 
-  return {
+  const metadata: DailyQuestionReviewEmailMetadata = {
     provider: "resend",
     providerMessageId,
     attempts: value.attempts,
     lastAttemptAt,
     failure,
   };
+
+  return getJsonbTextByteLength(metadata) <= MAX_REVIEW_EMAIL_METADATA_BYTES
+    ? metadata
+    : null;
 }
 
 export function parseDailyQuestionReviewAction(
