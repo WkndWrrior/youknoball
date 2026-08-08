@@ -588,7 +588,22 @@ export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
   budget: DailyQuestionReviewBudgetResult;
   value: T | null;
 }> {
-  const budget = checkDailyQuestionReviewBudget(options);
+  const modelReservationMicrodollars =
+    getDailyQuestionReviewMaxRunReservationMicrodollars(options.model);
+  const requestedReservationMicrodollars = options.reservedMicrodollars;
+  const effectiveReservationMicrodollars =
+    modelReservationMicrodollars !== null &&
+    (requestedReservationMicrodollars === undefined ||
+      isNonnegativeSafeInteger(requestedReservationMicrodollars))
+      ? Math.max(
+          modelReservationMicrodollars,
+          requestedReservationMicrodollars ?? 0,
+        )
+      : requestedReservationMicrodollars;
+  const budget = checkDailyQuestionReviewBudget({
+    ...options,
+    reservedMicrodollars: effectiveReservationMicrodollars,
+  });
 
   if (!budget.allowed) {
     return { budget, value: null };

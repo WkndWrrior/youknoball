@@ -632,7 +632,7 @@ describe("budget preflight", () => {
     const result = await runWithDailyQuestionReviewBudgetPreflight({
       model: "gpt-5.6-terra",
       now,
-      monthlyBudgetCents: 100,
+      monthlyBudgetCents: 1_000,
       reservedMicrodollars: 1,
       records: [],
       operation: callback,
@@ -641,6 +641,54 @@ describe("budget preflight", () => {
     expect(callback).toHaveBeenCalledTimes(1);
     expect(result.value).toBe("verified");
     expect(result.budget.allowed).toBe(true);
+    expect(result.budget.reservedMicrodollars).toBe(2_270_000);
+  });
+
+  it.each([0, 1])(
+    "does not let a %i microdollar override under-reserve or invoke the callback",
+    async (reservedMicrodollars) => {
+      const callback = vi.fn(async () => "called");
+
+      const result = await runWithDailyQuestionReviewBudgetPreflight({
+        model: "gpt-5.6-terra",
+        now,
+        monthlyBudgetCents: 100,
+        reservedMicrodollars,
+        records: [],
+        operation: callback,
+      });
+
+      expect(callback).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        value: null,
+        budget: {
+          allowed: false,
+          reservedMicrodollars: 2_270_000,
+          reason: "reservation_exceeds_remaining",
+        },
+      });
+    },
+  );
+
+  it("honors a higher caller reservation", async () => {
+    const callback = vi.fn(async () => "verified");
+
+    const result = await runWithDailyQuestionReviewBudgetPreflight({
+      model: "gpt-5.6-terra",
+      now,
+      monthlyBudgetCents: 1_000,
+      reservedMicrodollars: 3_000_000,
+      records: [],
+      operation: callback,
+    });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(result.value).toBe("verified");
+    expect(result.budget).toMatchObject({
+      allowed: true,
+      reservedMicrodollars: 3_000_000,
+      reason: "within_budget",
+    });
   });
 
   it("blocks an unsupported model before invoking the callback", async () => {

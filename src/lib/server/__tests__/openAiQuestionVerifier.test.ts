@@ -359,8 +359,13 @@ describe("OpenAI question verifier", () => {
     const result = await createVerifier(fetchMock).verifyQuestion(input);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(getRequestBody(fetchMock, 0)).not.toHaveProperty("tools");
+    const initial = getRequestBody(fetchMock, 0);
+    expect(initial).not.toHaveProperty("tools");
+    expect(initial).not.toHaveProperty("max_tool_calls");
     const fallback = getRequestBody(fetchMock, 1);
+    expect(fallback.max_tool_calls).toBe(
+      MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE,
+    );
     expect(fallback.tools).toEqual([
       {
         type: "web_search",

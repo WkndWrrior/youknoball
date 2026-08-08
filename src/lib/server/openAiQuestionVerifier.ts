@@ -881,6 +881,7 @@ function buildRequestBody(
     },
   };
   if (webSearchEnabled) {
+    body.max_tool_calls = MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE;
     body.tools = [
       {
         type: "web_search",
