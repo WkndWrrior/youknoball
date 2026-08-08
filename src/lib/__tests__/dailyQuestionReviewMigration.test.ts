@@ -12,12 +12,22 @@ function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
   let current = "";
   let quote: "single" | "double" | null = null;
+  let dollarQuoteTag: string | null = null;
   let parenthesisDepth = 0;
 
   for (let index = 0; index < sql.length; index += 1) {
     const character = sql[index];
     const nextCharacter = sql[index + 1];
     current += character;
+
+    if (dollarQuoteTag) {
+      if (sql.startsWith(dollarQuoteTag, index)) {
+        current += dollarQuoteTag.slice(1);
+        index += dollarQuoteTag.length - 1;
+        dollarQuoteTag = null;
+      }
+      continue;
+    }
 
     if (quote === "single") {
       if (character === "'" && nextCharacter === "'") {
@@ -39,7 +49,16 @@ function splitSqlStatements(sql: string): string[] {
       continue;
     }
 
-    if (character === "'") {
+    if (character === "$") {
+      const dollarQuote = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(
+        sql.slice(index),
+      )?.[0];
+      if (dollarQuote) {
+        current += dollarQuote.slice(1);
+        index += dollarQuote.length - 1;
+        dollarQuoteTag = dollarQuote;
+      }
+    } else if (character === "'") {
       quote = "single";
     } else if (character === '"') {
       quote = "double";
@@ -56,7 +75,7 @@ function splitSqlStatements(sql: string): string[] {
     }
   }
 
-  if (quote || parenthesisDepth !== 0 || current.trim()) {
+  if (quote || dollarQuoteTag || parenthesisDepth !== 0 || current.trim()) {
     throw new Error("SQL contains an unterminated statement or delimiter.");
   }
 
@@ -432,6 +451,51 @@ describe("nightly question verification migration", () => {
     );
     expect(migration).toMatch(
       /drop trigger if exists daily_question_review_items_set_updated_at\s+on public\.daily_question_review_items;\s+create trigger daily_question_review_items_set_updated_at\s+before update on public\.daily_question_review_items\s+for each row\s+execute function public\.set_updated_at\(\);/,
+    );
+  });
+
+  it("publishes only complete generated challenges through a service-role-only RPC", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+
+    expect(migration).toMatch(
+      /create or replace function public\.publish_daily_challenge\(\s*p_challenge_id uuid,\s*p_challenge_date date,\s*p_published_at timestamptz\s*\)\s*returns text/i,
+    );
+    expect(migration).toContain("security definer");
+    expect(migration).toMatch(
+      /from public\.daily_challenges[\s\S]*id = p_challenge_id[\s\S]*challenge_date = p_challenge_date[\s\S]*for update/,
+    );
+    expect(migration).toContain("count(distinct i.slot)");
+    expect(migration).toContain("min(i.slot)");
+    expect(migration).toContain("max(i.slot)");
+    expect(migration).toContain("count(distinct i.question_id)");
+    expect(migration).toContain(
+      "lower(i.question_snapshot->>'id') = i.question_id::text",
+    );
+    expect(migration).toContain(
+      "i.question_snapshot->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'",
+    );
+    expect(migration).toMatch(
+      /i\.question_snapshot \?& array\[[\s\S]*'question_text'[\s\S]*'correct_option'[\s\S]*'source_notes'[\s\S]*\]/,
+    );
+    expect(migration).toContain("jsonb_typeof(i.question_snapshot->'sport') = 'object'");
+    expect(migration).toContain("btrim(i.question_snapshot->>'question_text') <> ''");
+    expect(migration).toContain("return 'incomplete'");
+    expect(migration).toContain("return 'conflict'");
+    expect(migration).toContain("return 'published'");
+    expect(migration).toMatch(
+      /if p_published_at is null then\s+return 'conflict';/,
+    );
+    expect(migration).toMatch(
+      /update public\.daily_challenges[\s\S]*set status = 'published',[\s\S]*published_at = p_published_at/,
+    );
+    expect(migration).toMatch(
+      /revoke all on function public\.publish_daily_challenge\(uuid, date, timestamptz\)\s+from public, anon, authenticated/,
+    );
+    expect(migration).toMatch(
+      /grant execute on function public\.publish_daily_challenge\(uuid, date, timestamptz\)\s+to service_role/,
+    );
+    expect(migration).not.toMatch(
+      /grant execute on function public\.publish_daily_challenge\([^;]+\) to (?:public|anon|authenticated)/i,
     );
   });
 });

@@ -1,6 +1,138 @@
 create unique index if not exists daily_challenges_id_challenge_date_unique
   on public.daily_challenges (id, challenge_date);
 
+create or replace function public.publish_daily_challenge(
+  p_challenge_id uuid,
+  p_challenge_date date,
+  p_published_at timestamptz
+)
+returns text
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $function$
+declare
+  challenge_status text;
+  challenge_published_at timestamptz;
+  item_count bigint;
+  slot_count bigint;
+  first_slot smallint;
+  last_slot smallint;
+  question_count bigint;
+  valid_item_count bigint;
+begin
+  if p_published_at is null then
+    return 'conflict';
+  end if;
+
+  select c.status, c.published_at
+  into challenge_status, challenge_published_at
+  from public.daily_challenges c
+  where c.id = p_challenge_id
+    and c.challenge_date = p_challenge_date
+  for update;
+
+  if not found then
+    return 'conflict';
+  end if;
+
+  if challenge_status = 'published' and challenge_published_at is not null then
+    return 'published';
+  end if;
+
+  if challenge_status <> 'generated' or challenge_published_at is not null then
+    return 'conflict';
+  end if;
+
+  select
+    count(*),
+    count(distinct i.slot),
+    min(i.slot),
+    max(i.slot),
+    count(distinct i.question_id),
+    count(*) filter (
+      where jsonb_typeof(i.question_snapshot) = 'object'
+        and i.question_snapshot ?& array[
+          'id',
+          'question_text',
+          'option_a',
+          'option_b',
+          'option_c',
+          'option_d',
+          'correct_option',
+          'sport',
+          'difficulty',
+          'source_notes'
+        ]
+        and jsonb_typeof(i.question_snapshot->'id') = 'string'
+        and i.question_snapshot->>'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and lower(i.question_snapshot->>'id') = i.question_id::text
+        and jsonb_typeof(i.question_snapshot->'question_text') = 'string'
+        and btrim(i.question_snapshot->>'question_text') <> ''
+        and char_length(btrim(i.question_snapshot->>'question_text')) <= 1000
+        and jsonb_typeof(i.question_snapshot->'option_a') = 'string'
+        and char_length(btrim(i.question_snapshot->>'option_a')) between 1 and 500
+        and jsonb_typeof(i.question_snapshot->'option_b') = 'string'
+        and char_length(btrim(i.question_snapshot->>'option_b')) between 1 and 500
+        and jsonb_typeof(i.question_snapshot->'option_c') = 'string'
+        and char_length(btrim(i.question_snapshot->>'option_c')) between 1 and 500
+        and jsonb_typeof(i.question_snapshot->'option_d') = 'string'
+        and char_length(btrim(i.question_snapshot->>'option_d')) between 1 and 500
+        and i.question_snapshot->>'correct_option' in ('A', 'B', 'C', 'D')
+        and i.question_snapshot->>'difficulty' in ('easy', 'medium', 'hard')
+        and jsonb_typeof(i.question_snapshot->'sport') = 'object'
+        and i.question_snapshot->'sport' ?& array['slug', 'name']
+        and jsonb_typeof(i.question_snapshot->'sport'->'slug') = 'string'
+        and char_length(btrim(i.question_snapshot->'sport'->>'slug')) between 1 and 50
+        and jsonb_typeof(i.question_snapshot->'sport'->'name') = 'string'
+        and char_length(btrim(i.question_snapshot->'sport'->>'name')) between 1 and 100
+        and (
+          jsonb_typeof(i.question_snapshot->'source_notes') = 'null'
+          or (
+            jsonb_typeof(i.question_snapshot->'source_notes') = 'string'
+            and char_length(i.question_snapshot->>'source_notes') <= 4000
+          )
+        )
+    )
+  into item_count, slot_count, first_slot, last_slot, question_count, valid_item_count
+  from public.daily_challenge_items i
+  where i.daily_challenge_id = p_challenge_id;
+
+  if item_count <> 5
+    or slot_count <> 5
+    or first_slot <> 1
+    or last_slot <> 5
+    or question_count <> 5
+    or valid_item_count <> 5
+  then
+    return 'incomplete';
+  end if;
+
+  update public.daily_challenges
+  set status = 'published',
+      published_at = p_published_at
+  where id = p_challenge_id
+    and challenge_date = p_challenge_date
+    and status = 'generated'
+    and published_at is null;
+
+  if not found then
+    return 'conflict';
+  end if;
+
+  return 'published';
+end;
+$function$;
+
+revoke all on function public.publish_daily_challenge(uuid, date, timestamptz)
+  from public, anon, authenticated;
+
+grant execute on function public.publish_daily_challenge(uuid, date, timestamptz)
+  to service_role;
+
+comment on function public.publish_daily_challenge(uuid, date, timestamptz) is
+  'Service-role-only atomic publication gate for complete canonical Daily 5 challenges.';
+
 create table if not exists public.daily_question_review_runs (
   id uuid primary key default gen_random_uuid(),
   daily_challenge_id uuid not null references public.daily_challenges (id) on delete cascade,

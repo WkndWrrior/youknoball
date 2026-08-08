@@ -10,9 +10,13 @@ import {
 import type {
   AnswerOption,
   DailyChallengeQuestion,
-  QuestionSnapshot,
+  QuestionSnapshot as StoredQuestionSnapshot,
   SubmittedAnswers,
 } from "@/lib/dailyChallenge";
+import {
+  parseQuestionSnapshot,
+  type QuestionSnapshot as VerificationQuestionSnapshot,
+} from "@/lib/dailyQuestionReview";
 import { sortLeaderboardEntries, type LeaderboardEntry } from "@/lib/leaderboard";
 import {
   generateDailyChallengeQuestions,
@@ -101,14 +105,19 @@ const GENERATED_CHALLENGE_STATUS = "published";
 const GENERATED_CHALLENGE_METHOD = "auto";
 const GENERATED_CHALLENGE_RULES_VERSION = "v1";
 const GENERATED_CHALLENGE_STALE_AFTER_MS = 2 * 60 * 1000;
+const CANONICAL_REREAD_DELAYS_MS = [10, 25, 50] as const;
 
 type FiveItems<T> = [T, T, T, T, T];
+
+export type PreparedDailyChallengeQuestion = VerificationQuestionSnapshot & {
+  slot: number;
+};
 
 export type PreparedDailyChallengeDraft = {
   challengeId: string;
   challengeDate: string;
   questionIds: FiveItems<string>;
-  questions: FiveItems<GeneratedDailyChallengeQuestion>;
+  questions: FiveItems<PreparedDailyChallengeQuestion>;
 };
 
 type CanonicalChallengeReadState =
@@ -120,7 +129,7 @@ type CanonicalChallengeReadState =
   | {
       kind: "draft_ready";
       challengeId: string;
-      questions: FiveItems<GeneratedDailyChallengeQuestion>;
+      questions: FiveItems<PreparedDailyChallengeQuestion>;
     }
   | {
       kind: "missing";
@@ -134,6 +143,12 @@ type CanonicalChallengeReadState =
   | {
       kind: "retryable_generated";
       challengeId: string;
+      generatedAt: string;
+    }
+  | {
+      kind: "generation_in_progress";
+      challengeId: string;
+      generatedAt: string | null;
     };
 
 type CanonicalChallengeRow = {
@@ -145,7 +160,7 @@ type CanonicalChallengeRow = {
 
 type CanonicalChallengeItemRow = {
   slot: number;
-  question_snapshot: QuestionSnapshot;
+  question_snapshot: StoredQuestionSnapshot;
 };
 
 type PlayerStatsAttemptRow = {
@@ -163,7 +178,7 @@ type PlayerSportPerformanceAttemptRow = {
 type PlayerSportPerformanceItemRow = {
   daily_challenge_id: string;
   question_id: string;
-  question_snapshot: QuestionSnapshot;
+  question_snapshot: StoredQuestionSnapshot;
 };
 
 type PlayerSportQuizAttemptRow = {
@@ -272,14 +287,37 @@ function isGenerationInProgressChallenge(challenge: {
   return challenge.status === "generated" && challenge.published_at === null;
 }
 
+function isValidChallengeDate(challengeDate: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(challengeDate);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1 || month < 1 || month > 12 || day < 1) {
+    return false;
+  }
+
+  const parsed = new Date(0);
+  parsed.setUTCHours(0, 0, 0, 0);
+  parsed.setUTCFullYear(year, month - 1, day);
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
 function assertValidChallengeDate(challengeDate: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(challengeDate)) {
+  if (!isValidChallengeDate(challengeDate)) {
     throw new Error("Invalid challenge date. Expected format: YYYY-MM-DD.");
   }
 }
 
 function toChallengeQuestion(
-  snapshot: QuestionSnapshot,
+  snapshot: VerificationQuestionSnapshot,
   slot: number,
 ): DailyChallengeQuestion {
   return {
@@ -313,7 +351,7 @@ function normalizeCanonicalChallengeItem(
 
 function normalizeReusableQuestionCandidate(
   value: unknown,
-): QuestionSnapshot | null {
+): StoredQuestionSnapshot | null {
   if (!hasQuestionSnapshotShape(value) || !isRecord(value)) {
     return null;
   }
@@ -462,7 +500,9 @@ function isLaterAnsweredAt(candidate: string, current: string | null) {
   return candidate > current;
 }
 
-function hasCanonicalSnapshotShape(value: unknown): value is QuestionSnapshot {
+function hasCanonicalSnapshotShape(
+  value: unknown,
+): value is StoredQuestionSnapshot {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -484,27 +524,9 @@ function hasCanonicalSnapshotShape(value: unknown): value is QuestionSnapshot {
   );
 }
 
-function hasCompleteCanonicalSnapshotShape(
-  value: unknown,
-): value is QuestionSnapshot {
-  if (!hasCanonicalSnapshotShape(value) || !isRecord(value)) {
-    return false;
-  }
-
-  const sport = value.sport;
-  return (
-    (value.difficulty === "easy" ||
-      value.difficulty === "medium" ||
-      value.difficulty === "hard") &&
-    (typeof value.source_notes === "string" || value.source_notes === null) &&
-    isRecord(sport) &&
-    typeof sport.slug === "string"
-  );
-}
-
 function toCompleteDraftQuestions(
   rows: unknown[],
-): FiveItems<GeneratedDailyChallengeQuestion> | null {
+): FiveItems<PreparedDailyChallengeQuestion> | null {
   if (rows.length !== 5) {
     return null;
   }
@@ -517,18 +539,26 @@ function toCompleteDraftQuestions(
         !Number.isInteger(value.slot) ||
         value.slot < 1 ||
         value.slot > 5 ||
-        !hasCompleteCanonicalSnapshotShape(value.question_snapshot)
+        typeof value.question_id !== "string"
       ) {
         return null;
       }
 
+      const snapshot = parseQuestionSnapshot(
+        value.question_snapshot,
+        value.question_id,
+      );
+      if (!snapshot) {
+        return null;
+      }
+
       return {
-        ...value.question_snapshot,
+        ...snapshot,
         slot: value.slot,
       };
     })
     .filter(
-      (question): question is GeneratedDailyChallengeQuestion =>
+      (question): question is PreparedDailyChallengeQuestion =>
         question !== null,
     )
     .sort((left, right) => left.slot - right.slot);
@@ -543,7 +573,7 @@ function toCompleteDraftQuestions(
     return null;
   }
 
-  return normalized as FiveItems<GeneratedDailyChallengeQuestion>;
+  return normalized as FiveItems<PreparedDailyChallengeQuestion>;
 }
 
 function toPreparedDailyChallengeDraft(
@@ -580,7 +610,7 @@ async function getCanonicalChallengeForDate(
   if (isGenerationInProgressChallenge(canonicalChallenge)) {
     const { data: items, error: itemError } = await adminClient
       .from("daily_challenge_items")
-      .select("slot,question_snapshot")
+      .select("slot,question_id,question_snapshot")
       .eq("daily_challenge_id", canonicalChallenge.id)
       .order("slot", { ascending: true });
 
@@ -603,8 +633,13 @@ async function getCanonicalChallengeForDate(
       ? {
           kind: "retryable_generated",
           challengeId: canonicalChallenge.id,
+          generatedAt: canonicalChallenge.generated_at as string,
         }
-      : { kind: "bridge_fallback" };
+      : {
+          kind: "generation_in_progress",
+          challengeId: canonicalChallenge.id,
+          generatedAt: canonicalChallenge.generated_at,
+        };
   }
 
   if (canonicalChallenge.status !== "published" || !canonicalChallenge.published_at) {
@@ -613,7 +648,7 @@ async function getCanonicalChallengeForDate(
 
   const { data: items, error: itemError } = await adminClient
     .from("daily_challenge_items")
-    .select("slot,question_snapshot")
+    .select("slot,question_id,question_snapshot")
     .eq("daily_challenge_id", canonicalChallenge.id)
     .order("slot", { ascending: true });
 
@@ -644,19 +679,47 @@ async function getCanonicalChallengeForDate(
   };
 }
 
-function hasQuestionSnapshotShape(value: unknown): value is QuestionSnapshot {
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function rereadCanonicalChallengeWithBackoff(
+  challengeDate: string,
+  initialState: CanonicalChallengeReadState,
+) {
+  let state = initialState;
+
+  for (const delayMs of CANONICAL_REREAD_DELAYS_MS) {
+    if (state.kind !== "generation_in_progress") {
+      return state;
+    }
+
+    await delay(delayMs);
+    state = await getCanonicalChallengeForDate(challengeDate);
+  }
+
+  return state;
+}
+
+function hasQuestionSnapshotShape(
+  value: unknown,
+): value is StoredQuestionSnapshot {
   return hasCanonicalSnapshotShape(value);
 }
 
 function toGeneratedChallengeQuestions(
-  generatedQuestions: GeneratedDailyChallengeQuestion[],
+  generatedQuestions: PreparedDailyChallengeQuestion[],
 ) {
   return generatedQuestions.map((question) =>
     toChallengeQuestion(question, question.slot),
   );
 }
 
-function withoutSlot(question: GeneratedDailyChallengeQuestion): QuestionSnapshot {
+function withoutSlot(
+  question: GeneratedDailyChallengeQuestion,
+): StoredQuestionSnapshot {
   const { slot, ...snapshot } = question;
   void slot;
   return snapshot;
@@ -778,7 +841,7 @@ async function loadReusableQuestionCandidates(
 
   const candidates = (Array.isArray(data) ? data : [])
     .map(normalizeReusableQuestionCandidate)
-    .filter((row): row is QuestionSnapshot => row !== null);
+    .filter((row): row is StoredQuestionSnapshot => row !== null);
 
   return { kind: "ready" as const, candidates };
 }
@@ -854,20 +917,39 @@ async function persistGeneratedChallengeDraft(
 
 async function generateAndPersistCanonicalChallengeForDate(
   challengeDate: string,
-  staleChallengeId?: string,
+  staleChallenge?: {
+    challengeId: string;
+    generatedAt: string;
+  },
 ) {
   const adminClient = supabaseAdmin();
 
-  if (staleChallengeId) {
-    const { error: cleanupError } = await adminClient
+  if (staleChallenge) {
+    const { data: deletedChallenge, error: cleanupError } = await adminClient
       .from("daily_challenges")
       .delete()
-      .eq("id", staleChallengeId);
+      .eq("id", staleChallenge.challengeId)
+      .eq("status", "generated")
+      .is("published_at", null)
+      .eq("generated_at", staleChallenge.generatedAt)
+      .select("id")
+      .maybeSingle();
 
     if (isCanonicalStoreUnavailableError(cleanupError)) {
-      return isConflictError(cleanupError)
-        ? { kind: "conflict" as const }
-        : { kind: "bridge_fallback" as const };
+      if (!isConflictError(cleanupError)) {
+        return { kind: "bridge_fallback" as const };
+      }
+    }
+
+    if (
+      !isRecord(deletedChallenge) ||
+      deletedChallenge.id !== staleChallenge.challengeId
+    ) {
+      const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
+      return rereadCanonicalChallengeWithBackoff(
+        challengeDate,
+        canonicalChallenge,
+      );
     }
   }
 
@@ -898,12 +980,10 @@ async function generateAndPersistCanonicalChallengeForDate(
 
   if (persisted.kind === "conflict") {
     const refreshedChallenge = await getCanonicalChallengeForDate(challengeDate);
-
-    if (refreshedChallenge.kind === "retryable_generated") {
-      return getCanonicalChallengeForDate(challengeDate);
-    }
-
-    return refreshedChallenge;
+    return rereadCanonicalChallengeWithBackoff(
+      challengeDate,
+      refreshedChallenge,
+    );
   }
 
   if (persisted.kind === "draft_ready") {
@@ -915,31 +995,31 @@ async function generateAndPersistCanonicalChallengeForDate(
 
 async function publishCanonicalChallenge(
   challengeId: string,
+  challengeDate: string,
   publishedAt: string,
 ) {
   const adminClient = supabaseAdmin();
-  const { data, error } = await adminClient
-    .from("daily_challenges")
-    .update({
-      status: GENERATED_CHALLENGE_STATUS,
-      published_at: publishedAt,
-    })
-    .eq("id", challengeId)
-    .eq("status", "generated")
-    .is("published_at", null)
-    .select(CANONICAL_CHALLENGE_COLUMNS)
-    .maybeSingle();
+  const { data, error } = await adminClient.rpc("publish_daily_challenge", {
+    p_challenge_id: challengeId,
+    p_challenge_date: challengeDate,
+    p_published_at: publishedAt,
+  });
 
   if (isCanonicalStoreUnavailableError(error)) {
     return { kind: "bridge_fallback" as const };
   }
 
-  const challenge = normalizeCanonicalChallenge(data);
-  if (challenge?.status === "published" && challenge.published_at) {
+  if (data === "published") {
     return { kind: "published" as const };
   }
+  if (data === "conflict") {
+    return { kind: "conflict" as const };
+  }
+  if (data === "incomplete") {
+    return { kind: "incomplete" as const };
+  }
 
-  return { kind: "conflict" as const };
+  return { kind: "bridge_fallback" as const };
 }
 
 async function publishDraftForServing(
@@ -948,6 +1028,7 @@ async function publishDraftForServing(
 ): Promise<ServeableChallengeForDate> {
   const publication = await publishCanonicalChallenge(
     draft.challengeId,
+    challengeDate,
     new Date().toISOString(),
   );
 
@@ -959,7 +1040,10 @@ async function publishDraftForServing(
   }
 
   if (publication.kind === "conflict") {
-    const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
+    const canonicalChallenge = await rereadCanonicalChallengeWithBackoff(
+      challengeDate,
+      await getCanonicalChallengeForDate(challengeDate),
+    );
     if (canonicalChallenge.kind === "ready") {
       return {
         dailyChallengeId: canonicalChallenge.challengeId,
@@ -979,7 +1063,10 @@ export async function prepareDailyChallengeDraftForDate(
 ): Promise<PreparedDailyChallengeDraft> {
   assertValidChallengeDate(challengeDate);
 
-  const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
+  const canonicalChallenge = await rereadCanonicalChallengeWithBackoff(
+    challengeDate,
+    await getCanonicalChallengeForDate(challengeDate),
+  );
   if (canonicalChallenge.kind === "draft_ready") {
     return toPreparedDailyChallengeDraft(challengeDate, canonicalChallenge);
   }
@@ -990,7 +1077,10 @@ export async function prepareDailyChallengeDraftForDate(
       : canonicalChallenge.kind === "retryable_generated"
         ? await generateAndPersistCanonicalChallengeForDate(
             challengeDate,
-            canonicalChallenge.challengeId,
+            {
+              challengeId: canonicalChallenge.challengeId,
+              generatedAt: canonicalChallenge.generatedAt,
+            },
           )
         : canonicalChallenge;
 
@@ -1005,7 +1095,12 @@ async function resolveServeableChallengeForDate(
   client: ServerSupabaseClient,
   challengeDate: string,
 ): Promise<ServeableChallengeForDate> {
-  const canonicalChallenge = await getCanonicalChallengeForDate(challengeDate);
+  assertValidChallengeDate(challengeDate);
+
+  const canonicalChallenge = await rereadCanonicalChallengeWithBackoff(
+    challengeDate,
+    await getCanonicalChallengeForDate(challengeDate),
+  );
   if (canonicalChallenge.kind === "ready") {
     return {
       dailyChallengeId: canonicalChallenge.challengeId,
@@ -1035,7 +1130,10 @@ async function resolveServeableChallengeForDate(
 
     const generatedChallenge = await generateAndPersistCanonicalChallengeForDate(
       challengeDate,
-      canonicalChallenge.challengeId,
+      {
+        challengeId: canonicalChallenge.challengeId,
+        generatedAt: canonicalChallenge.generatedAt,
+      },
     );
 
     if (generatedChallenge.kind === "ready") {
@@ -1153,6 +1251,13 @@ async function resolveServeableChallengeForDate(
     }
 
     return { dailyChallengeId: null, questions: [] };
+  }
+
+  if (canonicalChallenge.kind === "generation_in_progress") {
+    return {
+      dailyChallengeId: null,
+      questions: await loadLegacyChallengeForDate(challengeDate),
+    };
   }
 
   return { dailyChallengeId: null, questions: [] };
@@ -1314,6 +1419,8 @@ export async function getOrCreateDailyAttemptStart(
 }
 
 export async function resolveCanonicalChallengeIdForDate(challengeDate: string) {
+  assertValidChallengeDate(challengeDate);
+
   const adminClient = supabaseAdmin();
   const { data, error } = await adminClient
     .from("daily_challenges")
