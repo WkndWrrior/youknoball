@@ -1,4 +1,5 @@
 import type { QuestionSnapshot } from "@/lib/dailyChallenge";
+import { parseQuestionSnapshot } from "@/lib/dailyQuestionReview";
 
 export const FIVE_QUESTION_DIFFICULTY_MIX = [
   "easy",
@@ -57,7 +58,7 @@ function getFreshnessScore(
     return 1_000;
   }
 
-  return Math.max(0, 100 - rank);
+  return Math.min(999, rank);
 }
 
 function getSelectionScore(
@@ -373,12 +374,21 @@ export function selectDailyChallengeReplacement({
   const flaggedQuestion = selection[flaggedSlot - 1];
   const selectedQuestionIds = new Set(selection.map((question) => question.id));
   const recentIds = Array.from(recentQuestionIds);
+  const candidateIdCounts = new Map<string, number>();
+  candidates.forEach((candidate) => {
+    candidateIdCounts.set(
+      candidate.id,
+      (candidateIdCounts.get(candidate.id) ?? 0) + 1,
+    );
+  });
   const eligibleCandidates = candidates
     .filter(
       (candidate) =>
+        candidateIdCounts.get(candidate.id) === 1 &&
         candidate.difficulty === flaggedQuestion.difficulty &&
         candidate.status === "ready" &&
         candidate.eligible_for_daily &&
+        parseQuestionSnapshot(candidate, candidate.id) !== null &&
         !selectedQuestionIds.has(candidate.id),
     )
     .sort((left, right) => left.id.localeCompare(right.id));
