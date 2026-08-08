@@ -37,33 +37,20 @@ function formatIsoDateFromParts(parts: {
   ].join("-");
 }
 
-function getPreviousChicagoDate(parts: {
+function offsetCalendarDate(parts: {
   year: number;
   month: number;
   day: number;
-}) {
+}, dayOffset: number) {
   const chicagoMiddayUtc = Date.UTC(parts.year, parts.month - 1, parts.day, 12);
-  const previousDay = new Date(chicagoMiddayUtc - 24 * 60 * 60 * 1000);
+  const offsetDate = new Date(
+    chicagoMiddayUtc + dayOffset * 24 * 60 * 60 * 1000,
+  );
 
   return {
-    year: previousDay.getUTCFullYear(),
-    month: previousDay.getUTCMonth() + 1,
-    day: previousDay.getUTCDate(),
-  };
-}
-
-function getNextChicagoDate(parts: {
-  year: number;
-  month: number;
-  day: number;
-}) {
-  const chicagoMiddayUtc = Date.UTC(parts.year, parts.month - 1, parts.day, 12);
-  const nextDay = new Date(chicagoMiddayUtc + 24 * 60 * 60 * 1000);
-
-  return {
-    year: nextDay.getUTCFullYear(),
-    month: nextDay.getUTCMonth() + 1,
-    day: nextDay.getUTCDate(),
+    year: offsetDate.getUTCFullYear(),
+    month: offsetDate.getUTCMonth() + 1,
+    day: offsetDate.getUTCDate(),
   };
 }
 
@@ -71,7 +58,7 @@ export function getTodayIsoDate() {
   const chicagoNow = getChicagoDateTimeParts(new Date());
 
   if (chicagoNow.hour === 0 && chicagoNow.minute === 0) {
-    return formatIsoDateFromParts(getPreviousChicagoDate(chicagoNow));
+    return formatIsoDateFromParts(offsetCalendarDate(chicagoNow, -1));
   }
 
   return formatIsoDateFromParts(chicagoNow);
@@ -89,7 +76,7 @@ export function getNightlyReviewSchedule(now: Date): {
 
   return {
     shouldRun: chicagoNow.hour === NIGHTLY_REVIEW_HOUR,
-    challengeDate: formatIsoDateFromParts(getNextChicagoDate(chicagoNow)),
+    challengeDate: formatIsoDateFromParts(offsetCalendarDate(chicagoNow, 1)),
   };
 }
 

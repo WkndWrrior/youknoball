@@ -53,6 +53,15 @@ describe("getNightlyReviewSchedule", () => {
     });
   });
 
+  it("advances from February 28 to leap day", () => {
+    expect(
+      getNightlyReviewSchedule(new Date("2028-02-29T00:20:00.000Z")),
+    ).toEqual({
+      shouldRun: true,
+      challengeDate: "2028-02-29",
+    });
+  });
+
   it("rejects an invalid Date with a clear error", () => {
     expect(() => getNightlyReviewSchedule(new Date("not-a-date"))).toThrow(
       new RangeError("Nightly review schedule requires a valid Date."),
