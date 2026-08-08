@@ -1,14 +1,25 @@
+import { readFileSync } from "node:fs";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   collectSavedSourceEvidence,
+  createPinnedSourceLookup,
   extractApprovedSourceUrls,
   fetchSourceEvidence,
+  isPublicSourceAddress,
+  resolvePublicSourceAddresses,
   validateSourceUrl,
+  type PinnedSourceFetch,
+  type SourceDnsResolver,
   type SourceFetch,
 } from "@/lib/server/dailyQuestionSourceFetcher";
 
 function asFetch(implementation: SourceFetch): SourceFetch {
+  return vi.fn(implementation);
+}
+
+function asPinnedFetch(implementation: PinnedSourceFetch): PinnedSourceFetch {
   return vi.fn(implementation);
 }
 
@@ -86,6 +97,8 @@ describe("approved question source URLs", () => {
     ["private IPv4", "https://10.0.0.1/example"],
     ["IPv6", "https://[::1]/example"],
     ["trailing-dot host", "https://www.ncaa.com./example"],
+    ["obfuscated absolute URL", "https:////www.ncaa.com:443/path"],
+    ["percent-obfuscated hostname", "https://%77%77%77.ncaa.com/path"],
     ["overlong URL", `https://www.ncaa.com/${"a".repeat(2_100)}`],
   ])("rejects %s source URLs", (_label, url) => {
     expect(validateSourceUrl(url)).toMatchObject({ ok: false });
@@ -188,6 +201,184 @@ describe("approved question source URLs", () => {
   });
 });
 
+describe("source fetch runtime requirements", () => {
+  it("declares Undici and a Node runtime compatible with local Node 22", () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),
+    ) as {
+      dependencies?: Record<string, string>;
+      engines?: { node?: string };
+    };
+    const packageLock = JSON.parse(
+      readFileSync(
+        new URL("../../../../package-lock.json", import.meta.url),
+        "utf8",
+      ),
+    ) as {
+      packages?: Record<
+        string,
+        {
+          dependencies?: Record<string, string>;
+          engines?: { node?: string };
+        }
+      >;
+    };
+
+    expect(packageJson.dependencies?.undici).toBe("^7.29.0");
+    expect(packageJson.engines?.node).toBe(">=20.18.1");
+    expect(packageLock.packages?.[""]?.dependencies?.undici).toBe("^7.29.0");
+    expect(packageLock.packages?.[""]?.engines?.node).toBe(">=20.18.1");
+
+    const minimum = [20, 18, 1];
+    const localNode22 = [22, 0, 0];
+    const isAtLeastMinimum = (version: number[]) => {
+      const firstDifference = version.findIndex(
+        (part, index) => part !== minimum[index],
+      );
+      return (
+        firstDifference === -1 ||
+        version[firstDifference] > minimum[firstDifference]
+      );
+    };
+    expect(isAtLeastMinimum(localNode22)).toBe(true);
+    expect(
+      isAtLeastMinimum(process.versions.node.split(".").map(Number)),
+    ).toBe(true);
+  });
+});
+
+describe("public source DNS resolution and pinning", () => {
+  it.each([
+    "8.8.8.8",
+    "93.184.216.34",
+    "2001:4860:4860::8888",
+    "2606:4700:4700::1111",
+    "::ffff:8.8.8.8",
+  ])("accepts public address %s", (address) => {
+    expect(isPublicSourceAddress(address)).toBe(true);
+  });
+
+  it.each([
+    "0.0.0.0",
+    "10.0.0.1",
+    "100.64.0.1",
+    "127.0.0.1",
+    "169.254.1.1",
+    "172.16.0.1",
+    "192.0.0.1",
+    "192.0.2.1",
+    "192.88.99.1",
+    "192.168.1.1",
+    "198.18.0.1",
+    "198.51.100.1",
+    "203.0.113.1",
+    "224.0.0.1",
+    "240.0.0.1",
+    "255.255.255.255",
+    "::",
+    "::1",
+    "::ffff:10.0.0.1",
+    "::ffff:192.168.1.1",
+    "::ffff:0:8.8.8.8",
+    "64:ff9b::192.168.1.1",
+    "100::1",
+    "2001::1",
+    "2001:db8::1",
+    "3fff::1",
+    "4000::1",
+    "8000::1",
+    "2620:4f:8000::1",
+    "fc00::1",
+    "fd00::1",
+    "fe80::1",
+    "ff02::1",
+  ])("rejects non-public address %s", (address) => {
+    expect(isPublicSourceAddress(address)).toBe(false);
+  });
+
+  it("resolves and deduplicates public A and AAAA records", async () => {
+    const resolver: SourceDnsResolver = vi.fn(async () => [
+      { address: "93.184.216.34", family: 4 as const },
+      { address: "2606:4700:4700::1111", family: 6 as const },
+      { address: "93.184.216.34", family: 4 as const },
+    ]);
+
+    await expect(
+      resolvePublicSourceAddresses("www.ncaa.com", resolver),
+    ).resolves.toEqual({
+      ok: true,
+      addresses: [
+        { address: "93.184.216.34", family: 4 },
+        { address: "2606:4700:4700::1111", family: 6 },
+      ],
+    });
+    expect(resolver).toHaveBeenCalledWith("www.ncaa.com");
+  });
+
+  it("rejects a mixed public and private DNS answer set", async () => {
+    const resolver: SourceDnsResolver = async () => [
+      { address: "93.184.216.34", family: 4 },
+      { address: "10.0.0.1", family: 4 },
+    ];
+
+    await expect(
+      resolvePublicSourceAddresses("www.ncaa.com", resolver),
+    ).resolves.toMatchObject({ ok: false, reason: "non_public_address" });
+  });
+
+  it("returns structured failures for DNS errors and empty answers", async () => {
+    const failedResolver: SourceDnsResolver = async () => {
+      throw new Error("lookup unavailable");
+    };
+    const emptyResolver: SourceDnsResolver = async () => [];
+
+    await expect(
+      resolvePublicSourceAddresses("www.ncaa.com", failedResolver),
+    ).resolves.toMatchObject({ ok: false, reason: "dns_resolution_failed" });
+    await expect(
+      resolvePublicSourceAddresses("www.ncaa.com", emptyResolver),
+    ).resolves.toEqual({ ok: false, reason: "dns_no_addresses" });
+  });
+
+  it("pins lookup responses to the validated hostname and address set", async () => {
+    const lookup = createPinnedSourceLookup("www.ncaa.com", [
+      { address: "93.184.216.34", family: 4 as const },
+      { address: "2606:4700:4700::1111", family: 6 as const },
+    ]);
+
+    const all = await new Promise<unknown>((resolve, reject) => {
+      lookup("www.ncaa.com", { all: true, family: 0 }, (error, addresses) => {
+        if (error) reject(error);
+        else resolve(addresses);
+      });
+    });
+    expect(all).toEqual([
+      { address: "93.184.216.34", family: 4 as const },
+      { address: "2606:4700:4700::1111", family: 6 as const },
+    ]);
+
+    const ipv6 = await new Promise((resolve, reject) => {
+      lookup("www.ncaa.com", { family: 6 }, (error, address, family) => {
+        if (error) reject(error);
+        else resolve({ address, family });
+      });
+    });
+    expect(ipv6).toEqual({
+      address: "2606:4700:4700::1111",
+      family: 6,
+    });
+
+    await expect(
+      new Promise((resolve, reject) => {
+        lookup("attacker.test", { family: 4 }, (error, address, family) => {
+          if (error) reject(error);
+          else resolve({ address, family });
+        });
+      }),
+    ).rejects.toThrow(/hostname/i);
+  });
+});
+
 describe("saved source evidence fetching", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -228,6 +419,73 @@ describe("saved source evidence fetching", () => {
     );
   });
 
+  it("uses resolved public addresses and closes the pinned production fetch", async () => {
+    const close = vi.fn(async () => undefined);
+    const resolver: SourceDnsResolver = vi.fn(async () => [
+      { address: "93.184.216.34", family: 4 as const },
+      { address: "2606:4700:4700::1111", family: 6 as const },
+    ]);
+    const pinnedFetch = asPinnedFetch(async (_input, _init, pin) => {
+      expect(pin.hostname).toBe("www.ncaa.com");
+      expect(pin.addresses).toEqual([
+        { address: "93.184.216.34", family: 4 },
+        { address: "2606:4700:4700::1111", family: 6 },
+      ]);
+      return {
+        response: htmlResponse("<main>Verified fact</main>"),
+        close,
+      };
+    });
+
+    await expect(
+      fetchSourceEvidence("https://www.ncaa.com/archive", {
+        resolver,
+        pinnedFetchImpl: pinnedFetch,
+      }),
+    ).resolves.toMatchObject({ status: "fetched", excerpt: "Verified fact" });
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(pinnedFetch).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects non-public DNS answers before the production fetch", async () => {
+    const resolver: SourceDnsResolver = async () => [
+      { address: "10.0.0.1", family: 4 },
+    ];
+    const pinnedFetch = asPinnedFetch(async () => {
+      throw new Error("must not fetch");
+    });
+
+    await expect(
+      fetchSourceEvidence("https://www.ncaa.com/archive", {
+        resolver,
+        pinnedFetchImpl: pinnedFetch,
+      }),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      reason: "non_public_address",
+    });
+    expect(pinnedFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns a structured fetch error when production DNS resolution fails", async () => {
+    const resolver: SourceDnsResolver = async () => {
+      throw new Error("resolver unavailable");
+    };
+
+    await expect(
+      fetchSourceEvidence("https://www.ncaa.com/archive", {
+        resolver,
+        pinnedFetchImpl: asPinnedFetch(async () => {
+          throw new Error("must not fetch");
+        }),
+      }),
+    ).resolves.toMatchObject({
+      status: "fetch_error",
+      error: expect.stringMatching(/DNS resolution failed/i),
+    });
+  });
+
   it("resolves and validates every relative redirect", async () => {
     const fetchMock = asFetch(async (input) => {
       if (input === "https://www.ncaa.com/start") {
@@ -251,6 +509,80 @@ describe("saved source evidence fetching", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("re-resolves and pins each production redirect hostname independently", async () => {
+    const resolver: SourceDnsResolver = vi.fn(async (hostname) =>
+      hostname === "www.ncaa.com"
+        ? [{ address: "93.184.216.34", family: 4 as const }]
+        : [{ address: "8.8.8.8", family: 4 as const }],
+    );
+    const closeFirst = vi.fn(async () => undefined);
+    const closeSecond = vi.fn(async () => undefined);
+    const pinnedFetch = asPinnedFetch(async (input, _init, pin) => {
+      if (input === "https://www.ncaa.com/start") {
+        expect(pin.hostname).toBe("www.ncaa.com");
+        return {
+          response: new Response(null, {
+            status: 302,
+            headers: { location: "https://www.espn.com/archive" },
+          }),
+          close: closeFirst,
+        };
+      }
+      expect(pin.hostname).toBe("www.espn.com");
+      expect(pin.addresses).toEqual([{ address: "8.8.8.8", family: 4 }]);
+      return {
+        response: htmlResponse("<main>Verified redirect fact</main>"),
+        close: closeSecond,
+      };
+    });
+
+    await expect(
+      fetchSourceEvidence("https://www.ncaa.com/start", {
+        resolver,
+        pinnedFetchImpl: pinnedFetch,
+      }),
+    ).resolves.toMatchObject({
+      status: "fetched",
+      finalUrl: "https://www.espn.com/archive",
+    });
+    expect(resolver).toHaveBeenNthCalledWith(1, "www.ncaa.com");
+    expect(resolver).toHaveBeenNthCalledWith(2, "www.espn.com");
+    expect(closeFirst).toHaveBeenCalledTimes(1);
+    expect(closeSecond).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a redirect hop when its DNS answers include a private address", async () => {
+    const resolver: SourceDnsResolver = vi.fn(async (hostname) =>
+      hostname === "www.ncaa.com"
+        ? [{ address: "93.184.216.34", family: 4 as const }]
+        : [
+            { address: "8.8.8.8", family: 4 as const },
+            { address: "192.168.1.1", family: 4 as const },
+          ],
+    );
+    const close = vi.fn(async () => undefined);
+    const pinnedFetch = asPinnedFetch(async () => ({
+      response: new Response(null, {
+        status: 302,
+        headers: { location: "https://www.espn.com/archive" },
+      }),
+      close,
+    }));
+
+    await expect(
+      fetchSourceEvidence("https://www.ncaa.com/start", {
+        resolver,
+        pinnedFetchImpl: pinnedFetch,
+      }),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      reason: "non_public_address",
+    });
+    expect(resolver).toHaveBeenCalledTimes(2);
+    expect(pinnedFetch).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects a redirect without a usable Location header", async () => {
     const fetchMock = asFetch(async () =>
       new Response(null, { status: 302 }),
@@ -272,6 +604,23 @@ describe("saved source evidence fetching", () => {
     await expect(
       fetchSourceEvidence("https://www.ncaa.com/start", { fetchImpl: fetchMock }),
     ).resolves.toMatchObject({ status: "rejected", reason: "invalid_redirect" });
+  });
+
+  it("rejects an obfuscated absolute redirect before its port can normalize away", async () => {
+    const fetchMock = asFetch(async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "https:////www.ncaa.com:443/path" },
+      }),
+    );
+
+    await expect(
+      fetchSourceEvidence("https://www.ncaa.com/start", { fetchImpl: fetchMock }),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      reason: "disallowed_redirect",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -490,6 +839,19 @@ describe("saved source evidence fetching", () => {
     });
   });
 
+  it("decodes authoritative text using its declared non-UTF-8 charset", async () => {
+    const fetchMock = asFetch(async () =>
+      new Response(Uint8Array.from([0x43, 0x61, 0x66, 0xe9]), {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=iso-8859-1" },
+      }),
+    );
+
+    await expect(
+      fetchSourceEvidence("https://www.espn.com/story", { fetchImpl: fetchMock }),
+    ).resolves.toMatchObject({ status: "fetched", excerpt: "Café" });
+  });
+
   it("rejects unsupported content types", async () => {
     const fetchMock = asFetch(async () =>
       new Response('{"answer":true}', {
@@ -659,5 +1021,28 @@ describe("saved source evidence fetching", () => {
         requestedUrl: "https://www.espn.com/fail",
       }),
     ]);
+  });
+
+  it("limits saved-source fetch concurrency while preserving output order", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const fetchMock = asFetch(async (input) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return htmlResponse(`<main>${new URL(input).pathname}</main>`);
+    });
+    const urls = Array.from(
+      { length: 10 },
+      (_, index) => `https://www.ncaa.com/source-${index}`,
+    );
+
+    const results = await collectSavedSourceEvidence(urls.join(" "), {
+      fetchImpl: fetchMock,
+    });
+
+    expect(maxActive).toBe(4);
+    expect(results.map((result) => result.requestedUrl)).toEqual(urls);
   });
 });
