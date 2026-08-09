@@ -720,7 +720,7 @@ export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
     typeof acquisition.reservationId !== "string" ||
     acquisition.reservationId.trim().length === 0 ||
     !isNonnegativeSafeInteger(acquisition.reservedMicrodollars) ||
-    acquisition.reservedMicrodollars < requiredReservationMicrodollars
+    acquisition.reservedMicrodollars !== requiredReservationMicrodollars
   ) {
     return {
       budget: {

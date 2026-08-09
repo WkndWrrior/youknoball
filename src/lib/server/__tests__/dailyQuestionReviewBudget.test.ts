@@ -799,6 +799,45 @@ describe("budget preflight", () => {
     });
   });
 
+  it("rejects an acquired reservation above the remaining monthly allowance", async () => {
+    const acquireReservation = vi.fn(async () => ({
+      acquired: true,
+      reservationId: "reservation-over-monthly-allowance",
+      reservedMicrodollars: 2_520_001,
+    }));
+    const operation = vi.fn(async () => "called");
+
+    const result = await runWithDailyQuestionReviewBudgetPreflight({
+      model: "gpt-5.6-terra",
+      now,
+      monthlyBudgetCents: 1_000,
+      records: [
+        {
+          id: "existing-spend",
+          status: "completed",
+          occurredAt: "2026-08-10T12:00:00.000Z",
+          estimatedCostMicrodollars: 7_480_000,
+        },
+      ],
+      acquireReservation,
+      operation,
+    });
+
+    expect(acquireReservation).toHaveBeenCalledTimes(1);
+    expect(operation).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      value: null,
+      budget: {
+        allowed: false,
+        spentMicrodollars: 7_480_000,
+        limitMicrodollars: 10_000_000,
+        remainingMicrodollars: 2_520_000,
+        reservedMicrodollars: 2_520_000,
+        reason: "atomic_reservation_invalid",
+      },
+    });
+  });
+
   it.each([
     ["non-object", null],
     [
@@ -815,6 +854,14 @@ describe("budget preflight", () => {
         acquired: true,
         reservationId: "reservation-low",
         reservedMicrodollars: 2_519_999,
+      },
+    ],
+    [
+      "higher persisted reservation",
+      {
+        acquired: true,
+        reservationId: "reservation-high",
+        reservedMicrodollars: 2_520_001,
       },
     ],
     [
@@ -850,7 +897,7 @@ describe("budget preflight", () => {
     const acquireReservation = vi.fn(async () => ({
       acquired: true,
       reservationId: "  reservation-valid  ",
-      reservedMicrodollars: 2_600_000,
+      reservedMicrodollars: 2_520_000,
     }));
     const operation = vi.fn(async () => "verified");
 
@@ -880,7 +927,7 @@ describe("budget preflight", () => {
       model: "gpt-5.6-terra",
       modelDerivedReservationMicrodollars: 2_520_000,
       requiredReservationMicrodollars: 2_520_000,
-      reservedMicrodollars: 2_600_000,
+      reservedMicrodollars: 2_520_000,
       monthRange: {
         startInclusive: "2026-08-01T05:00:00.000Z",
         endExclusive: "2026-09-01T05:00:00.000Z",

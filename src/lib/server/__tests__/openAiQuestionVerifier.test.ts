@@ -563,6 +563,59 @@ describe("OpenAI question verifier", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("reports an incomplete response with null usage and unavailable accounting", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "super-secret-value");
+    const body = responseBody(finding()) as Record<string, unknown>;
+    body.status = "incomplete";
+    body.usage = null;
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+
+    const error = await captureVerifierError(
+      createVerifier(fetchMock).verifyQuestion(input),
+    );
+
+    expect(error).toMatchObject({
+      code: "incomplete",
+      message: "OpenAI could not complete the verification response",
+      accounting: {
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedInputTokens: 0,
+          cacheWriteTokens: 0,
+        },
+      },
+    });
+    expect(error.message).not.toContain("super-secret-value");
+    expect(error.message.length).toBeLessThan(700);
+  });
+
+  it("reports bounded redacted failure diagnostics with null usage and unavailable accounting", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "super-secret-value");
+    const body = responseBody(finding()) as Record<string, unknown>;
+    body.status = "failed";
+    body.usage = null;
+    body.error = {
+      message: `upstream super-secret-value ${"detail ".repeat(1_000)}`,
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+
+    const error = await captureVerifierError(
+      createVerifier(fetchMock).verifyQuestion(input),
+    );
+
+    expect(error.code).toBe("response_failed");
+    expect(error.message).toContain("upstream [redacted]");
+    expect(error.message).not.toContain("super-secret-value");
+    expect(error.message.length).toBeLessThan(700);
+    expect(error.accounting.usage).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedInputTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+
   it("preserves charged accounting for every parsed-response rejection path", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const options = {

@@ -545,7 +545,7 @@ function parseTokenCount(value: unknown): { value: number; valid: boolean } {
 
 function parseUsage(value: unknown): ParsedUsage {
   if (!isRecord(value)) {
-    return { usage: emptyUsage(), valid: value === undefined };
+    return { usage: emptyUsage(), valid: value === undefined || value === null };
   }
   const details = isRecord(value.input_tokens_details)
     ? value.input_tokens_details
