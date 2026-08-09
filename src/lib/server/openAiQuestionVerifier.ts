@@ -147,6 +147,7 @@ export interface OpenAiQuestionVerifierUsage {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens: number;
 }
 
 export interface OpenAiQuestionVerifierSource {
@@ -161,6 +162,12 @@ export interface OpenAiQuestionVerifierResult {
   sources: OpenAiQuestionVerifierSource[];
 }
 
+export interface OpenAiQuestionVerifierAccounting {
+  usage: OpenAiQuestionVerifierUsage;
+  webSearchCalls: number;
+  sources: OpenAiQuestionVerifierSource[];
+}
+
 export interface OpenAiQuestionVerifier {
   verifyQuestion: (
     input: OpenAiQuestionVerifierInput,
@@ -168,12 +175,14 @@ export interface OpenAiQuestionVerifier {
 }
 
 export type OpenAiQuestionVerifierErrorCode =
+  | "accounting_overflow"
   | "api_error"
   | "excessive_web_search_calls"
   | "http_error"
   | "incomplete"
   | "invalid_finding"
   | "invalid_input"
+  | "invalid_usage"
   | "malformed_output"
   | "missing_api_key"
   | "missing_output_text"
@@ -190,17 +199,23 @@ export class OpenAiQuestionVerifierError extends Error {
   readonly code: OpenAiQuestionVerifierErrorCode;
   readonly retryable: boolean;
   readonly httpStatus: number | null;
+  readonly accounting: OpenAiQuestionVerifierAccounting;
 
   constructor(
     code: OpenAiQuestionVerifierErrorCode,
     message: string,
-    options: { retryable?: boolean; httpStatus?: number | null } = {},
+    options: {
+      retryable?: boolean;
+      httpStatus?: number | null;
+      accounting?: OpenAiQuestionVerifierAccounting;
+    } = {},
   ) {
     super(message);
     this.name = "OpenAiQuestionVerifierError";
     this.code = code;
     this.retryable = options.retryable ?? false;
     this.httpStatus = options.httpStatus ?? null;
+    this.accounting = options.accounting ?? emptyAccounting();
   }
 }
 
@@ -223,6 +238,24 @@ interface ParsedResponse {
   usage: OpenAiQuestionVerifierUsage;
   webSearchCalls: number;
   sources: OpenAiQuestionVerifierSource[];
+}
+
+interface ParsedUsage {
+  usage: OpenAiQuestionVerifierUsage;
+  valid: boolean;
+}
+
+function emptyUsage(): OpenAiQuestionVerifierUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteTokens: 0,
+  };
+}
+
+function emptyAccounting(): OpenAiQuestionVerifierAccounting {
+  return { usage: emptyUsage(), webSearchCalls: 0, sources: [] };
 }
 
 function byteLength(value: string): number {
@@ -492,23 +525,54 @@ function buildPrompt(
   return `${prefix}${JSON.stringify(evidence)}`;
 }
 
-function validTokenCount(value: unknown): number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : 0;
+function parseTokenCount(value: unknown): { value: number; valid: boolean } {
+  if (value === undefined) {
+    return { value: 0, valid: true };
+  }
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    return { value: 0, valid: false };
+  }
+  if (!Number.isSafeInteger(value)) {
+    return { value: Number.MAX_SAFE_INTEGER, valid: false };
+  }
+  return { value, valid: true };
 }
 
-function parseUsage(value: unknown): OpenAiQuestionVerifierUsage {
+function parseUsage(value: unknown): ParsedUsage {
   if (!isRecord(value)) {
-    return { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
+    return { usage: emptyUsage(), valid: value === undefined };
   }
   const details = isRecord(value.input_tokens_details)
     ? value.input_tokens_details
     : null;
+  const detailsValid =
+    value.input_tokens_details === undefined || details !== null;
+  const input = parseTokenCount(value.input_tokens);
+  const output = parseTokenCount(value.output_tokens);
+  const cached = parseTokenCount(details?.cached_tokens);
+  const cacheWrite = parseTokenCount(details?.cache_write_tokens);
+  const cacheDetailSum = cached.value + cacheWrite.value;
+  const cacheDetailsValid =
+    Number.isSafeInteger(cacheDetailSum) && cacheDetailSum <= input.value;
   return {
-    inputTokens: validTokenCount(value.input_tokens),
-    outputTokens: validTokenCount(value.output_tokens),
-    cachedInputTokens: validTokenCount(details?.cached_tokens),
+    usage: {
+      inputTokens: input.value,
+      outputTokens: output.value,
+      cachedInputTokens: cached.value,
+      cacheWriteTokens: cacheWrite.value,
+    },
+    valid:
+      input.valid &&
+      output.valid &&
+      detailsValid &&
+      cached.valid &&
+      cacheWrite.valid &&
+      cacheDetailsValid,
   };
 }
 
@@ -525,13 +589,6 @@ function collectSearchMetadata(output: unknown): {
       total + (isRecord(item) && item.type === "web_search_call" ? 1 : 0),
     0,
   );
-  if (calls > MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE) {
-    throw new OpenAiQuestionVerifierError(
-      "excessive_web_search_calls",
-      "OpenAI response exceeded the reserved web-search-call limit",
-      { retryable: true },
-    );
-  }
   const sources: OpenAiQuestionVerifierSource[] = [];
   const urls = new Set<string>();
   const addSource = (urlValue: unknown, titleValue: unknown) => {
@@ -662,6 +719,25 @@ function parseJsonBody(text: string): unknown {
   }
 }
 
+function extractResponseAccounting(value: unknown): {
+  accounting: OpenAiQuestionVerifierAccounting;
+  usageValid: boolean;
+} {
+  if (!isRecord(value)) {
+    return { accounting: emptyAccounting(), usageValid: true };
+  }
+  const usage = parseUsage(value.usage);
+  const search = collectSearchMetadata(value.output);
+  return {
+    accounting: {
+      usage: usage.usage,
+      webSearchCalls: search.calls,
+      sources: search.sources,
+    },
+    usageValid: usage.valid,
+  };
+}
+
 function parseCompletedResponse(
   value: unknown,
   savedEvidenceUrls: ReadonlySet<string>,
@@ -675,25 +751,51 @@ function parseCompletedResponse(
       { retryable: true },
     );
   }
+  const extracted = extractResponseAccounting(value);
+  const { accounting } = extracted;
+  if (!extracted.usageValid) {
+    throw new OpenAiQuestionVerifierError(
+      "invalid_usage",
+      "OpenAI response contained invalid usage accounting",
+      { retryable: true, accounting },
+    );
+  }
+  if (
+    accounting.webSearchCalls > MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE
+  ) {
+    throw new OpenAiQuestionVerifierError(
+      "excessive_web_search_calls",
+      "OpenAI response exceeded the reserved web-search-call limit",
+      { retryable: true, accounting },
+    );
+  }
   if (value.status !== "completed") {
     if (value.status === "incomplete") {
       throw new OpenAiQuestionVerifierError(
         "incomplete",
         "OpenAI could not complete the verification response",
-        { retryable: true },
+        { retryable: true, accounting },
       );
     }
     if (value.status === "failed") {
+      const detail = isRecord(value.error)
+        ? boundedErrorDetail(
+            String(value.error.message ?? ""),
+            apiKey,
+          )
+        : "";
       throw new OpenAiQuestionVerifierError(
         "response_failed",
-        "OpenAI reported a failed verification response",
-        { retryable: true },
+        `OpenAI reported a failed verification response${
+          detail ? `: ${detail}` : ""
+        }`,
+        { retryable: true, accounting },
       );
     }
     throw new OpenAiQuestionVerifierError(
       "unexpected_status",
       "OpenAI response was not in the completed state",
-      { retryable: true },
+      { retryable: true, accounting },
     );
   }
   if (isRecord(value.error)) {
@@ -703,7 +805,7 @@ function parseCompletedResponse(
         String(value.error.message ?? "unknown error"),
         apiKey,
       )}`,
-      { retryable: true },
+      { retryable: true, accounting },
     );
   }
   const output = value.output;
@@ -719,13 +821,14 @@ function parseCompletedResponse(
     throw new OpenAiQuestionVerifierError(
       "refused",
       "OpenAI refused the verification request",
+      { accounting },
     );
   }
   if (!outputText.text) {
     throw new OpenAiQuestionVerifierError(
       "missing_output_text",
       "OpenAI response did not include output text",
-      { retryable: true },
+      { retryable: true, accounting },
     );
   }
 
@@ -736,7 +839,7 @@ function parseCompletedResponse(
     throw new OpenAiQuestionVerifierError(
       "malformed_output",
       "OpenAI output was not valid JSON",
-      { retryable: true },
+      { retryable: true, accounting },
     );
   }
   const finding = parseModelFinding(rawFinding, allowedEvidenceUrls);
@@ -744,12 +847,12 @@ function parseCompletedResponse(
     throw new OpenAiQuestionVerifierError(
       "invalid_finding",
       "OpenAI output did not match the verification finding contract",
-      { retryable: true },
+      { retryable: true, accounting },
     );
   }
   return {
     finding,
-    usage: parseUsage(value.usage),
+    usage: accounting.usage,
     webSearchCalls: search.calls,
     sources: search.sources,
   };
@@ -805,17 +908,6 @@ function getModel(): string {
   return configured;
 }
 
-function addUsage(
-  first: OpenAiQuestionVerifierUsage,
-  second: OpenAiQuestionVerifierUsage,
-): OpenAiQuestionVerifierUsage {
-  return {
-    inputTokens: first.inputTokens + second.inputTokens,
-    outputTokens: first.outputTokens + second.outputTokens,
-    cachedInputTokens: first.cachedInputTokens + second.cachedInputTokens,
-  };
-}
-
 function mergeSources(
   first: readonly OpenAiQuestionVerifierSource[],
   second: readonly OpenAiQuestionVerifierSource[],
@@ -827,6 +919,97 @@ function mergeSources(
     }
   }
   return [...byUrl.values()];
+}
+
+function responseAccounting(
+  response: ParsedResponse,
+): OpenAiQuestionVerifierAccounting {
+  return {
+    usage: response.usage,
+    webSearchCalls: response.webSearchCalls,
+    sources: response.sources,
+  };
+}
+
+function saturatingAdd(
+  first: number,
+  second: number,
+): { value: number; overflow: boolean } {
+  if (
+    !Number.isSafeInteger(first) ||
+    !Number.isSafeInteger(second) ||
+    first < 0 ||
+    second < 0 ||
+    second > Number.MAX_SAFE_INTEGER - first
+  ) {
+    return { value: Number.MAX_SAFE_INTEGER, overflow: true };
+  }
+  return { value: first + second, overflow: false };
+}
+
+function combineAccounting(
+  first: OpenAiQuestionVerifierAccounting,
+  second: OpenAiQuestionVerifierAccounting,
+): { accounting: OpenAiQuestionVerifierAccounting; overflow: boolean } {
+  const input = saturatingAdd(
+    first.usage.inputTokens,
+    second.usage.inputTokens,
+  );
+  const output = saturatingAdd(
+    first.usage.outputTokens,
+    second.usage.outputTokens,
+  );
+  const cached = saturatingAdd(
+    first.usage.cachedInputTokens,
+    second.usage.cachedInputTokens,
+  );
+  const cacheWrite = saturatingAdd(
+    first.usage.cacheWriteTokens,
+    second.usage.cacheWriteTokens,
+  );
+  const webSearchCalls = saturatingAdd(
+    first.webSearchCalls,
+    second.webSearchCalls,
+  );
+  return {
+    accounting: {
+      usage: {
+        inputTokens: input.value,
+        outputTokens: output.value,
+        cachedInputTokens: cached.value,
+        cacheWriteTokens: cacheWrite.value,
+      },
+      webSearchCalls: webSearchCalls.value,
+      sources: mergeSources(first.sources, second.sources),
+    },
+    overflow:
+      input.overflow ||
+      output.overflow ||
+      cached.overflow ||
+      cacheWrite.overflow ||
+      webSearchCalls.overflow,
+  };
+}
+
+function accountingOverflowError(
+  accounting: OpenAiQuestionVerifierAccounting,
+): OpenAiQuestionVerifierError {
+  return new OpenAiQuestionVerifierError(
+    "accounting_overflow",
+    "OpenAI response accounting exceeded safe integer limits",
+    { accounting },
+  );
+}
+
+function withAccounting(
+  error: OpenAiQuestionVerifierError,
+  accounting: OpenAiQuestionVerifierAccounting,
+): OpenAiQuestionVerifierError {
+  return new OpenAiQuestionVerifierError(error.code, error.message, {
+    retryable: error.retryable,
+    httpStatus: error.httpStatus,
+    accounting,
+  });
 }
 
 function normalizeFinding(
@@ -918,20 +1101,33 @@ async function performRequest(
       signal: controller.signal,
     });
     const text = await readBoundedBody(response);
-    const parsed = response.ok ? parseJsonBody(text) : null;
+    let parsed: unknown = null;
+    if (response.ok) {
+      parsed = parseJsonBody(text);
+    } else {
+      try {
+        parsed = JSON.parse(text) as unknown;
+      } catch {
+        parsed = null;
+      }
+    }
     if (!response.ok) {
+      const accounting = extractResponseAccounting(parsed).accounting;
       let detail = boundedErrorDetail(text, apiKey);
       try {
-        const errorBody = JSON.parse(text) as unknown;
-        if (isRecord(errorBody) && isRecord(errorBody.error)) {
+        if (isRecord(parsed) && isRecord(parsed.error)) {
           detail = boundedErrorDetail(
-            String(errorBody.error.message ?? detail),
+            String(parsed.error.message ?? detail),
             apiKey,
           );
           throw new OpenAiQuestionVerifierError(
             "api_error",
             `OpenAI API error (${response.status}): ${detail || "request failed"}`,
-            { retryable: response.status === 429 || response.status >= 500, httpStatus: response.status },
+            {
+              retryable: response.status === 429 || response.status >= 500,
+              httpStatus: response.status,
+              accounting,
+            },
           );
         }
       } catch (error) {
@@ -942,7 +1138,11 @@ async function performRequest(
       throw new OpenAiQuestionVerifierError(
         "http_error",
         `OpenAI HTTP error (${response.status}): ${detail || "request failed"}`,
-        { retryable: response.status === 429 || response.status >= 500, httpStatus: response.status },
+        {
+          retryable: response.status === 429 || response.status >= 500,
+          httpStatus: response.status,
+          accounting,
+        },
       );
     }
     return parseCompletedResponse(
@@ -1010,33 +1210,56 @@ function createVerifier(
       }
       const safeInput = { question, savedEvidence };
       const first = await performRequest(safeInput, dependencies, false);
-      const final =
-        first.finding.verdict === "unable_to_verify"
-          ? await performRequest(safeInput, dependencies, true)
-          : first;
+      let final = first;
+      let accounting = responseAccounting(first);
+      if (first.finding.verdict === "unable_to_verify") {
+        try {
+          final = await performRequest(safeInput, dependencies, true);
+        } catch (error) {
+          if (!(error instanceof OpenAiQuestionVerifierError)) {
+            throw error;
+          }
+          const combined = combineAccounting(accounting, error.accounting);
+          if (combined.overflow) {
+            throw accountingOverflowError(combined.accounting);
+          }
+          throw withAccounting(error, combined.accounting);
+        }
+        const combined = combineAccounting(
+          accounting,
+          responseAccounting(final),
+        );
+        accounting = combined.accounting;
+        if (combined.overflow) {
+          throw accountingOverflowError(accounting);
+        }
+      }
       const verifiedAtDate = dependencies.now();
       if (!Number.isFinite(verifiedAtDate.getTime())) {
         throw new OpenAiQuestionVerifierError(
           "invalid_input",
           "Verifier clock returned an invalid timestamp",
+          { accounting },
         );
       }
-      const finding = normalizeFinding(
-        final.finding,
-        question.id,
-        verifiedAtDate.toISOString(),
-      );
+      let finding: DailyQuestionVerificationFinding;
+      try {
+        finding = normalizeFinding(
+          final.finding,
+          question.id,
+          verifiedAtDate.toISOString(),
+        );
+      } catch (error) {
+        if (error instanceof OpenAiQuestionVerifierError) {
+          throw withAccounting(error, accounting);
+        }
+        throw error;
+      }
       return {
         finding,
-        usage: final === first ? first.usage : addUsage(first.usage, final.usage),
-        webSearchCalls:
-          final === first
-            ? first.webSearchCalls
-            : first.webSearchCalls + final.webSearchCalls,
-        sources:
-          final === first
-            ? first.sources
-            : mergeSources(first.sources, final.sources),
+        usage: accounting.usage,
+        webSearchCalls: accounting.webSearchCalls,
+        sources: accounting.sources,
       };
     },
   };

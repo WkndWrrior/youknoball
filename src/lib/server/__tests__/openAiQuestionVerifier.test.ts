@@ -64,6 +64,7 @@ function responseBody(
     inputTokens?: number;
     outputTokens?: number;
     cachedTokens?: number;
+    cacheWriteTokens?: number;
     searchCalls?: number;
     searchSources?: Array<{ url: string; title: string }>;
     annotations?: unknown[];
@@ -100,7 +101,10 @@ function responseBody(
     usage: {
       input_tokens: options.inputTokens ?? 100,
       output_tokens: options.outputTokens ?? 20,
-      input_tokens_details: { cached_tokens: options.cachedTokens ?? 0 },
+      input_tokens_details: {
+        cached_tokens: options.cachedTokens ?? 0,
+        cache_write_tokens: options.cacheWriteTokens ?? 0,
+      },
     },
   };
 }
@@ -124,6 +128,17 @@ function createVerifier(fetchImpl: typeof fetch, timeoutMs = 1_000) {
 function getRequestBody(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
   const init = fetchMock.mock.calls[index]?.[1] as RequestInit;
   return JSON.parse(String(init.body)) as Record<string, unknown>;
+}
+
+async function captureVerifierError(
+  promise: Promise<unknown>,
+): Promise<OpenAiQuestionVerifierError> {
+  const error = await promise.catch((value: unknown) => value);
+  expect(error).toBeInstanceOf(OpenAiQuestionVerifierError);
+  if (!(error instanceof OpenAiQuestionVerifierError)) {
+    throw new Error("Expected OpenAiQuestionVerifierError");
+  }
+  return error;
 }
 
 describe("OpenAI question verifier", () => {
@@ -268,6 +283,7 @@ describe("OpenAI question verifier", () => {
       inputTokens: 100,
       outputTokens: 20,
       cachedInputTokens: 0,
+      cacheWriteTokens: 0,
     });
     expect(result.webSearchCalls).toBe(0);
   });
@@ -387,6 +403,7 @@ describe("OpenAI question verifier", () => {
       inputTokens: 200,
       outputTokens: 40,
       cachedInputTokens: 12,
+      cacheWriteTokens: 0,
     });
     expect(result.webSearchCalls).toBe(1);
     expect(result.sources).toContainEqual({
@@ -546,6 +563,203 @@ describe("OpenAI question verifier", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves charged accounting for every parsed-response rejection path", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const options = {
+      inputTokens: 40,
+      outputTokens: 6,
+      cachedTokens: 4,
+      cacheWriteTokens: 2,
+      searchCalls: 2,
+    };
+    const cases: Array<{ code: string; body: Record<string, unknown> }> = [];
+
+    const incomplete = responseBody(finding(), options) as Record<string, unknown>;
+    incomplete.status = "incomplete";
+    cases.push({ code: "incomplete", body: incomplete });
+
+    const failed = responseBody(finding(), options) as Record<string, unknown>;
+    failed.status = "failed";
+    failed.error = { message: "provider failure" };
+    cases.push({ code: "response_failed", body: failed });
+
+    const refused = responseBody(finding(), options) as Record<string, unknown>;
+    const refusedOutput = refused.output as Array<Record<string, unknown>>;
+    refusedOutput[refusedOutput.length - 1] = {
+      type: "message",
+      content: [{ type: "refusal", refusal: "No" }],
+    };
+    cases.push({ code: "refused", body: refused });
+
+    const missing = responseBody(finding(), options) as Record<string, unknown>;
+    const missingOutput = missing.output as Array<Record<string, unknown>>;
+    missingOutput[missingOutput.length - 1] = {
+      type: "message",
+      content: [],
+    };
+    cases.push({ code: "missing_output_text", body: missing });
+
+    const malformed = responseBody(finding(), options) as Record<string, unknown>;
+    const malformedOutput = malformed.output as Array<Record<string, unknown>>;
+    malformedOutput[malformedOutput.length - 1] = {
+      type: "message",
+      content: [{ type: "output_text", text: "{" }],
+    };
+    cases.push({ code: "malformed_output", body: malformed });
+
+    cases.push({
+      code: "invalid_finding",
+      body: responseBody({ nope: true }, options) as Record<string, unknown>,
+    });
+
+    for (const testCase of cases) {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(jsonResponse(testCase.body));
+      const error = await captureVerifierError(
+        createVerifier(fetchMock).verifyQuestion(input),
+      );
+      expect(error.code).toBe(testCase.code);
+      expect(error.accounting).toEqual({
+        usage: {
+          inputTokens: 40,
+          outputTokens: 6,
+          cachedInputTokens: 4,
+          cacheWriteTokens: 2,
+        },
+        webSearchCalls: 2,
+        sources: [{
+          url: "https://www.espn.com/nba/story/example",
+          title: "ESPN recap",
+        }],
+      });
+    }
+  });
+
+  it("aggregates first-pass accounting into a failed fallback exactly once", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const malformedFallback = responseBody(finding(), {
+      inputTokens: 30,
+      outputTokens: 5,
+      cachedTokens: 2,
+      cacheWriteTokens: 1,
+      searchCalls: 1,
+    }) as Record<string, unknown>;
+    const fallbackOutput = malformedFallback.output as Array<Record<string, unknown>>;
+    fallbackOutput[fallbackOutput.length - 1] = {
+      type: "message",
+      content: [{ type: "output_text", text: "{" }],
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(responseBody(finding("unable_to_verify"), {
+        inputTokens: 70,
+        outputTokens: 10,
+        cachedTokens: 5,
+        cacheWriteTokens: 3,
+      })))
+      .mockResolvedValueOnce(jsonResponse(malformedFallback));
+
+    const error = await captureVerifierError(
+      createVerifier(fetchMock).verifyQuestion(input),
+    );
+
+    expect(error.code).toBe("malformed_output");
+    expect(error.accounting).toEqual({
+      usage: {
+        inputTokens: 100,
+        outputTokens: 15,
+        cachedInputTokens: 7,
+        cacheWriteTokens: 4,
+      },
+      webSearchCalls: 1,
+      sources: [{
+        url: "https://www.espn.com/nba/story/example",
+        title: "ESPN recap",
+      }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("parses cache writes and rejects inconsistent or unsafe usage", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const successFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(responseBody(finding(), {
+        inputTokens: 20,
+        cachedTokens: 6,
+        cacheWriteTokens: 4,
+      })),
+    );
+    const success = await createVerifier(successFetch).verifyQuestion(input);
+    expect(success.usage.cacheWriteTokens).toBe(4);
+
+    for (const usage of [
+      {
+        input_tokens: 10,
+        output_tokens: 2,
+        input_tokens_details: {
+          cached_tokens: 6,
+          cache_write_tokens: 5,
+        },
+      },
+      {
+        input_tokens: 10,
+        output_tokens: Number.MAX_SAFE_INTEGER + 1,
+        input_tokens_details: {
+          cached_tokens: 0,
+          cache_write_tokens: 0,
+        },
+      },
+      {
+        input_tokens: 10,
+        output_tokens: 2,
+        input_tokens_details: {
+          cached_tokens: 0,
+          cache_write_tokens: -1,
+        },
+      },
+      {
+        input_tokens: 10,
+        output_tokens: 2,
+        input_tokens_details: "malformed",
+      },
+    ]) {
+      const body = responseBody(finding()) as Record<string, unknown>;
+      body.usage = usage;
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+      const error = await captureVerifierError(
+        createVerifier(fetchMock).verifyQuestion(input),
+      );
+      expect(error.code).toBe("invalid_usage");
+      expect(Number.isSafeInteger(error.accounting.usage.inputTokens)).toBe(true);
+      expect(Number.isSafeInteger(error.accounting.usage.outputTokens)).toBe(true);
+    }
+  });
+
+  it("saturates accounting and fails explicitly when two responses overflow", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(responseBody(finding("unable_to_verify"), {
+        inputTokens: Number.MAX_SAFE_INTEGER - 5,
+        outputTokens: 1,
+      })))
+      .mockResolvedValueOnce(jsonResponse(responseBody(finding(), {
+        inputTokens: 10,
+        outputTokens: 1,
+        searchCalls: 1,
+      })));
+
+    const error = await captureVerifierError(
+      createVerifier(fetchMock).verifyQuestion(input),
+    );
+
+    expect(error.code).toBe("accounting_overflow");
+    expect(error.accounting.usage.inputTokens).toBe(Number.MAX_SAFE_INTEGER);
+    expect(error.accounting.usage.outputTokens).toBe(2);
+    expect(error.accounting.webSearchCalls).toBe(1);
+  });
+
   it.each([
     ["non_json_response", new Response("not json", { status: 200 })],
     ["missing_output_text", jsonResponse({ status: "completed", output: [], usage: {} })],
@@ -621,22 +835,36 @@ describe("OpenAI question verifier", () => {
     const networkFetch = vi
       .fn<typeof fetch>()
       .mockRejectedValue(new Error("socket failed with sensitive internals"));
-    await expect(createVerifier(networkFetch).verifyQuestion(input)).rejects.toMatchObject({
+    const networkError = await captureVerifierError(
+      createVerifier(networkFetch).verifyQuestion(input),
+    );
+    expect(networkError).toMatchObject({
       code: "network_error",
       message: "OpenAI verification request failed",
+      accounting: {
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedInputTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        webSearchCalls: 0,
+        sources: [],
+      },
     });
     expect(networkFetch).toHaveBeenCalledTimes(1);
   });
 
   it("redacts the configured key from top-level API errors on successful HTTP responses", async () => {
     vi.stubEnv("OPENAI_API_KEY", "super-secret-value");
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse({
-        status: "completed",
-        error: { message: "top-level echo: super-secret-value" },
-        output: [],
-      }),
-    );
+    const body = responseBody(finding(), {
+      inputTokens: 9,
+      outputTokens: 2,
+      cachedTokens: 1,
+      cacheWriteTokens: 1,
+    }) as Record<string, unknown>;
+    body.error = { message: "top-level echo: super-secret-value" };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
 
     const error = await createVerifier(fetchMock)
       .verifyQuestion(input)
@@ -645,6 +873,85 @@ describe("OpenAI question verifier", () => {
     expect(error).toBeInstanceOf(OpenAiQuestionVerifierError);
     expect(error).toMatchObject({ code: "api_error" });
     expect(String(error)).not.toContain("super-secret-value");
+    expect(error).toMatchObject({
+      accounting: {
+        usage: {
+          inputTokens: 9,
+          outputTokens: 2,
+          cachedInputTokens: 1,
+          cacheWriteTokens: 1,
+        },
+      },
+    });
+  });
+
+  it("includes bounded redacted diagnostics for failed Responses objects", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "super-secret-value");
+    const body = responseBody(finding(), {
+      inputTokens: 12,
+      outputTokens: 3,
+      cacheWriteTokens: 2,
+    }) as Record<string, unknown>;
+    body.status = "failed";
+    body.error = {
+      message: `upstream super-secret-value ${"detail ".repeat(1_000)}`,
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+
+    const error = await captureVerifierError(
+      createVerifier(fetchMock).verifyQuestion(input),
+    );
+
+    expect(error.code).toBe("response_failed");
+    expect(error.message).toContain("upstream [redacted]");
+    expect(error.message).not.toContain("super-secret-value");
+    expect(error.message.length).toBeLessThan(700);
+    expect(error.accounting.usage.cacheWriteTokens).toBe(2);
+  });
+
+  it("preserves JSON accounting on HTTP errors and uses zero accounting without it", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const chargedBody = responseBody(finding(), {
+      inputTokens: 18,
+      outputTokens: 4,
+      cachedTokens: 3,
+      cacheWriteTokens: 2,
+      searchCalls: 1,
+    }) as Record<string, unknown>;
+    chargedBody.error = { message: "rate limited" };
+    const chargedFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(chargedBody, { status: 429 }));
+    const chargedError = await captureVerifierError(
+      createVerifier(chargedFetch).verifyQuestion(input),
+    );
+    expect(chargedError.code).toBe("api_error");
+    expect(chargedError.accounting).toMatchObject({
+      usage: {
+        inputTokens: 18,
+        outputTokens: 4,
+        cachedInputTokens: 3,
+        cacheWriteTokens: 2,
+      },
+      webSearchCalls: 1,
+    });
+
+    const plainFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("gateway unavailable", { status: 503 }));
+    const plainError = await captureVerifierError(
+      createVerifier(plainFetch).verifyQuestion(input),
+    );
+    expect(plainError.accounting).toEqual({
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      webSearchCalls: 0,
+      sources: [],
+    });
   });
 
   it("accepts at most the reserved web-search-call count and rejects excess", async () => {
@@ -677,6 +984,9 @@ describe("OpenAI question verifier", () => {
       );
     await expect(createVerifier(excessiveFetch).verifyQuestion(input)).rejects.toMatchObject({
       code: "excessive_web_search_calls",
+      accounting: {
+        webSearchCalls: MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE + 1,
+      },
     });
     expect(excessiveFetch).toHaveBeenCalledTimes(2);
   });

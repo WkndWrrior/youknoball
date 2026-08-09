@@ -13,6 +13,7 @@ export const DAILY_REVIEW_PRICING = {
     "gpt-5.6-terra": {
       uncachedInputMicrodollarsPerMillionTokens: 2_500_000,
       cachedInputMicrodollarsPerMillionTokens: 250_000,
+      cacheWriteInputMicrodollarsPerMillionTokens: 3_125_000,
       outputMicrodollarsPerMillionTokens: 15_000_000,
       webSearchMicrodollarsPerThousandCalls: 10_000_000,
     },
@@ -25,6 +26,7 @@ export interface DailyQuestionReviewUsage {
   model: string;
   inputTokens?: number;
   cachedInputTokens?: number;
+  cacheWriteTokens?: number;
   outputTokens?: number;
   webSearchCalls?: number;
 }
@@ -38,6 +40,7 @@ export const DAILY_REVIEW_MAX_WEB_SEARCH_CALLS_PER_RESPONSE = 10;
 export const DAILY_REVIEW_MAX_REQUEST_USAGE = {
   inputTokens: DAILY_REVIEW_MAX_INPUT_TOKENS_PER_REQUEST,
   cachedInputTokens: 0,
+  cacheWriteTokens: DAILY_REVIEW_MAX_INPUT_TOKENS_PER_REQUEST,
   outputTokens: DAILY_REVIEW_MAX_OUTPUT_TOKENS_PER_REQUEST,
   webSearchCalls: DAILY_REVIEW_MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
 } as const;
@@ -76,7 +79,9 @@ export type DailyQuestionReviewBudgetReason =
   | "monthly_budget_exceeded"
   | "reservation_exceeds_remaining"
   | "invalid_current_time"
-  | "invalid_reservation";
+  | "invalid_reservation"
+  | "atomic_reservation_denied"
+  | "atomic_reservation_invalid";
 
 export interface DailyQuestionReviewBudgetResult {
   allowed: boolean;
@@ -85,6 +90,30 @@ export interface DailyQuestionReviewBudgetResult {
   remainingMicrodollars: number;
   reservedMicrodollars: number;
   reason: DailyQuestionReviewBudgetReason;
+}
+
+export interface ChicagoCalendarMonthRange {
+  startInclusive: string;
+  endExclusive: string;
+}
+
+export interface DailyQuestionReviewReservationRequest {
+  model: string;
+  modelDerivedReservationMicrodollars: number;
+  requiredReservationMicrodollars: number;
+  monthRange: ChicagoCalendarMonthRange;
+  spentMicrodollars: number;
+  limitMicrodollars: number;
+  remainingMicrodollars: number;
+}
+
+export interface DailyQuestionReviewReservationContext {
+  reservationId: string;
+  model: string;
+  modelDerivedReservationMicrodollars: number;
+  requiredReservationMicrodollars: number;
+  reservedMicrodollars: number;
+  monthRange: ChicagoCalendarMonthRange;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -150,17 +179,29 @@ export function estimateDailyQuestionReviewCostMicrodollars(
     usage.cachedInputTokens,
     "cachedInputTokens",
   );
+  const cacheWriteTokens = requireUsageCounter(
+    usage.cacheWriteTokens,
+    "cacheWriteTokens",
+  );
   const outputTokens = requireUsageCounter(usage.outputTokens, "outputTokens");
   const webSearchCalls = requireUsageCounter(
     usage.webSearchCalls,
     "webSearchCalls",
   );
 
-  if (cachedInputTokens > inputTokens) {
-    throw new RangeError("cachedInputTokens cannot exceed inputTokens.");
+  const categorizedInputTokens = checkedAdd(
+    cachedInputTokens,
+    cacheWriteTokens,
+    "Categorized input token count",
+  );
+
+  if (categorizedInputTokens > inputTokens) {
+    throw new RangeError(
+      "cachedInputTokens plus cacheWriteTokens cannot exceed inputTokens.",
+    );
   }
 
-  const uncachedInputTokens = inputTokens - cachedInputTokens;
+  const uncachedInputTokens = inputTokens - categorizedInputTokens;
   const uncachedInputCostNumerator = checkedMultiply(
     uncachedInputTokens,
     pricing.uncachedInputMicrodollarsPerMillionTokens,
@@ -170,6 +211,11 @@ export function estimateDailyQuestionReviewCostMicrodollars(
     cachedInputTokens,
     pricing.cachedInputMicrodollarsPerMillionTokens,
     "Cached input cost",
+  );
+  const cacheWriteCostNumerator = checkedMultiply(
+    cacheWriteTokens,
+    pricing.cacheWriteInputMicrodollarsPerMillionTokens,
+    "Cache-write input cost",
   );
   const outputCostNumerator = checkedMultiply(
     outputTokens,
@@ -186,8 +232,12 @@ export function estimateDailyQuestionReviewCostMicrodollars(
     "Web search cost",
   );
   const inputCostNumerator = checkedAdd(
-    uncachedInputCostNumerator,
-    cachedInputCostNumerator,
+    checkedAdd(
+      uncachedInputCostNumerator,
+      cachedInputCostNumerator,
+      "Input cost",
+    ),
+    cacheWriteCostNumerator,
     "Input cost",
   );
   const tokenCostNumerator = checkedAdd(
@@ -290,10 +340,9 @@ function getChicagoMidnightUtc(year: number, month: number): Date {
   return correctedCandidate;
 }
 
-export function getChicagoCalendarMonthRange(now: Date): {
-  startInclusive: string;
-  endExclusive: string;
-} {
+export function getChicagoCalendarMonthRange(
+  now: Date,
+): ChicagoCalendarMonthRange {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new RangeError("Budget accounting requires a valid current time.");
   }
@@ -580,7 +629,13 @@ export function checkDailyQuestionReviewBudget(options: {
 export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
   model: string;
   records: readonly unknown[];
-  operation: () => Promise<T> | T;
+  /** Must atomically persist and claim this reservation before returning. */
+  acquireReservation: (
+    request: DailyQuestionReviewReservationRequest,
+  ) => Promise<unknown>;
+  operation: (
+    reservation: DailyQuestionReviewReservationContext,
+  ) => Promise<T> | T;
   now?: Date;
   monthlyBudgetCents?: number;
   reservedMicrodollars?: number;
@@ -600,8 +655,10 @@ export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
           requestedReservationMicrodollars ?? 0,
         )
       : requestedReservationMicrodollars;
+  const now = options.now ?? new Date();
   const budget = checkDailyQuestionReviewBudget({
     ...options,
+    now,
     reservedMicrodollars: effectiveReservationMicrodollars,
   });
 
@@ -609,9 +666,84 @@ export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
     return { budget, value: null };
   }
 
+  if (modelReservationMicrodollars === null) {
+    return {
+      budget: {
+        ...budget,
+        allowed: false,
+        reason: "unsupported_model",
+      },
+      value: null,
+    };
+  }
+
+  const requiredReservationMicrodollars = budget.reservedMicrodollars;
+  const monthRange = getChicagoCalendarMonthRange(now);
+  const reservationRequest: DailyQuestionReviewReservationRequest = {
+    model: options.model,
+    modelDerivedReservationMicrodollars: modelReservationMicrodollars,
+    requiredReservationMicrodollars,
+    monthRange,
+    spentMicrodollars: budget.spentMicrodollars,
+    limitMicrodollars: budget.limitMicrodollars,
+    remainingMicrodollars: budget.remainingMicrodollars,
+  };
+  let acquisition: unknown;
+
+  try {
+    acquisition = await options.acquireReservation(reservationRequest);
+  } catch {
+    return {
+      budget: {
+        ...budget,
+        allowed: false,
+        reason: "atomic_reservation_denied",
+      },
+      value: null,
+    };
+  }
+
+  if (isRecord(acquisition) && acquisition.acquired === false) {
+    return {
+      budget: {
+        ...budget,
+        allowed: false,
+        reason: "atomic_reservation_denied",
+      },
+      value: null,
+    };
+  }
+
+  if (
+    !isRecord(acquisition) ||
+    acquisition.acquired !== true ||
+    typeof acquisition.reservationId !== "string" ||
+    acquisition.reservationId.trim().length === 0 ||
+    !isNonnegativeSafeInteger(acquisition.reservedMicrodollars) ||
+    acquisition.reservedMicrodollars < requiredReservationMicrodollars
+  ) {
+    return {
+      budget: {
+        ...budget,
+        allowed: false,
+        reason: "atomic_reservation_invalid",
+      },
+      value: null,
+    };
+  }
+
+  const reservationContext: DailyQuestionReviewReservationContext = {
+    reservationId: acquisition.reservationId.trim(),
+    model: options.model,
+    modelDerivedReservationMicrodollars: modelReservationMicrodollars,
+    requiredReservationMicrodollars,
+    reservedMicrodollars: acquisition.reservedMicrodollars,
+    monthRange,
+  };
+
   return {
     budget,
-    value: await options.operation(),
+    value: await options.operation(reservationContext),
   };
 }
 
