@@ -8,6 +8,7 @@ import {
   DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS,
   DAILY_REVIEW_MAX_REQUEST_USAGE,
   DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+  DAILY_REVIEW_MAX_VERIFICATIONS_PER_SLOT,
   DAILY_REVIEW_MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
   DAILY_REVIEW_PRICING,
   checkDailyQuestionReviewBudget,
@@ -158,13 +159,14 @@ describe("daily review pricing", () => {
     ).toThrow(RangeError);
   });
 
-  it("exports a conservative five-question, two-call maximum reservation", () => {
+  it("reserves twenty worst-case requests for five primaries and five replacements", () => {
     const maxRequestCost = estimateDailyQuestionReviewCostMicrodollars({
       model: "gpt-5.6-terra",
       ...DAILY_REVIEW_MAX_REQUEST_USAGE,
     });
 
     expect(DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION).toBe(2);
+    expect(DAILY_REVIEW_MAX_VERIFICATIONS_PER_SLOT).toBe(2);
     expect(DAILY_REVIEW_MAX_QUESTIONS_PER_RUN).toBe(5);
     expect(DAILY_REVIEW_MAX_INPUT_TOKENS_PER_REQUEST).toBe(40_000);
     expect(DAILY_REVIEW_MAX_OUTPUT_TOKENS_PER_REQUEST).toBe(1_800);
@@ -179,11 +181,9 @@ describe("daily review pricing", () => {
     expect(DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS).toBe(252_000);
     expect(
       getDailyQuestionReviewMaxRunReservationMicrodollars("gpt-5.6-terra"),
-    ).toBe(2_520_000);
+    ).toBe(5_040_000);
     expect(DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS).toBe(
-      maxRequestCost *
-        DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION *
-        DAILY_REVIEW_MAX_QUESTIONS_PER_RUN,
+      maxRequestCost * 20,
     );
     expect(Number.isSafeInteger(DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS)).toBe(
       true,
@@ -527,7 +527,7 @@ describe("budget preflight", () => {
       spentMicrodollars: 0,
       limitMicrodollars: 10_000_000,
       remainingMicrodollars: 10_000_000,
-      reservedMicrodollars: 2_520_000,
+      reservedMicrodollars: 5_040_000,
       reason: "within_budget",
     });
   });
@@ -624,7 +624,7 @@ describe("budget preflight", () => {
     const acquireReservation = vi.fn(async () => ({
       acquired: true,
       reservationId: "should-not-run",
-      reservedMicrodollars: 2_520_000,
+      reservedMicrodollars: 5_040_000,
     }));
     const callback = vi.fn(async () => "called");
 
@@ -653,7 +653,7 @@ describe("budget preflight", () => {
     const acquireReservation = vi.fn(async () => ({
       acquired: true,
       reservationId: "reservation-1",
-      reservedMicrodollars: 2_520_000,
+      reservedMicrodollars: 5_040_000,
     }));
     const callback = vi.fn(async () => "verified");
 
@@ -671,7 +671,7 @@ describe("budget preflight", () => {
     expect(callback).toHaveBeenCalledTimes(1);
     expect(result.value).toBe("verified");
     expect(result.budget.allowed).toBe(true);
-    expect(result.budget.reservedMicrodollars).toBe(2_520_000);
+    expect(result.budget.reservedMicrodollars).toBe(5_040_000);
   });
 
   it.each([0, 1])(
@@ -680,7 +680,7 @@ describe("budget preflight", () => {
       const acquireReservation = vi.fn(async () => ({
         acquired: true,
         reservationId: "should-not-run",
-        reservedMicrodollars: 2_520_000,
+        reservedMicrodollars: 5_040_000,
       }));
       const callback = vi.fn(async () => "called");
 
@@ -700,7 +700,7 @@ describe("budget preflight", () => {
         value: null,
         budget: {
           allowed: false,
-          reservedMicrodollars: 2_520_000,
+          reservedMicrodollars: 5_040_000,
           reason: "reservation_exceeds_remaining",
         },
       });
@@ -711,7 +711,7 @@ describe("budget preflight", () => {
     const acquireReservation = vi.fn(async () => ({
       acquired: true,
       reservationId: "reservation-higher",
-      reservedMicrodollars: 3_000_000,
+      reservedMicrodollars: 6_000_000,
     }));
     const callback = vi.fn(async () => "verified");
 
@@ -719,7 +719,7 @@ describe("budget preflight", () => {
       model: "gpt-5.6-terra",
       now,
       monthlyBudgetCents: 1_000,
-      reservedMicrodollars: 3_000_000,
+      reservedMicrodollars: 6_000_000,
       records: [],
       acquireReservation,
       operation: callback,
@@ -728,15 +728,15 @@ describe("budget preflight", () => {
     expect(acquireReservation).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "gpt-5.6-terra",
-        modelDerivedReservationMicrodollars: 2_520_000,
-        requiredReservationMicrodollars: 3_000_000,
+        modelDerivedReservationMicrodollars: 5_040_000,
+        requiredReservationMicrodollars: 6_000_000,
       }),
     );
     expect(callback).toHaveBeenCalledTimes(1);
     expect(result.value).toBe("verified");
     expect(result.budget).toMatchObject({
       allowed: true,
-      reservedMicrodollars: 3_000_000,
+      reservedMicrodollars: 6_000_000,
       reason: "within_budget",
     });
   });
@@ -745,7 +745,7 @@ describe("budget preflight", () => {
     const acquireReservation = vi.fn(async () => ({
       acquired: true,
       reservationId: "should-not-run",
-      reservedMicrodollars: 2_520_000,
+      reservedMicrodollars: 5_040_000,
     }));
     const callback = vi.fn(async () => "called");
 
@@ -793,7 +793,7 @@ describe("budget preflight", () => {
       value: null,
       budget: {
         allowed: false,
-        reservedMicrodollars: 2_520_000,
+        reservedMicrodollars: 5_040_000,
         reason: "atomic_reservation_denied",
       },
     });
@@ -803,7 +803,7 @@ describe("budget preflight", () => {
     const acquireReservation = vi.fn(async () => ({
       acquired: true,
       reservationId: "reservation-over-monthly-allowance",
-      reservedMicrodollars: 2_520_001,
+      reservedMicrodollars: 5_040_001,
     }));
     const operation = vi.fn(async () => "called");
 
@@ -816,7 +816,7 @@ describe("budget preflight", () => {
           id: "existing-spend",
           status: "completed",
           occurredAt: "2026-08-10T12:00:00.000Z",
-          estimatedCostMicrodollars: 7_480_000,
+          estimatedCostMicrodollars: 4_960_000,
         },
       ],
       acquireReservation,
@@ -829,10 +829,10 @@ describe("budget preflight", () => {
       value: null,
       budget: {
         allowed: false,
-        spentMicrodollars: 7_480_000,
+        spentMicrodollars: 4_960_000,
         limitMicrodollars: 10_000_000,
-        remainingMicrodollars: 2_520_000,
-        reservedMicrodollars: 2_520_000,
+        remainingMicrodollars: 5_040_000,
+        reservedMicrodollars: 5_040_000,
         reason: "atomic_reservation_invalid",
       },
     });
@@ -845,7 +845,7 @@ describe("budget preflight", () => {
       {
         acquired: true,
         reservationId: "   ",
-        reservedMicrodollars: 2_520_000,
+        reservedMicrodollars: 5_040_000,
       },
     ],
     [
@@ -853,7 +853,7 @@ describe("budget preflight", () => {
       {
         acquired: true,
         reservationId: "reservation-low",
-        reservedMicrodollars: 2_519_999,
+        reservedMicrodollars: 5_039_999,
       },
     ],
     [
@@ -861,7 +861,7 @@ describe("budget preflight", () => {
       {
         acquired: true,
         reservationId: "reservation-high",
-        reservedMicrodollars: 2_520_001,
+        reservedMicrodollars: 5_040_001,
       },
     ],
     [
@@ -869,7 +869,7 @@ describe("budget preflight", () => {
       {
         acquired: true,
         reservationId: "reservation-fractional",
-        reservedMicrodollars: 2_520_000.5,
+        reservedMicrodollars: 5_040_000.5,
       },
     ],
   ])("does not invoke work for an invalid atomic acquisition: %s", async (_label, acquisition) => {
@@ -898,7 +898,7 @@ describe("budget preflight", () => {
       acquired: true,
       created: true,
       reservationId: "  reservation-valid  ",
-      reservedMicrodollars: 2_520_000,
+      reservedMicrodollars: 5_040_000,
     }));
     const operation = vi.fn(async () => "verified");
 
@@ -913,8 +913,8 @@ describe("budget preflight", () => {
 
     expect(acquireReservation).toHaveBeenCalledWith({
       model: "gpt-5.6-terra",
-      modelDerivedReservationMicrodollars: 2_520_000,
-      requiredReservationMicrodollars: 2_520_000,
+      modelDerivedReservationMicrodollars: 5_040_000,
+      requiredReservationMicrodollars: 5_040_000,
       monthRange: {
         startInclusive: "2026-08-01T05:00:00.000Z",
         endExclusive: "2026-09-01T05:00:00.000Z",
@@ -927,9 +927,9 @@ describe("budget preflight", () => {
       reservationId: "reservation-valid",
       acquiredNow: true,
       model: "gpt-5.6-terra",
-      modelDerivedReservationMicrodollars: 2_520_000,
-      requiredReservationMicrodollars: 2_520_000,
-      reservedMicrodollars: 2_520_000,
+      modelDerivedReservationMicrodollars: 5_040_000,
+      requiredReservationMicrodollars: 5_040_000,
+      reservedMicrodollars: 5_040_000,
       monthRange: {
         startInclusive: "2026-08-01T05:00:00.000Z",
         endExclusive: "2026-09-01T05:00:00.000Z",
@@ -943,7 +943,7 @@ describe("budget preflight", () => {
       acquired: true,
       created: false,
       reservationId: "reservation-active",
-      reservedMicrodollars: 2_520_000,
+      reservedMicrodollars: 5_040_000,
     }));
     const operation = vi.fn(async (reservation) => reservation.acquiredNow);
 

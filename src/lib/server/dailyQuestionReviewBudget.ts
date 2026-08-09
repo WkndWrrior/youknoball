@@ -47,6 +47,7 @@ export const DAILY_REVIEW_MAX_REQUEST_USAGE = {
 
 export const DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION = 2;
 export const DAILY_REVIEW_MAX_QUESTIONS_PER_RUN = 5;
+export const DAILY_REVIEW_MAX_VERIFICATIONS_PER_SLOT = 2;
 
 const COST_BEARING_RUN_STATUSES = new Set([
   "running",
@@ -273,7 +274,11 @@ export function getDailyQuestionReviewMaxRunReservationMicrodollars(
     ...DAILY_REVIEW_MAX_REQUEST_USAGE,
   });
   const maxCallsPerRun = checkedMultiply(
-    DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
+    checkedMultiply(
+      DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
+      DAILY_REVIEW_MAX_VERIFICATIONS_PER_SLOT,
+      "Maximum review calls per slot",
+    ),
     DAILY_REVIEW_MAX_QUESTIONS_PER_RUN,
     "Maximum review calls per run",
   );

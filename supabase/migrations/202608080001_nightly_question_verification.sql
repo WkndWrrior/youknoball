@@ -507,6 +507,9 @@ create table if not exists public.daily_question_review_runs (
   model text not null check (char_length(model) between 1 and 100),
   verifier_version text not null check (char_length(verifier_version) between 1 and 100),
   started_at timestamptz,
+  claim_token uuid not null,
+  heartbeat_at timestamptz not null,
+  lease_expires_at timestamptz not null,
   completed_at timestamptz,
   input_tokens integer not null default 0 check (input_tokens >= 0),
   cached_input_tokens integer not null default 0 check (cached_input_tokens >= 0),
@@ -581,6 +584,7 @@ create table if not exists public.daily_question_review_runs (
     references public.daily_challenges (id, challenge_date)
     on delete cascade,
   check (review_date < challenge_date),
+  check (lease_expires_at > heartbeat_at),
   check (
     (
       status = 'preparing'
@@ -650,7 +654,7 @@ create table if not exists public.daily_question_review_reservations (
   status text not null
     check (status in ('active', 'reconciled', 'released', 'denied')),
   reserved_microdollars bigint not null
-    check (reserved_microdollars between 1 and 9007199254740991),
+    check (reserved_microdollars between 0 and 9007199254740991),
   actual_microdollars bigint not null default 0
     check (actual_microdollars between 0 and reserved_microdollars),
   month_start timestamptz not null,
@@ -668,6 +672,7 @@ create table if not exists public.daily_question_review_reservations (
   check (
     (
       status = 'active'
+      and reserved_microdollars > 0
       and actual_microdollars = 0
       and reconciled_at is null
       and denial_reason is null
@@ -970,7 +975,7 @@ begin
     or p_model_derived_reservation_microdollars is null
     or not (
       btrim(p_model) = 'gpt-5.6-terra'
-      and p_model_derived_reservation_microdollars = 2520000
+      and p_model_derived_reservation_microdollars = 5040000
     )
     or p_required_reservation_microdollars is null
     or p_required_reservation_microdollars <= 0
@@ -1185,6 +1190,123 @@ grant execute on function public.reconcile_daily_question_review_reservation(uui
 
 comment on function public.reconcile_daily_question_review_reservation(uuid, bigint, timestamptz) is
   'Service-role-only reconciliation of reserved verification budget to API-reported actual spend.';
+
+create or replace function public.claim_daily_question_review_run(
+  p_review_date date,
+  p_challenge_date date,
+  p_claimed_at timestamptz,
+  p_lease_expires_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_run public.daily_question_review_runs%rowtype;
+begin
+  if p_review_date is null
+    or p_challenge_date is null
+    or p_review_date >= p_challenge_date
+    or p_claimed_at is null
+    or p_lease_expires_at is null
+    or p_lease_expires_at <= p_claimed_at
+  then
+    return jsonb_build_object('outcome', 'invalid', 'run_id', null, 'claim_token', null);
+  end if;
+
+  select r.*
+  into v_run
+  from public.daily_question_review_runs r
+  where r.run_kind = 'scheduled'
+    and (
+      r.challenge_date = p_challenge_date
+      or r.review_date = p_review_date
+    )
+  order by case when r.challenge_date = p_challenge_date then 0 else 1 end
+  limit 1
+  for update;
+
+  if not found then
+    return jsonb_build_object('outcome', 'missing', 'run_id', null, 'claim_token', null);
+  end if;
+
+  if v_run.status = 'failed'
+    or (
+      v_run.status = 'running'
+      and v_run.lease_expires_at <= p_claimed_at
+    )
+  then
+    update public.daily_question_review_runs
+    set status = 'running',
+        completed_at = null,
+        claim_token = gen_random_uuid(),
+        heartbeat_at = p_claimed_at,
+        lease_expires_at = p_lease_expires_at
+    where id = v_run.id
+    returning * into v_run;
+
+    return jsonb_build_object(
+      'outcome', 'claimed',
+      'run_id', v_run.id,
+      'claim_token', v_run.claim_token
+    );
+  end if;
+
+  return jsonb_build_object(
+    'outcome', 'observed',
+    'run_id', v_run.id,
+    'claim_token', null
+  );
+end;
+$function$;
+
+revoke all on function public.claim_daily_question_review_run(date, date, timestamptz, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.claim_daily_question_review_run(date, date, timestamptz, timestamptz) to service_role;
+
+comment on function public.claim_daily_question_review_run(date, date, timestamptz, timestamptz) is
+  'Service-role-only atomic lease claim or stale-run reclaim for nightly verification.';
+
+create or replace function public.heartbeat_daily_question_review_run(
+  p_run_id uuid,
+  p_claim_token uuid,
+  p_heartbeat_at timestamptz,
+  p_lease_expires_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+begin
+  if p_run_id is null
+    or p_claim_token is null
+    or p_heartbeat_at is null
+    or p_lease_expires_at is null
+    or p_lease_expires_at <= p_heartbeat_at
+  then
+    return jsonb_build_object('renewed', false);
+  end if;
+
+  update public.daily_question_review_runs
+  set heartbeat_at = p_heartbeat_at,
+      lease_expires_at = p_lease_expires_at
+  where id = p_run_id
+    and status = 'running'
+    and claim_token = p_claim_token
+    and lease_expires_at > p_heartbeat_at;
+
+  return jsonb_build_object('renewed', found);
+end;
+$function$;
+
+revoke all on function public.heartbeat_daily_question_review_run(uuid, uuid, timestamptz, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.heartbeat_daily_question_review_run(uuid, uuid, timestamptz, timestamptz) to service_role;
+
+comment on function public.heartbeat_daily_question_review_run(uuid, uuid, timestamptz, timestamptz) is
+  'Service-role-only token-fenced lease renewal for a running nightly verification.';
 
 create or replace function public.claim_daily_question_review_email(
   p_run_id uuid,

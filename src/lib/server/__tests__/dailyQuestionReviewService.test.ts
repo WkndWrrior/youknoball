@@ -45,6 +45,11 @@ function makeQuestion(id: string, index: number): QuestionSnapshot {
 
 const questions = questionIds.map(makeQuestion);
 const replacement = makeQuestion(replacementId, 2);
+function makeReplacementForSlot(slot: number): QuestionSnapshot {
+  return slot === 3
+    ? replacement
+    : makeQuestion(uuid(90 + slot), slot - 1);
+}
 const draft: PreparedDailyChallengeDraft = {
   challengeId: uuid(200),
   challengeDate: "2026-08-10",
@@ -86,6 +91,9 @@ function makeRun(overrides: Record<string, unknown> = {}): DailyQuestionReviewRu
     model: "gpt-5.6-terra",
     verifierVersion: "nightly-question-verifier-v1",
     startedAt: now.toISOString(),
+    claimToken: uuid(600),
+    heartbeatAt: now.toISOString(),
+    leaseExpiresAt: "2026-08-09T23:15:00.000Z",
     completedAt: null,
     usage: {
       model: "gpt-5.6-terra",
@@ -145,6 +153,11 @@ function createDependencies(options: {
   existingRun?: ReturnType<typeof makeRun>;
   existingItems?: ReturnType<typeof makeStoredItem>[];
   sendEmail?: DailyQuestionReviewServiceDependencies["sendReviewEmail"];
+  claimExistingResult?: {
+    claimed: boolean;
+    claimToken: string | null;
+    run: ReturnType<typeof makeRun> | null;
+  };
 } = {}) {
   let run = options.existingRun ?? makeRun();
   const items = new Map<number, ReturnType<typeof makeStoredItem>>(
@@ -170,8 +183,16 @@ function createDependencies(options: {
     startOrObserve: vi.fn(async () => ({
       created: options.existingRun === undefined,
       claimed: true,
+      claimToken: uuid(600),
       run,
     })),
+    claimExisting: vi.fn(async () => options.claimExistingResult ?? ({
+      claimed: false,
+      claimToken: null,
+      run,
+    })),
+    heartbeatRun: vi.fn(async () => true),
+    currentTime: vi.fn(() => now),
     loadReview: vi.fn(async () => ({
       run,
       items: Array.from(items.values()).sort((left, right) => left.slot - right.slot),
@@ -215,7 +236,9 @@ function createDependencies(options: {
         webSearchCalls: 0,
         sources: [],
       })),
-    selectReplacement: vi.fn(async () => replacement),
+    selectReplacement: vi.fn(async ({ flaggedSlot }) =>
+      makeReplacementForSlot(flaggedSlot),
+    ),
     claimEmail: vi.fn(async () => ({ claimed: true, attempts: 1 })),
     sendReviewEmail:
       options.sendEmail ??
@@ -264,7 +287,11 @@ describe("runNightlyQuestionReview", () => {
     expect(verifier).toHaveBeenCalledTimes(6);
     expect(maxActive).toBe(2);
     expect(dependencies.selectReplacement).toHaveBeenCalledTimes(1);
-    expect(dependencies.selectReplacement).toHaveBeenCalledWith({ draft, flaggedSlot: 3 });
+    expect(dependencies.selectReplacement).toHaveBeenCalledWith({
+      draft,
+      flaggedSlot: 3,
+      selection: draft.questions,
+    });
     expect(dependencies.saveItem).toHaveBeenCalledTimes(6);
     expect(dependencies.saveItem).toHaveBeenCalledBefore(
       dependencies.selectReplacement as ReturnType<typeof vi.fn>,
@@ -286,6 +313,50 @@ describe("runNightlyQuestionReview", () => {
     });
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
     expect(dependencies.markEmailSent).toHaveBeenCalledOnce();
+  });
+
+  it("selects multiple same-difficulty replacements against an evolving combined draft", async () => {
+    const easyReplacements = [
+      makeQuestion(uuid(91), 0),
+      makeQuestion(uuid(92), 1),
+    ];
+    const verifier = vi.fn(async ({ question }: { question: QuestionSnapshot }) => ({
+      finding: makeFinding(
+        question,
+        question.id === questionIds[0] || question.id === questionIds[1]
+          ? "risk"
+          : "passed",
+      ),
+      usage: {
+        inputTokens: 10,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 5,
+      },
+      webSearchCalls: 0,
+      sources: [],
+    }));
+    const { dependencies, items } = createDependencies({ verifier });
+    const seenSelections: string[][] = [];
+    dependencies.selectReplacement = vi.fn(async (
+      input: Parameters<DailyQuestionReviewServiceDependencies["selectReplacement"]>[0],
+    ) => {
+      const selection = input.selection;
+      seenSelections.push(selection.map((question) => question.id));
+      return easyReplacements.find(
+        (candidate) => !selection.some((question) => question.id === candidate.id),
+      ) ?? null;
+    });
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+
+    expect(seenSelections).toHaveLength(2);
+    expect(seenSelections[1]).toContain(easyReplacements[0].id);
+    expect([items.get(1)?.replacement?.questionId, items.get(2)?.replacement?.questionId])
+      .toEqual([easyReplacements[0].id, easyReplacements[1].id]);
+    expect(new Set(Array.from(items.values()).map((item) =>
+      item.replacement?.questionId ?? item.question.id,
+    )).size).toBe(5);
   });
 
   it("persists an atomic budget denial and makes zero draft, verifier, or email calls", async () => {
@@ -311,7 +382,33 @@ describe("runNightlyQuestionReview", () => {
     );
   });
 
-  it("keeps replacements unavailable rather than exceeding the exact worst-case reservation", async () => {
+  it("persists unsupported-model budget blocks with zero reservation and no verifier call", async () => {
+    const { dependencies } = createDependencies();
+    dependencies.model = "unsupported-model";
+
+    const result = await runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    });
+
+    expect(result).toMatchObject({
+      kind: "budget_blocked",
+      budget: {
+        reason: "unsupported_model",
+        reservedMicrodollars: 0,
+      },
+    });
+    expect(dependencies.verifyQuestion).not.toHaveBeenCalled();
+    expect(dependencies.recordBudgetBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "unsupported_model",
+        reservedMicrodollars: 0,
+      }),
+    );
+  });
+
+  it("fits all five required replacements inside the exact worst-case reservation", async () => {
     const verifier = vi.fn(async ({ question }: { question: QuestionSnapshot }) => ({
       finding: makeFinding(question, "risk"),
       usage: {
@@ -327,9 +424,9 @@ describe("runNightlyQuestionReview", () => {
 
     await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
 
-    expect(verifier).toHaveBeenCalledTimes(5);
+    expect(verifier).toHaveBeenCalledTimes(10);
     expect(dependencies.selectReplacement).toHaveBeenCalledTimes(5);
-    expect(Array.from(items.values()).every((item) => item.replacement === null)).toBe(true);
+    expect(Array.from(items.values()).every((item) => item.replacement !== null)).toBe(true);
     expect(dependencies.reconcileReservation).toHaveBeenCalledWith(
       expect.objectContaining({
         actualMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
@@ -423,9 +520,45 @@ describe("runNightlyQuestionReview", () => {
     ]);
 
     expect([first.kind, second.kind].sort()).toEqual(["completed", "observed"]);
+    expect([first, second].find((result) => result.kind === "observed"))
+      .toMatchObject({ run: { id: uuid(300) } });
     expect(dependencies.prepareDraft).toHaveBeenCalledOnce();
     expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
+    expect(dependencies.reconcileReservation).toHaveBeenCalledOnce();
+  });
+
+  it("atomically reclaims a stale running run and resumes only unfinished slots", async () => {
+    const staleRun = makeRun({
+      status: "running",
+      heartbeatAt: "2026-08-09T22:30:00.000Z",
+      leaseExpiresAt: "2026-08-09T22:45:00.000Z",
+    });
+    const existingItems = [
+      makeStoredItem(1, "completed"),
+      makeStoredItem(2, "completed"),
+      makeStoredItem(3, "failed"),
+      makeStoredItem(4, "pending"),
+      makeStoredItem(5, "pending"),
+    ];
+    const { dependencies, getRun } = createDependencies({
+      reservationCreated: false,
+      existingRun: staleRun,
+      existingItems,
+      claimExistingResult: {
+        claimed: true,
+        claimToken: uuid(601),
+        run: staleRun,
+      },
+    });
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+
+    expect(dependencies.claimExisting).toHaveBeenCalledOnce();
+    expect(dependencies.startOrObserve).not.toHaveBeenCalled();
+    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(3);
+    expect(dependencies.heartbeatRun).toHaveBeenCalled();
+    expect(getRun()).toMatchObject({ status: "completed" });
   });
 
   it("resumes a failed partial run, skips completed slots, and retries failed or pending slots once", async () => {
@@ -485,6 +618,7 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.selectReplacement).toHaveBeenCalledWith({
       draft,
       flaggedSlot: 3,
+      selection: draft.questions,
     });
     expect(dependencies.saveItem).toHaveBeenCalledOnce();
     expect(items.get(3)).toMatchObject({

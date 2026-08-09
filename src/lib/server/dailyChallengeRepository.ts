@@ -1121,9 +1121,11 @@ export async function prepareDailyChallengeDraftForDate(
 export async function selectDailyChallengeReplacementForDraft({
   draft,
   flaggedSlot,
+  selection = draft.questions,
 }: {
   draft: PreparedDailyChallengeDraft;
   flaggedSlot: number;
+  selection?: PreparedDailyChallengeDraft["questions"];
 }): Promise<VerificationQuestionSnapshot | null> {
   const adminClient = supabaseAdmin();
   const candidates = await loadReusableQuestionCandidates(adminClient);
@@ -1137,7 +1139,7 @@ export async function selectDailyChallengeReplacementForDraft({
   }
 
   const replacement = selectDailyChallengeReplacement({
-    selection: draft.questions as unknown as readonly GeneratedDailyChallengeQuestion[],
+    selection: selection as unknown as readonly GeneratedDailyChallengeQuestion[],
     flaggedSlot,
     candidates: candidates.candidates,
     recentQuestionIds: recentHistory.recentQuestionIds,

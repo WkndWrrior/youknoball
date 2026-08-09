@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import {
   parseDailyQuestionReplacementCandidate,
   parseDailyQuestionReviewEmailState,
@@ -35,6 +37,9 @@ const RUN_COLUMNS = [
   "model",
   "verifier_version",
   "started_at",
+  "claim_token",
+  "heartbeat_at",
+  "lease_expires_at",
   "completed_at",
   "input_tokens",
   "cached_input_tokens",
@@ -183,6 +188,9 @@ function parseRun(value: unknown): DailyQuestionReviewRunRecord | null {
     typeof value.verifier_version !== "string" ||
     !value.verifier_version.trim() ||
     !isNullableTimestamp(value.started_at) ||
+    !isUuid(value.claim_token) ||
+    !isTimestamp(value.heartbeat_at) ||
+    !isTimestamp(value.lease_expires_at) ||
     !isNullableTimestamp(value.completed_at) ||
     !isNonnegativeInteger(value.input_tokens) ||
     !isNonnegativeInteger(value.cached_input_tokens) ||
@@ -331,8 +339,15 @@ export async function startOrObserveDailyQuestionReviewRun(
     model: string;
     verifierVersion: string;
     startedAt: string;
+    leaseExpiresAt: string;
   },
-): Promise<{ created: boolean; claimed: boolean; run: DailyQuestionReviewRunRecord }> {
+): Promise<{
+  created: boolean;
+  claimed: boolean;
+  claimToken: string | null;
+  run: DailyQuestionReviewRunRecord;
+}> {
+  const claimToken = randomUUID();
   const { data, error } = await client
     .from("daily_question_review_runs")
     .insert({
@@ -344,47 +359,99 @@ export async function startOrObserveDailyQuestionReviewRun(
       model: input.model,
       verifier_version: input.verifierVersion,
       started_at: input.startedAt,
+      claim_token: claimToken,
+      heartbeat_at: input.startedAt,
+      lease_expires_at: input.leaseExpiresAt,
     })
     .select(RUN_COLUMNS)
     .single();
 
-  if (!error) return { created: true, claimed: true, run: requireRun(data) };
+  if (!error) {
+    const run = requireRun(data);
+    return { created: true, claimed: true, claimToken, run };
+  }
   if (!isUniqueConflict(error)) throw error;
 
-  const existingResult = await client
-    .from("daily_question_review_runs")
-    .select(RUN_COLUMNS)
-    .eq("challenge_date", input.challengeDate)
-    .eq("run_kind", "scheduled")
-    .maybeSingle();
-  throwIfError(existingResult.error);
-  let existing = parseRun(existingResult.data);
-  if (!existing) {
-    const reviewDateResult = await client
-      .from("daily_question_review_runs")
-      .select(RUN_COLUMNS)
-      .eq("review_date", input.reviewDate)
-      .eq("run_kind", "scheduled")
-      .maybeSingle();
-    throwIfError(reviewDateResult.error);
-    existing = requireRun(reviewDateResult.data);
+  const existing = await claimExistingDailyQuestionReviewRun(client, {
+    reviewDate: input.reviewDate,
+    challengeDate: input.challengeDate,
+    claimedAt: input.startedAt,
+    leaseExpiresAt: input.leaseExpiresAt,
+  });
+  if (!existing.run) {
+    throw new Error("Conflicting daily review run could not be loaded.");
   }
-  if (existing.status !== "failed") {
-    return { created: false, claimed: false, run: existing };
+  return { created: false, ...existing, run: existing.run };
+}
+
+export async function claimExistingDailyQuestionReviewRun(
+  client: ServerSupabaseClient,
+  input: {
+    reviewDate: string;
+    challengeDate: string;
+    claimedAt: string;
+    leaseExpiresAt: string;
+  },
+): Promise<{
+  claimed: boolean;
+  claimToken: string | null;
+  run: DailyQuestionReviewRunRecord | null;
+}> {
+  const { data, error } = await client.rpc("claim_daily_question_review_run", {
+    p_review_date: input.reviewDate,
+    p_challenge_date: input.challengeDate,
+    p_claimed_at: input.claimedAt,
+    p_lease_expires_at: input.leaseExpiresAt,
+  });
+  throwIfError(error);
+  if (!isRecord(data) || typeof data.outcome !== "string") {
+    throw new Error("Daily review claim returned invalid data.");
+  }
+  if (data.outcome === "missing") {
+    return { claimed: false, claimToken: null, run: null };
+  }
+  if (
+    (data.outcome !== "claimed" && data.outcome !== "observed") ||
+    !isUuid(data.run_id) ||
+    (data.outcome === "claimed" && !isUuid(data.claim_token))
+  ) {
+    throw new Error("Daily review claim returned invalid data.");
   }
 
-  const claimResult = await client
+  const runResult = await client
     .from("daily_question_review_runs")
-    .update({ status: "running", completed_at: null })
-    .eq("id", existing.id)
-    .eq("status", "failed")
     .select(RUN_COLUMNS)
+    .eq("id", data.run_id)
     .maybeSingle();
-  throwIfError(claimResult.error);
-  const claimed = parseRun(claimResult.data);
-  return claimed
-    ? { created: false, claimed: true, run: claimed }
-    : { created: false, claimed: false, run: existing };
+  throwIfError(runResult.error);
+  const run = requireRun(runResult.data);
+  return {
+    claimed: data.outcome === "claimed",
+    claimToken: data.outcome === "claimed" ? data.claim_token as string : null,
+    run,
+  };
+}
+
+export async function heartbeatDailyQuestionReviewRun(
+  client: ServerSupabaseClient,
+  input: {
+    runId: string;
+    claimToken: string;
+    heartbeatAt: string;
+    leaseExpiresAt: string;
+  },
+): Promise<boolean> {
+  const { data, error } = await client.rpc("heartbeat_daily_question_review_run", {
+    p_run_id: input.runId,
+    p_claim_token: input.claimToken,
+    p_heartbeat_at: input.heartbeatAt,
+    p_lease_expires_at: input.leaseExpiresAt,
+  });
+  throwIfError(error);
+  if (!isRecord(data) || typeof data.renewed !== "boolean") {
+    throw new Error("Daily review heartbeat returned invalid data.");
+  }
+  return data.renewed;
 }
 
 export async function upsertDailyQuestionReviewItem(

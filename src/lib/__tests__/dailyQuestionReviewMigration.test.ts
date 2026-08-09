@@ -462,6 +462,12 @@ describe("nightly question verification migration", () => {
       "reserved_microdollars bigint not null",
     );
     expect(migration).toContain(
+      "check (reserved_microdollars between 0 and 9007199254740991)",
+    );
+    expect(migration).toMatch(
+      /status = 'active'[\s\S]*reserved_microdollars > 0[\s\S]*actual_microdollars = 0/,
+    );
+    expect(migration).toContain(
       "actual_microdollars bigint not null default 0",
     );
     expect(migration).toContain(
@@ -502,7 +508,7 @@ describe("nightly question verification migration", () => {
       "p_required_reservation_microdollars = p_model_derived_reservation_microdollars",
     );
     expect(acquire).toContain(
-      "p_model_derived_reservation_microdollars = 2520000",
+      "p_model_derived_reservation_microdollars = 5040000",
     );
     expect(acquire).toMatch(
       /case when status = 'active' then reserved_microdollars else actual_microdollars end/,
@@ -535,6 +541,42 @@ describe("nightly question verification migration", () => {
     expect(migration).not.toMatch(
       /grant execute on function public\.(?:acquire|reconcile)_daily_question_review_reservation[^;]*to (?:public|anon|authenticated)/,
     );
+  });
+
+  it("atomically reclaims stale running reviews with a fenced lease", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const claim = normalizedStatement(
+      migration,
+      "create or replace function public.claim_daily_question_review_run",
+    );
+    const heartbeat = normalizedStatement(
+      migration,
+      "create or replace function public.heartbeat_daily_question_review_run",
+    );
+
+    expect(migration).toContain("claim_token uuid not null");
+    expect(migration).toContain("heartbeat_at timestamptz not null");
+    expect(migration).toContain("lease_expires_at timestamptz not null");
+    expect(claim).toContain("security definer");
+    expect(claim).toContain("for update");
+    expect(claim).toContain("status = 'failed'");
+    expect(claim).toContain("lease_expires_at <= p_claimed_at");
+    expect(claim).toContain("claim_token = gen_random_uuid()");
+    expect(heartbeat).toContain("security definer");
+    expect(heartbeat).toContain("claim_token = p_claim_token");
+    expect(heartbeat).toContain("lease_expires_at > p_heartbeat_at");
+
+    for (const signature of [
+      "public.claim_daily_question_review_run(date, date, timestamptz, timestamptz)",
+      "public.heartbeat_daily_question_review_run(uuid, uuid, timestamptz, timestamptz)",
+    ]) {
+      expect(migration).toContain(
+        `revoke all on function ${signature} from public, anon, authenticated`,
+      );
+      expect(migration).toContain(
+        `grant execute on function ${signature} to service_role`,
+      );
+    }
   });
 
   it("claims review email delivery with a service-role-only atomic transition", async () => {

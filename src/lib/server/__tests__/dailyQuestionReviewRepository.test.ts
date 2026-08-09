@@ -10,6 +10,7 @@ import {
   acquireDailyQuestionReviewReservation,
   claimDailyQuestionReviewEmail,
   completeDailyQuestionReviewRun,
+  heartbeatDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
   loadDailyQuestionReviewByRunId,
   loadDailyQuestionReviewResolutions,
@@ -84,6 +85,7 @@ const ids = {
   question: "40000000-0000-4000-8000-000000000001",
   replacement: "40000000-0000-4000-8000-000000000002",
   reservation: "50000000-0000-4000-8000-000000000001",
+  claim: "60000000-0000-4000-8000-000000000001",
 };
 
 const timestamp = "2026-08-09T23:00:00.000Z";
@@ -127,6 +129,9 @@ const runRow = {
   model: "gpt-5.6-terra",
   verifier_version: "nightly-question-verifier-v1",
   started_at: timestamp,
+  claim_token: ids.claim,
+  heartbeat_at: timestamp,
+  lease_expires_at: "2026-08-09T23:15:00.000Z",
   completed_at: null,
   input_tokens: 0,
   cached_input_tokens: 0,
@@ -183,6 +188,7 @@ const startInput = {
   model: "gpt-5.6-terra",
   verifierVersion: "nightly-question-verifier-v1",
   startedAt: timestamp,
+  leaseExpiresAt: "2026-08-09T23:15:00.000Z",
 };
 
 describe("startOrObserveDailyQuestionReviewRun", () => {
@@ -190,9 +196,10 @@ describe("startOrObserveDailyQuestionReviewRun", () => {
     const insert = createThenableQuery({ data: runRow, error: null });
     const client = createClientMock({ daily_question_review_runs: insert });
 
-    await expect(
-      startOrObserveDailyQuestionReviewRun(client, startInput),
-    ).resolves.toMatchObject({ created: true, claimed: true, run: { id: ids.run } });
+    const result = await startOrObserveDailyQuestionReviewRun(client, startInput);
+
+    expect(result).toMatchObject({ created: true, claimed: true, run: { id: ids.run } });
+    expect(result.run).not.toHaveProperty("claimToken");
 
     expect(insert.insert).toHaveBeenCalledWith({
       daily_challenge_id: ids.challenge,
@@ -203,6 +210,9 @@ describe("startOrObserveDailyQuestionReviewRun", () => {
       model: "gpt-5.6-terra",
       verifier_version: "nightly-question-verifier-v1",
       started_at: timestamp,
+      claim_token: expect.any(String),
+      heartbeat_at: timestamp,
+      lease_expires_at: "2026-08-09T23:15:00.000Z",
     });
     expect(insert.select).toHaveBeenCalledWith(expect.stringContaining("estimated_cost_microdollars"));
   });
@@ -213,16 +223,27 @@ describe("startOrObserveDailyQuestionReviewRun", () => {
       error: { code: "23505", message: "duplicate" },
     });
     const existing = createThenableQuery({ data: runRow, error: null });
-    const client = createClientMock({
-      daily_question_review_runs: [conflict, existing],
-    });
+    const client = createClientMock(
+      { daily_question_review_runs: [conflict, existing] },
+      {
+        claim_daily_question_review_run: {
+          data: { outcome: "observed", run_id: ids.run, claim_token: null },
+          error: null,
+        },
+      },
+    );
 
     await expect(
       startOrObserveDailyQuestionReviewRun(client, startInput),
     ).resolves.toMatchObject({ created: false, claimed: false, run: { id: ids.run } });
 
-    expect(existing.eq).toHaveBeenCalledWith("challenge_date", "2026-08-10");
-    expect(existing.eq).toHaveBeenCalledWith("run_kind", "scheduled");
+    expect(client.rpc).toHaveBeenCalledWith("claim_daily_question_review_run", {
+      p_challenge_date: "2026-08-10",
+      p_claimed_at: timestamp,
+      p_lease_expires_at: "2026-08-09T23:15:00.000Z",
+      p_review_date: "2026-08-09",
+    });
+    expect(existing.eq).toHaveBeenCalledWith("id", ids.run);
   });
 
   it("recovers a review-date unique conflict when the challenge lookup is empty", async () => {
@@ -230,14 +251,19 @@ describe("startOrObserveDailyQuestionReviewRun", () => {
       data: null,
       error: { code: "23505", message: "duplicate" },
     });
-    const missingChallenge = createThenableQuery({ data: null, error: null });
     const reviewDateRun = createThenableQuery({
       data: { ...runRow, challenge_date: "2026-08-11" },
       error: null,
     });
-    const client = createClientMock({
-      daily_question_review_runs: [conflict, missingChallenge, reviewDateRun],
-    });
+    const client = createClientMock(
+      { daily_question_review_runs: [conflict, reviewDateRun] },
+      {
+        claim_daily_question_review_run: {
+          data: { outcome: "observed", run_id: ids.run, claim_token: null },
+          error: null,
+        },
+      },
+    );
 
     await expect(
       startOrObserveDailyQuestionReviewRun(client, startInput),
@@ -247,8 +273,7 @@ describe("startOrObserveDailyQuestionReviewRun", () => {
       run: { challengeDate: "2026-08-11" },
     });
 
-    expect(reviewDateRun.eq).toHaveBeenCalledWith("review_date", "2026-08-09");
-    expect(reviewDateRun.eq).toHaveBeenCalledWith("run_kind", "scheduled");
+    expect(reviewDateRun.eq).toHaveBeenCalledWith("id", ids.run);
   });
 
   it("atomically claims a failed partial run for a deterministic resume", async () => {
@@ -256,24 +281,27 @@ describe("startOrObserveDailyQuestionReviewRun", () => {
       data: null,
       error: { code: "23505", message: "duplicate" },
     });
-    const failed = createThenableQuery({
-      data: { ...runRow, status: "failed", completed_at: timestamp },
-      error: null,
-    });
     const claimed = createThenableQuery({ data: runRow, error: null });
-    const client = createClientMock({
-      daily_question_review_runs: [conflict, failed, claimed],
-    });
+    const client = createClientMock(
+      { daily_question_review_runs: [conflict, claimed] },
+      {
+        claim_daily_question_review_run: {
+          data: { outcome: "claimed", run_id: ids.run, claim_token: ids.claim },
+          error: null,
+        },
+      },
+    );
 
     await expect(
       startOrObserveDailyQuestionReviewRun(client, startInput),
     ).resolves.toMatchObject({ created: false, claimed: true, run: { status: "running" } });
 
-    expect(claimed.update).toHaveBeenCalledWith({
-      status: "running",
-      completed_at: null,
+    expect(client.rpc).toHaveBeenCalledWith("claim_daily_question_review_run", {
+      p_challenge_date: "2026-08-10",
+      p_claimed_at: timestamp,
+      p_lease_expires_at: "2026-08-09T23:15:00.000Z",
+      p_review_date: "2026-08-09",
     });
-    expect(claimed.eq).toHaveBeenCalledWith("status", "failed");
   });
 });
 
@@ -479,6 +507,31 @@ describe("run accounting and reads", () => {
 });
 
 describe("reservation and email state", () => {
+  it("renews a running lease through the token-fenced heartbeat RPC", async () => {
+    const client = createClientMock({}, {
+      heartbeat_daily_question_review_run: {
+        data: { renewed: true },
+        error: null,
+      },
+    });
+
+    await expect(heartbeatDailyQuestionReviewRun(client, {
+      runId: ids.run,
+      claimToken: ids.claim,
+      heartbeatAt: timestamp,
+      leaseExpiresAt: "2026-08-09T23:15:00.000Z",
+    })).resolves.toBe(true);
+    expect(client.rpc).toHaveBeenCalledWith(
+      "heartbeat_daily_question_review_run",
+      {
+        p_run_id: ids.run,
+        p_claim_token: ids.claim,
+        p_heartbeat_at: timestamp,
+        p_lease_expires_at: "2026-08-09T23:15:00.000Z",
+      },
+    );
+  });
+
   it("acquires the exact worst-case reservation through the atomic RPC", async () => {
     const client = createClientMock({}, {
       acquire_daily_question_review_reservation: {
@@ -486,7 +539,7 @@ describe("reservation and email state", () => {
           acquired: true,
           created: true,
           reservation_id: ids.reservation,
-          reserved_microdollars: 2_520_000,
+          reserved_microdollars: 5_040_000,
         },
         error: null,
       },
@@ -495,8 +548,8 @@ describe("reservation and email state", () => {
     await expect(
       acquireDailyQuestionReviewReservation(client, {
         model: "gpt-5.6-terra",
-        modelDerivedReservationMicrodollars: 2_520_000,
-        requiredReservationMicrodollars: 2_520_000,
+        modelDerivedReservationMicrodollars: 5_040_000,
+        requiredReservationMicrodollars: 5_040_000,
         monthRange: {
           startInclusive: "2026-08-01T05:00:00.000Z",
           endExclusive: "2026-09-01T05:00:00.000Z",
@@ -513,18 +566,18 @@ describe("reservation and email state", () => {
       acquired: true,
       created: true,
       reservationId: ids.reservation,
-      reservedMicrodollars: 2_520_000,
+      reservedMicrodollars: 5_040_000,
     });
 
     expect(client.rpc).toHaveBeenCalledWith("acquire_daily_question_review_reservation", {
       p_challenge_date: "2026-08-10",
       p_limit_microdollars: 10_000_000,
       p_model: "gpt-5.6-terra",
-      p_model_derived_reservation_microdollars: 2_520_000,
+      p_model_derived_reservation_microdollars: 5_040_000,
       p_month_end: "2026-09-01T05:00:00.000Z",
       p_month_start: "2026-08-01T05:00:00.000Z",
       p_now: timestamp,
-      p_required_reservation_microdollars: 2_520_000,
+      p_required_reservation_microdollars: 5_040_000,
       p_review_date: "2026-08-09",
     });
   });
@@ -540,7 +593,7 @@ describe("reservation and email state", () => {
         reviewDate: "2026-08-09",
         challengeDate: "2026-08-10",
         model: "gpt-5.6-terra",
-        reservedMicrodollars: 2_520_000,
+        reservedMicrodollars: 5_040_000,
         monthRange: {
           startInclusive: "2026-08-01T05:00:00.000Z",
           endExclusive: "2026-09-01T05:00:00.000Z",
@@ -552,7 +605,7 @@ describe("reservation and email state", () => {
     expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({
       challenge_date: "2026-08-10",
       status: "denied",
-      reserved_microdollars: 2_520_000,
+      reserved_microdollars: 5_040_000,
       denial_reason: "monthly_budget_exceeded",
     }));
 
@@ -568,7 +621,7 @@ describe("reservation and email state", () => {
         reviewDate: "2026-08-09",
         challengeDate: "2026-08-10",
         model: "gpt-5.6-terra",
-        reservedMicrodollars: 2_520_000,
+        reservedMicrodollars: 5_040_000,
         monthRange: {
           startInclusive: "2026-08-01T05:00:00.000Z",
           endExclusive: "2026-09-01T05:00:00.000Z",
@@ -577,6 +630,33 @@ describe("reservation and email state", () => {
         reason: "monthly_budget_exceeded",
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("persists an unsupported-model budget block with a zero reservation", async () => {
+    const insert = createThenableQuery({ data: null, error: null });
+    const client = createClientMock({
+      daily_question_review_reservations: insert,
+    });
+
+    await recordDailyQuestionReviewBudgetBlock(client, {
+      reviewDate: "2026-08-09",
+      challengeDate: "2026-08-10",
+      model: "unsupported-model",
+      reservedMicrodollars: 0,
+      monthRange: {
+        startInclusive: "2026-08-01T05:00:00.000Z",
+        endExclusive: "2026-09-01T05:00:00.000Z",
+      },
+      attemptedAt: timestamp,
+      reason: "unsupported_model",
+    });
+
+    expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      model: "unsupported-model",
+      status: "denied",
+      reserved_microdollars: 0,
+      denial_reason: "unsupported_model",
+    }));
   });
 
   it("reconciles charged failure usage through an atomic RPC", async () => {

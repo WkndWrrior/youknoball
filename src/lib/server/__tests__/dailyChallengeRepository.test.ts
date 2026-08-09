@@ -8,6 +8,7 @@ import {
   prepareDailyChallengeDraftForDate,
   resolveCanonicalChallengeIdForDate,
   selectDailyChallengeReplacementForDraft,
+  type PreparedDailyChallengeDraft,
 } from "@/lib/server/dailyChallengeRepository";
 
 type QueryResult<T> = {
@@ -341,6 +342,13 @@ describe("selectDailyChallengeReplacementForDraft", () => {
     });
     supabaseAdmin.mockReturnValue(adminClient);
     selectDailyChallengeReplacement.mockReturnValue(replacement);
+    const evolvingSelection = preparedQuestions.map((question) => ({
+      ...question,
+    })) as unknown as PreparedDailyChallengeDraft["questions"];
+    evolvingSelection[0] = {
+      ...evolvingSelection[0],
+      id: "00000000-0000-4000-8000-000000000098",
+    };
 
     await expect(
       selectDailyChallengeReplacementForDraft({
@@ -351,6 +359,7 @@ describe("selectDailyChallengeReplacementForDraft", () => {
           questions: preparedQuestions as never,
         },
         flaggedSlot: 2,
+        selection: evolvingSelection as never,
       }),
     ).resolves.toMatchObject({
       id: replacement.id,
@@ -359,7 +368,7 @@ describe("selectDailyChallengeReplacementForDraft", () => {
     });
 
     expect(selectDailyChallengeReplacement).toHaveBeenCalledWith({
-      selection: preparedQuestions,
+      selection: evolvingSelection,
       flaggedSlot: 2,
       candidates: [...reusableQuestionRows, replacement],
       recentQuestionIds: [QUESTION_IDS[4], QUESTION_IDS[0]],
