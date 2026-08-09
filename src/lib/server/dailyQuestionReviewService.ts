@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import type {
   DailyQuestionReplacementCandidate,
   DailyQuestionReviewRunError,
@@ -112,7 +114,7 @@ export interface DailyQuestionReviewServiceDependencies {
     run: DailyQuestionReviewRunRecord;
     items: DailyQuestionReviewItemRecord[];
   } | null>;
-  saveItem: (input: ItemSaveInput) => Promise<DailyQuestionReviewItemRecord>;
+  saveItem: (input: ItemSaveInput) => ReturnType<typeof upsertDailyQuestionReviewItem>;
   completeRun: (input: CompleteRunInput) => Promise<DailyQuestionReviewRunRecord>;
   collectEvidence: (
     question: QuestionSnapshot,
@@ -124,6 +126,7 @@ export interface DailyQuestionReviewServiceDependencies {
     draft: PreparedDailyChallengeDraft;
     flaggedSlot: number;
     selection: PreparedDailyChallengeDraft["questions"];
+    excludedQuestionIds: readonly string[];
   }) => Promise<QuestionSnapshot | null>;
   claimEmail: (
     runId: string,
@@ -181,30 +184,6 @@ function emptyUsage(): UsageTotals {
   };
 }
 
-function checkedAdd(left: number, right: number): number {
-  if (!Number.isSafeInteger(right) || right < 0 || right > Number.MAX_SAFE_INTEGER - left) {
-    throw new RangeError("Daily review usage exceeds safe integer accounting.");
-  }
-  return left + right;
-}
-
-function addUsage(target: UsageTotals, source: UsageTotals): void {
-  target.inputTokens = checkedAdd(target.inputTokens, source.inputTokens);
-  target.cachedInputTokens = checkedAdd(
-    target.cachedInputTokens,
-    source.cachedInputTokens,
-  );
-  target.cacheWriteTokens = checkedAdd(
-    target.cacheWriteTokens,
-    source.cacheWriteTokens,
-  );
-  target.outputTokens = checkedAdd(target.outputTokens, source.outputTokens);
-  target.webSearchCalls = checkedAdd(
-    target.webSearchCalls,
-    source.webSearchCalls,
-  );
-}
-
 function resultUsage(result: OpenAiQuestionVerifierResult): UsageTotals {
   return {
     ...result.usage,
@@ -229,6 +208,19 @@ function costUsage(model: string, usage: UsageTotals): number {
     outputTokens: usage.outputTokens,
     webSearchCalls: usage.webSearchCalls,
   });
+}
+
+function makeUsageEvent(
+  phase: "primary" | "replacement",
+  model: string,
+  usage: UsageTotals,
+): NonNullable<ItemSaveInput["usageEvent"]> {
+  return {
+    id: randomUUID(),
+    phase,
+    ...usage,
+    estimatedCostMicrodollars: costUsage(model, usage),
+  };
 }
 
 function errorMessage(error: unknown): string {
@@ -416,9 +408,7 @@ export async function runNightlyQuestionReview({
     now,
     acquireReservation: deps.acquireReservation,
     operation: async (reservation) => {
-      const invocationUsage = emptyUsage();
-      let reconciled = false;
-      let shouldReconcile = reservation.acquiredNow;
+      let releaseUnboundReservation = reservation.acquiredNow;
       try {
         const initialLease = getLeaseWindow(now);
         let claimedRun: DailyQuestionReviewRunRecord;
@@ -436,7 +426,7 @@ export async function runNightlyQuestionReview({
           }
           claimedRun = existing.run;
           claimToken = existing.claimToken;
-          shouldReconcile = true;
+          releaseUnboundReservation = false;
           draft = await deps.prepareDraft(challengeDate);
         } else {
           draft = await deps.prepareDraft(challengeDate);
@@ -454,6 +444,7 @@ export async function runNightlyQuestionReview({
           }
           claimedRun = started.run;
           claimToken = started.claimToken;
+          releaseUnboundReservation = false;
         }
 
         const assertLease = async () => {
@@ -471,9 +462,30 @@ export async function runNightlyQuestionReview({
 
         const loaded = await deps.loadReview(claimedRun.id);
         if (!loaded) throw new Error("Claimed review run could not be loaded.");
+        let persistedRun = loaded.run;
         const itemsBySlot = new Map(
           loaded.items.map((item) => [item.slot, item]),
         );
+        const saveProgress = async (
+          input: Omit<ItemSaveInput, "runId" | "claimToken" | "heartbeatAt" | "leaseExpiresAt">,
+        ) => {
+          const lease = getLeaseWindow(deps.currentTime());
+          const saved = await deps.saveItem({
+            ...input,
+            runId: loaded.run.id,
+            claimToken,
+            heartbeatAt: lease.heartbeatAt,
+            leaseExpiresAt: lease.leaseExpiresAt,
+          });
+          itemsBySlot.set(saved.item.slot, saved.item);
+          if (
+            saved.run.estimatedCostMicrodollars >=
+            persistedRun.estimatedCostMicrodollars
+          ) {
+            persistedRun = saved.run;
+          }
+          return saved.item;
+        };
         const runErrors = [...loaded.run.errors];
         const pendingQuestions = draft.questions.filter((question) => {
           return itemsBySlot.get(question.slot)?.reviewStatus !== "completed";
@@ -495,8 +507,7 @@ export async function runNightlyQuestionReview({
               ),
             );
             try {
-              const saved = await deps.saveItem({
-                runId: loaded.run.id,
+              await saveProgress({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
                 question,
@@ -504,8 +515,8 @@ export async function runNightlyQuestionReview({
                 sourceFetchResults: [],
                 finding: null,
                 replacement: null,
+                usageEvent: null,
               });
-              itemsBySlot.set(question.slot, saved);
             } catch (persistError) {
               runErrors.push(
                 makeRunError(
@@ -526,9 +537,8 @@ export async function runNightlyQuestionReview({
               question,
               savedEvidence: evidence.savedEvidence,
             });
-            addUsage(invocationUsage, resultUsage(verification));
           } catch (error) {
-            addUsage(invocationUsage, errorUsage(error));
+            const chargedUsage = errorUsage(error);
             runErrors.push(
               makeRunError(
                 "verification",
@@ -541,8 +551,7 @@ export async function runNightlyQuestionReview({
               ),
             );
             try {
-              const saved = await deps.saveItem({
-                runId: loaded.run.id,
+              await saveProgress({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
                 question,
@@ -550,8 +559,8 @@ export async function runNightlyQuestionReview({
                 sourceFetchResults: evidence.sourceFetchResults,
                 finding: null,
                 replacement: null,
+                usageEvent: makeUsageEvent("primary", deps.model, chargedUsage),
               });
-              itemsBySlot.set(question.slot, saved);
             } catch (persistError) {
               runErrors.push(
                 makeRunError(
@@ -567,8 +576,7 @@ export async function runNightlyQuestionReview({
           }
 
           try {
-            const saved = await deps.saveItem({
-              runId: loaded.run.id,
+            await saveProgress({
               dailyChallengeId: draft.challengeId,
               slot: question.slot,
               question,
@@ -576,8 +584,12 @@ export async function runNightlyQuestionReview({
               sourceFetchResults: evidence.sourceFetchResults,
               finding: verification.finding,
               replacement: null,
+              usageEvent: makeUsageEvent(
+                "primary",
+                deps.model,
+                resultUsage(verification),
+              ),
             });
-            itemsBySlot.set(question.slot, saved);
           } catch (error) {
             runErrors.push(
               makeRunError(
@@ -601,10 +613,15 @@ export async function runNightlyQuestionReview({
         });
         let replacementSelection = draft.questions.map((question) => {
           const existingReplacement = itemsBySlot.get(question.slot)?.replacement;
-          return existingReplacement
+          return existingReplacement?.eligible
             ? { ...existingReplacement.snapshot, slot: question.slot }
             : question;
         }) as PreparedDailyChallengeDraft["questions"];
+        const attemptedReplacementIds = new Set(
+          Array.from(itemsBySlot.values()).flatMap((item) =>
+            item.replacement ? [item.replacement.questionId] : [],
+          ),
+        );
         for (const question of flaggedQuestions) {
           try {
             await assertLease();
@@ -612,12 +629,12 @@ export async function runNightlyQuestionReview({
               draft,
               flaggedSlot: question.slot,
               selection: replacementSelection,
+              excludedQuestionIds: Array.from(attemptedReplacementIds),
             });
             if (!candidate) continue;
 
-            const actualSoFar = costUsage(deps.model, invocationUsage);
             if (
-              actualSoFar +
+              persistedRun.estimatedCostMicrodollars +
                 MAX_VERIFICATION_RESERVATION_MICRODOLLARS >
               reservation.reservedMicrodollars
             ) {
@@ -635,18 +652,38 @@ export async function runNightlyQuestionReview({
             if (replacementSelection.some((selected) => selected.id === candidate.id)) {
               throw new Error("Replacement selector returned a duplicate question.");
             }
-            replacementSelection = replacementSelection.map((selected) =>
-              selected.slot === question.slot
-                ? { ...candidate, slot: question.slot }
-                : selected,
-            ) as PreparedDailyChallengeDraft["questions"];
+            if (attemptedReplacementIds.has(candidate.id)) {
+              throw new Error("Replacement selector returned an attempted question.");
+            }
+            attemptedReplacementIds.add(candidate.id);
 
             const candidateEvidence = await deps.collectEvidence(candidate);
-            const candidateVerification = await deps.verifyQuestion({
-              question: candidate,
-              savedEvidence: candidateEvidence.savedEvidence,
-            });
-            addUsage(invocationUsage, resultUsage(candidateVerification));
+            let candidateVerification: OpenAiQuestionVerifierResult;
+            try {
+              candidateVerification = await deps.verifyQuestion({
+                question: candidate,
+                savedEvidence: candidateEvidence.savedEvidence,
+              });
+            } catch (error) {
+              const primaryItem = itemsBySlot.get(question.slot);
+              if (primaryItem?.finding) {
+                await saveProgress({
+                  dailyChallengeId: draft.challengeId,
+                  slot: question.slot,
+                  question: primaryItem.question,
+                  reviewStatus: "completed",
+                  sourceFetchResults: primaryItem.sourceFetchResults,
+                  finding: primaryItem.finding,
+                  replacement: null,
+                  usageEvent: makeUsageEvent(
+                    "replacement",
+                    deps.model,
+                    errorUsage(error),
+                  ),
+                });
+              }
+              throw error;
+            }
             const replacementCandidate: DailyQuestionReplacementCandidate = {
               questionId: candidate.id,
               snapshot: candidate,
@@ -659,8 +696,7 @@ export async function runNightlyQuestionReview({
             if (!primaryItem?.finding) {
               throw new Error("Persisted primary finding is unavailable.");
             }
-            const saved = await deps.saveItem({
-              runId: loaded.run.id,
+            await saveProgress({
               dailyChallengeId: draft.challengeId,
               slot: question.slot,
               question: primaryItem.question,
@@ -668,10 +704,20 @@ export async function runNightlyQuestionReview({
               sourceFetchResults: primaryItem.sourceFetchResults,
               finding: primaryItem.finding,
               replacement: replacementCandidate,
+              usageEvent: makeUsageEvent(
+                "replacement",
+                deps.model,
+                resultUsage(candidateVerification),
+              ),
             });
-            itemsBySlot.set(question.slot, saved);
+            if (replacementCandidate.eligible) {
+              replacementSelection = replacementSelection.map((selected) =>
+                selected.slot === question.slot
+                  ? { ...candidate, slot: question.slot }
+                  : selected,
+              ) as PreparedDailyChallengeDraft["questions"];
+            }
           } catch (error) {
-            addUsage(invocationUsage, errorUsage(error));
             runErrors.push(
               makeRunError(
                 "replacement",
@@ -700,14 +746,6 @@ export async function runNightlyQuestionReview({
           : hasFlags
             ? "completed_with_flags"
             : "completed";
-        const totalUsage: UsageTotals = {
-          inputTokens: loaded.run.usage.inputTokens ?? 0,
-          cachedInputTokens: loaded.run.usage.cachedInputTokens ?? 0,
-          cacheWriteTokens: loaded.run.usage.cacheWriteTokens ?? 0,
-          outputTokens: loaded.run.usage.outputTokens ?? 0,
-          webSearchCalls: loaded.run.usage.webSearchCalls,
-        };
-        addUsage(totalUsage, invocationUsage);
         runErrors.sort((left, right) => {
           const questionOrder = (left.questionId ?? "").localeCompare(
             right.questionId ?? "",
@@ -717,20 +755,12 @@ export async function runNightlyQuestionReview({
         await assertLease();
         const finalRun = await deps.completeRun({
           runId: loaded.run.id,
+          claimToken,
+          reservationId: reservation.reservationId,
           status,
           completedAt: occurredAt,
-          usage: totalUsage,
-          estimatedCostMicrodollars: costUsage(deps.model, totalUsage),
           errors: runErrors.slice(0, 20),
         });
-
-        const actualMicrodollars = costUsage(deps.model, invocationUsage);
-        await deps.reconcileReservation({
-          reservationId: reservation.reservationId,
-          actualMicrodollars,
-          reconciledAt: occurredAt,
-        });
-        reconciled = true;
 
         if (deps.sendReviewEmail) {
           const emailClaim = await deps.claimEmail(finalRun.id, occurredAt);
@@ -756,10 +786,10 @@ export async function runNightlyQuestionReview({
 
         return { kind: "completed" as const, run: finalRun };
       } finally {
-        if (shouldReconcile && !reconciled) {
+        if (releaseUnboundReservation) {
           await deps.reconcileReservation({
             reservationId: reservation.reservationId,
-            actualMicrodollars: costUsage(deps.model, invocationUsage),
+            actualMicrodollars: 0,
             reconciledAt: occurredAt,
           });
         }

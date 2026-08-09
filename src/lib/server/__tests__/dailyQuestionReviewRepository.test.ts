@@ -86,6 +86,7 @@ const ids = {
   replacement: "40000000-0000-4000-8000-000000000002",
   reservation: "50000000-0000-4000-8000-000000000001",
   claim: "60000000-0000-4000-8000-000000000001",
+  usageEvent: "70000000-0000-4000-8000-000000000001",
 };
 
 const timestamp = "2026-08-09T23:00:00.000Z";
@@ -306,13 +307,34 @@ describe("startOrObserveDailyQuestionReviewRun", () => {
 });
 
 describe("review item persistence", () => {
-  it("upserts a completed finding by run and slot", async () => {
-    const upsert = createThenableQuery({ data: itemRow, error: null });
-    const client = createClientMock({ daily_question_review_items: upsert });
+  it("atomically fences an item upsert, usage increment, and lease renewal", async () => {
+    const progressedRun = {
+      ...runRow,
+      input_tokens: 120,
+      cached_input_tokens: 20,
+      cache_write_tokens: 10,
+      output_tokens: 30,
+      search_count: 2,
+      estimated_cost_microdollars: 42_000,
+    };
+    const client = createClientMock({}, {
+      persist_daily_question_review_progress: {
+        data: {
+          outcome: "persisted",
+          usage_applied: true,
+          item: itemRow,
+          run: progressedRun,
+        },
+        error: null,
+      },
+    });
 
     await expect(
       upsertDailyQuestionReviewItem(client, {
         runId: ids.run,
+        claimToken: ids.claim,
+        heartbeatAt: timestamp,
+        leaseExpiresAt: "2026-08-09T23:15:00.000Z",
         dailyChallengeId: ids.challenge,
         slot: 1,
         question: snapshot,
@@ -320,18 +342,33 @@ describe("review item persistence", () => {
         sourceFetchResults: [],
         finding,
         replacement: null,
+        usageEvent: {
+          id: ids.usageEvent,
+          phase: "primary",
+          inputTokens: 120,
+          cachedInputTokens: 20,
+          cacheWriteTokens: 10,
+          outputTokens: 30,
+          webSearchCalls: 2,
+          estimatedCostMicrodollars: 42_000,
+        },
       }),
-    ).resolves.toMatchObject({ reviewStatus: "completed", finding });
+    ).resolves.toMatchObject({
+      usageApplied: true,
+      item: { reviewStatus: "completed", finding },
+      run: { estimatedCostMicrodollars: 42_000 },
+    });
 
-    expect(upsert.upsert).toHaveBeenCalledWith(
+    expect(client.rpc).toHaveBeenCalledWith(
+      "persist_daily_question_review_progress",
       expect.objectContaining({
-        run_id: ids.run,
-        slot: 1,
-        verdict: "passed",
-        evidence: finding.evidence,
-        verified_at: finding.verifiedAt,
+        p_run_id: ids.run,
+        p_claim_token: ids.claim,
+        p_slot: 1,
+        p_usage_event_id: ids.usageEvent,
+        p_input_tokens: 120,
+        p_estimated_cost_microdollars: 42_000,
       }),
-      { onConflict: "run_id,slot" },
     );
   });
 
@@ -356,12 +393,24 @@ describe("review item persistence", () => {
       evidence: [],
       source_fetch_results: failedSourceResults,
     };
-    const upsert = createThenableQuery({ data: failedRow, error: null });
-    const client = createClientMock({ daily_question_review_items: upsert });
+    const client = createClientMock({}, {
+      persist_daily_question_review_progress: {
+        data: {
+          outcome: "persisted",
+          usage_applied: false,
+          item: failedRow,
+          run: runRow,
+        },
+        error: null,
+      },
+    });
 
     await expect(
       upsertDailyQuestionReviewItem(client, {
         runId: ids.run,
+        claimToken: ids.claim,
+        heartbeatAt: timestamp,
+        leaseExpiresAt: "2026-08-09T23:15:00.000Z",
         dailyChallengeId: ids.challenge,
         slot: 1,
         question: snapshot,
@@ -369,8 +418,33 @@ describe("review item persistence", () => {
         sourceFetchResults: failedRow.source_fetch_results,
         finding: null,
         replacement: null,
+        usageEvent: null,
       }),
-    ).resolves.toMatchObject({ reviewStatus: "failed", finding: null });
+    ).resolves.toMatchObject({ item: { reviewStatus: "failed", finding: null } });
+  });
+
+  it("rejects a stale owner without writing item progress or usage", async () => {
+    const client = createClientMock({}, {
+      persist_daily_question_review_progress: {
+        data: { outcome: "lost_lease" },
+        error: null,
+      },
+    });
+
+    await expect(upsertDailyQuestionReviewItem(client, {
+      runId: ids.run,
+      claimToken: ids.claim,
+      heartbeatAt: timestamp,
+      leaseExpiresAt: "2026-08-09T23:15:00.000Z",
+      dailyChallengeId: ids.challenge,
+      slot: 1,
+      question: snapshot,
+      reviewStatus: "completed",
+      sourceFetchResults: [],
+      finding,
+      replacement: null,
+      usageEvent: null,
+    })).rejects.toThrow("Daily review lease ownership was lost");
   });
 });
 
@@ -398,31 +472,55 @@ describe("run accounting and reads", () => {
       estimated_cost_microdollars: 42_000,
       errors: runErrors,
     };
-    const update = createThenableQuery({ data: completedRow, error: null });
-    const client = createClientMock({ daily_question_review_runs: update });
+    const client = createClientMock({}, {
+      finalize_daily_question_review_run: {
+        data: {
+          outcome: "completed",
+          run: completedRow,
+          actual_microdollars: 42_000,
+        },
+        error: null,
+      },
+    });
 
     await expect(
       completeDailyQuestionReviewRun(client, {
         runId: ids.run,
+        claimToken: ids.claim,
+        reservationId: ids.reservation,
         status: "failed",
         completedAt: timestamp,
-        usage: {
-          inputTokens: 120,
-          cachedInputTokens: 20,
-          cacheWriteTokens: 10,
-          outputTokens: 30,
-          webSearchCalls: 2,
-        },
-        estimatedCostMicrodollars: 42_000,
         errors: completedRow.errors,
       }),
     ).resolves.toMatchObject({ status: "failed", estimatedCostMicrodollars: 42_000 });
 
-    expect(update.update).toHaveBeenCalledWith(expect.objectContaining({
-      cached_input_tokens: 20,
-      cache_write_tokens: 10,
-      estimated_cost_microdollars: 42_000,
-    }));
+    expect(client.rpc).toHaveBeenCalledWith(
+      "finalize_daily_question_review_run",
+      expect.objectContaining({
+        p_run_id: ids.run,
+        p_claim_token: ids.claim,
+        p_reservation_id: ids.reservation,
+        p_status: "failed",
+      }),
+    );
+  });
+
+  it("rejects stale-owner completion without reconciling the reservation", async () => {
+    const client = createClientMock({}, {
+      finalize_daily_question_review_run: {
+        data: { outcome: "lost_lease" },
+        error: null,
+      },
+    });
+
+    await expect(completeDailyQuestionReviewRun(client, {
+      runId: ids.run,
+      claimToken: ids.claim,
+      reservationId: ids.reservation,
+      status: "failed",
+      completedAt: timestamp,
+      errors: [],
+    })).rejects.toThrow("Daily review lease ownership was lost");
   });
 
   it("queries only actual current-month run spend with an explicit projection", async () => {

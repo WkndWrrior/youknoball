@@ -458,6 +458,9 @@ export async function upsertDailyQuestionReviewItem(
   client: ServerSupabaseClient,
   input: {
     runId: string;
+    claimToken: string;
+    heartbeatAt: string;
+    leaseExpiresAt: string;
     dailyChallengeId: string;
     slot: number;
     question: QuestionSnapshot;
@@ -465,70 +468,103 @@ export async function upsertDailyQuestionReviewItem(
     sourceFetchResults: DailyQuestionSourceFetchResult[];
     finding: DailyQuestionVerificationFinding | null;
     replacement: DailyQuestionReplacementCandidate | null;
+    usageEvent: null | {
+      id: string;
+      phase: "primary" | "replacement";
+      inputTokens: number;
+      cachedInputTokens: number;
+      cacheWriteTokens: number;
+      outputTokens: number;
+      webSearchCalls: number;
+      estimatedCostMicrodollars: number;
+    };
   },
-): Promise<DailyQuestionReviewItemRecord> {
+): Promise<{
+  item: DailyQuestionReviewItemRecord;
+  run: DailyQuestionReviewRunRecord;
+  usageApplied: boolean;
+}> {
   const finding = input.finding;
   const replacement = input.replacement;
-  const { data, error } = await client
-    .from("daily_question_review_items")
-    .upsert(
-      {
-        run_id: input.runId,
-        daily_challenge_id: input.dailyChallengeId,
-        slot: input.slot,
-        question_id: input.question.id,
-        question_snapshot: input.question,
-        review_status: input.reviewStatus,
-        verdict: finding?.verdict ?? null,
-        confidence: finding?.confidence ?? null,
-        explanation: finding?.explanation ?? null,
-        conflicts: finding?.conflicts ?? [],
-        source_fetch_results: input.sourceFetchResults,
-        evidence: finding?.evidence ?? [],
-        verified_at: finding?.verifiedAt ?? null,
-        replacement_question_id: replacement?.questionId ?? null,
-        replacement_eligible: replacement?.eligible ?? false,
-        replacement_question_snapshot: replacement?.snapshot ?? null,
-        replacement_finding: replacement?.finding ?? null,
-      },
-      { onConflict: "run_id,slot" },
-    )
-    .select(ITEM_COLUMNS)
-    .single();
+  const usage = input.usageEvent;
+  const { data, error } = await client.rpc(
+    "persist_daily_question_review_progress",
+    {
+      p_run_id: input.runId,
+      p_claim_token: input.claimToken,
+      p_heartbeat_at: input.heartbeatAt,
+      p_lease_expires_at: input.leaseExpiresAt,
+      p_daily_challenge_id: input.dailyChallengeId,
+      p_slot: input.slot,
+      p_question_id: input.question.id,
+      p_question_snapshot: input.question,
+      p_review_status: input.reviewStatus,
+      p_source_fetch_results: input.sourceFetchResults,
+      p_verdict: finding?.verdict ?? null,
+      p_confidence: finding?.confidence ?? null,
+      p_explanation: finding?.explanation ?? null,
+      p_conflicts: finding?.conflicts ?? [],
+      p_evidence: finding?.evidence ?? [],
+      p_verified_at: finding?.verifiedAt ?? null,
+      p_replacement_question_id: replacement?.questionId ?? null,
+      p_replacement_eligible: replacement?.eligible ?? false,
+      p_replacement_question_snapshot: replacement?.snapshot ?? null,
+      p_replacement_finding: replacement?.finding ?? null,
+      p_usage_event_id: usage?.id ?? null,
+      p_usage_phase: usage?.phase ?? null,
+      p_input_tokens: usage?.inputTokens ?? 0,
+      p_cached_input_tokens: usage?.cachedInputTokens ?? 0,
+      p_cache_write_tokens: usage?.cacheWriteTokens ?? 0,
+      p_output_tokens: usage?.outputTokens ?? 0,
+      p_search_count: usage?.webSearchCalls ?? 0,
+      p_estimated_cost_microdollars: usage?.estimatedCostMicrodollars ?? 0,
+    },
+  );
   throwIfError(error);
-  return requireItem(data);
+  if (isRecord(data) && data.outcome === "lost_lease") {
+    throw new Error("Daily review lease ownership was lost.");
+  }
+  if (
+    !isRecord(data) ||
+    data.outcome !== "persisted" ||
+    typeof data.usage_applied !== "boolean"
+  ) {
+    throw new Error("Daily review progress persistence returned invalid data.");
+  }
+  return {
+    item: requireItem(data.item),
+    run: requireRun(data.run),
+    usageApplied: data.usage_applied,
+  };
 }
 
 export async function completeDailyQuestionReviewRun(
   client: ServerSupabaseClient,
   input: {
     runId: string;
+    claimToken: string;
+    reservationId: string;
     status: Extract<DailyQuestionReviewRunStatus, "completed" | "completed_with_flags" | "failed">;
     completedAt: string;
-    usage: Required<Omit<DailyQuestionReviewUsage, "model">> & { webSearchCalls: number };
-    estimatedCostMicrodollars: number;
     errors: DailyQuestionReviewRunError[];
   },
 ): Promise<DailyQuestionReviewRunRecord> {
-  const { data, error } = await client
-    .from("daily_question_review_runs")
-    .update({
-      status: input.status,
-      completed_at: input.completedAt,
-      input_tokens: input.usage.inputTokens,
-      cached_input_tokens: input.usage.cachedInputTokens,
-      cache_write_tokens: input.usage.cacheWriteTokens,
-      output_tokens: input.usage.outputTokens,
-      search_count: input.usage.webSearchCalls,
-      estimated_cost_microdollars: input.estimatedCostMicrodollars,
-      estimated_cost_usd: input.estimatedCostMicrodollars / 1_000_000,
-      errors: input.errors,
-    })
-    .eq("id", input.runId)
-    .select(RUN_COLUMNS)
-    .single();
+  const { data, error } = await client.rpc("finalize_daily_question_review_run", {
+    p_run_id: input.runId,
+    p_claim_token: input.claimToken,
+    p_reservation_id: input.reservationId,
+    p_status: input.status,
+    p_completed_at: input.completedAt,
+    p_errors: input.errors,
+  });
   throwIfError(error);
-  return requireRun(data);
+  if (isRecord(data) && data.outcome === "lost_lease") {
+    throw new Error("Daily review lease ownership was lost.");
+  }
+  if (!isRecord(data) || data.outcome !== "completed") {
+    throw new Error("Daily review finalization returned invalid data.");
+  }
+  return requireRun(data.run);
 }
 
 export async function listCurrentMonthDailyQuestionReviewCosts(

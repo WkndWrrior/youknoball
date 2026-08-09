@@ -360,6 +360,7 @@ describe("selectDailyChallengeReplacementForDraft", () => {
         },
         flaggedSlot: 2,
         selection: evolvingSelection as never,
+        excludedQuestionIds: [reusableQuestionRows[0].id],
       }),
     ).resolves.toMatchObject({
       id: replacement.id,
@@ -370,7 +371,9 @@ describe("selectDailyChallengeReplacementForDraft", () => {
     expect(selectDailyChallengeReplacement).toHaveBeenCalledWith({
       selection: evolvingSelection,
       flaggedSlot: 2,
-      candidates: [...reusableQuestionRows, replacement],
+      candidates: [...reusableQuestionRows, replacement].filter(
+        (candidate) => candidate.id !== reusableQuestionRows[0].id,
+      ),
       recentQuestionIds: [QUESTION_IDS[4], QUESTION_IDS[0]],
     });
   });

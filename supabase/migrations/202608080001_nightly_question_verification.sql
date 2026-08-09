@@ -946,6 +946,236 @@ create table if not exists public.daily_question_review_items (
   )
 );
 
+create table if not exists public.daily_question_review_usage_events (
+  id uuid primary key,
+  run_id uuid not null references public.daily_question_review_runs (id) on delete cascade,
+  slot smallint not null check (slot between 1 and 5),
+  phase text not null check (phase in ('primary', 'replacement')),
+  input_tokens integer not null check (input_tokens >= 0),
+  cached_input_tokens integer not null check (cached_input_tokens >= 0),
+  cache_write_tokens integer not null check (cache_write_tokens >= 0),
+  output_tokens integer not null check (output_tokens >= 0),
+  search_count integer not null check (search_count >= 0),
+  estimated_cost_microdollars bigint not null
+    check (estimated_cost_microdollars between 0 and 999999999999),
+  created_at timestamptz not null default timezone('utc', now()),
+  check (cached_input_tokens + cache_write_tokens <= input_tokens)
+);
+
+create or replace function public.persist_daily_question_review_progress(
+  p_run_id uuid,
+  p_claim_token uuid,
+  p_heartbeat_at timestamptz,
+  p_lease_expires_at timestamptz,
+  p_daily_challenge_id uuid,
+  p_slot smallint,
+  p_question_id uuid,
+  p_question_snapshot jsonb,
+  p_review_status text,
+  p_source_fetch_results jsonb,
+  p_verdict text,
+  p_confidence numeric,
+  p_explanation text,
+  p_conflicts jsonb,
+  p_evidence jsonb,
+  p_verified_at timestamptz,
+  p_replacement_question_id uuid,
+  p_replacement_eligible boolean,
+  p_replacement_question_snapshot jsonb,
+  p_replacement_finding jsonb,
+  p_usage_event_id uuid,
+  p_usage_phase text,
+  p_input_tokens integer,
+  p_cached_input_tokens integer,
+  p_cache_write_tokens integer,
+  p_output_tokens integer,
+  p_search_count integer,
+  p_estimated_cost_microdollars bigint
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_run public.daily_question_review_runs%rowtype;
+  v_item public.daily_question_review_items%rowtype;
+  v_usage_applied boolean := false;
+  v_inserted integer := 0;
+begin
+  select r.* into v_run
+  from public.daily_question_review_runs r
+  where r.id = p_run_id
+    and r.status = 'running'
+    and r.claim_token = p_claim_token
+    and r.lease_expires_at > p_heartbeat_at
+    and r.lease_expires_at > clock_timestamp()
+  for update;
+
+  if not found
+    or p_lease_expires_at <= p_heartbeat_at
+    or p_lease_expires_at <= clock_timestamp()
+  then
+    return jsonb_build_object('outcome', 'lost_lease');
+  end if;
+
+  if p_usage_event_id is not null then
+    if p_usage_phase not in ('primary', 'replacement')
+      or p_input_tokens < 0
+      or p_cached_input_tokens < 0
+      or p_cache_write_tokens < 0
+      or p_output_tokens < 0
+      or p_search_count < 0
+      or p_estimated_cost_microdollars < 0
+      or p_cached_input_tokens + p_cache_write_tokens > p_input_tokens
+      or v_run.input_tokens > 2147483647 - p_input_tokens
+      or v_run.cached_input_tokens > 2147483647 - p_cached_input_tokens
+      or v_run.cache_write_tokens > 2147483647 - p_cache_write_tokens
+      or v_run.output_tokens > 2147483647 - p_output_tokens
+      or v_run.search_count > 2147483647 - p_search_count
+      or v_run.estimated_cost_microdollars > 999999999999 - p_estimated_cost_microdollars
+    then
+      return jsonb_build_object('outcome', 'invalid_usage');
+    end if;
+
+    insert into public.daily_question_review_usage_events (
+      id, run_id, slot, phase, input_tokens, cached_input_tokens,
+      cache_write_tokens, output_tokens, search_count,
+      estimated_cost_microdollars
+    ) values (
+      p_usage_event_id, p_run_id, p_slot, p_usage_phase, p_input_tokens,
+      p_cached_input_tokens, p_cache_write_tokens, p_output_tokens,
+      p_search_count, p_estimated_cost_microdollars
+    )
+    on conflict (id) do nothing;
+    get diagnostics v_inserted = row_count;
+    v_usage_applied := v_inserted = 1;
+  end if;
+
+  update public.daily_question_review_runs
+  set input_tokens = input_tokens + case when v_usage_applied then p_input_tokens else 0 end,
+      cached_input_tokens = cached_input_tokens + case when v_usage_applied then p_cached_input_tokens else 0 end,
+      cache_write_tokens = cache_write_tokens + case when v_usage_applied then p_cache_write_tokens else 0 end,
+      output_tokens = output_tokens + case when v_usage_applied then p_output_tokens else 0 end,
+      search_count = search_count + case when v_usage_applied then p_search_count else 0 end,
+      estimated_cost_microdollars = estimated_cost_microdollars + case when v_usage_applied then p_estimated_cost_microdollars else 0 end,
+      estimated_cost_usd = (estimated_cost_microdollars + case when v_usage_applied then p_estimated_cost_microdollars else 0 end)::numeric / 1000000,
+      heartbeat_at = p_heartbeat_at,
+      lease_expires_at = p_lease_expires_at
+  where id = p_run_id
+  returning * into v_run;
+
+  insert into public.daily_question_review_items (
+    run_id, daily_challenge_id, slot, question_id, question_snapshot,
+    review_status, verdict, confidence, explanation, conflicts,
+    source_fetch_results, evidence, verified_at, replacement_question_id,
+    replacement_eligible, replacement_question_snapshot, replacement_finding
+  ) values (
+    p_run_id, p_daily_challenge_id, p_slot, p_question_id,
+    p_question_snapshot, p_review_status, p_verdict, p_confidence,
+    p_explanation, p_conflicts, p_source_fetch_results, p_evidence,
+    p_verified_at, p_replacement_question_id, p_replacement_eligible,
+    p_replacement_question_snapshot, p_replacement_finding
+  )
+  on conflict (run_id, slot) do update set
+    question_id = excluded.question_id,
+    question_snapshot = excluded.question_snapshot,
+    review_status = excluded.review_status,
+    verdict = excluded.verdict,
+    confidence = excluded.confidence,
+    explanation = excluded.explanation,
+    conflicts = excluded.conflicts,
+    source_fetch_results = excluded.source_fetch_results,
+    evidence = excluded.evidence,
+    verified_at = excluded.verified_at,
+    replacement_question_id = excluded.replacement_question_id,
+    replacement_eligible = excluded.replacement_eligible,
+    replacement_question_snapshot = excluded.replacement_question_snapshot,
+    replacement_finding = excluded.replacement_finding
+  returning * into v_item;
+
+  return jsonb_build_object(
+    'outcome', 'persisted',
+    'usage_applied', v_usage_applied,
+    'item', to_jsonb(v_item),
+    'run', to_jsonb(v_run)
+  );
+end;
+$function$;
+
+revoke all on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) from public, anon, authenticated;
+
+grant execute on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) to service_role;
+
+create or replace function public.finalize_daily_question_review_run(
+  p_run_id uuid,
+  p_claim_token uuid,
+  p_reservation_id uuid,
+  p_status text,
+  p_completed_at timestamptz,
+  p_errors jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_run public.daily_question_review_runs%rowtype;
+  v_reservation public.daily_question_review_reservations%rowtype;
+begin
+  select r.* into v_run
+  from public.daily_question_review_runs r
+  where r.id = p_run_id
+    and r.status = 'running'
+    and r.claim_token = p_claim_token
+    and r.lease_expires_at > p_completed_at
+    and r.lease_expires_at > clock_timestamp()
+  for update;
+
+  if not found
+    or p_status not in ('completed', 'completed_with_flags', 'failed')
+  then
+    return jsonb_build_object('outcome', 'lost_lease');
+  end if;
+
+  select r.* into v_reservation
+  from public.daily_question_review_reservations r
+  where r.id = p_reservation_id
+  for update;
+
+  if not found
+    or v_reservation.status <> 'active'
+    or not (v_run.estimated_cost_microdollars <= v_reservation.reserved_microdollars)
+  then
+    return jsonb_build_object('outcome', 'reservation_conflict');
+  end if;
+
+  update public.daily_question_review_runs
+  set status = p_status,
+      completed_at = p_completed_at,
+      errors = p_errors
+  where id = p_run_id
+  returning * into v_run;
+
+  update public.daily_question_review_reservations
+  set actual_microdollars = v_run.estimated_cost_microdollars,
+      status = case when v_run.estimated_cost_microdollars = 0 then 'released' else 'reconciled' end,
+      reconciled_at = p_completed_at
+  where id = p_reservation_id;
+
+  return jsonb_build_object(
+    'outcome', 'completed',
+    'actual_microdollars', v_run.estimated_cost_microdollars,
+    'run', to_jsonb(v_run)
+  );
+end;
+$function$;
+
+revoke all on function public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz, jsonb) from public, anon, authenticated;
+
+grant execute on function public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz, jsonb) to service_role;
+
 create or replace function public.acquire_daily_question_review_reservation(
   p_review_date date,
   p_challenge_date date,
@@ -1211,6 +1441,7 @@ begin
     or p_claimed_at is null
     or p_lease_expires_at is null
     or p_lease_expires_at <= p_claimed_at
+    or p_lease_expires_at <= clock_timestamp()
   then
     return jsonb_build_object('outcome', 'invalid', 'run_id', null, 'claim_token', null);
   end if;
@@ -1234,7 +1465,7 @@ begin
   if v_run.status = 'failed'
     or (
       v_run.status = 'running'
-      and v_run.lease_expires_at <= p_claimed_at
+      and v_run.lease_expires_at <= clock_timestamp()
     )
   then
     update public.daily_question_review_runs
@@ -1285,6 +1516,7 @@ begin
     or p_heartbeat_at is null
     or p_lease_expires_at is null
     or p_lease_expires_at <= p_heartbeat_at
+    or p_lease_expires_at <= clock_timestamp()
   then
     return jsonb_build_object('renewed', false);
   end if;
@@ -1295,7 +1527,8 @@ begin
   where id = p_run_id
     and status = 'running'
     and claim_token = p_claim_token
-    and lease_expires_at > p_heartbeat_at;
+    and lease_expires_at > p_heartbeat_at
+    and lease_expires_at > clock_timestamp();
 
   return jsonb_build_object('renewed', found);
 end;
@@ -1413,14 +1646,17 @@ create index if not exists daily_question_review_reservations_month_status_idx
 alter table public.daily_question_review_runs enable row level security;
 alter table public.daily_question_review_items enable row level security;
 alter table public.daily_question_review_reservations enable row level security;
+alter table public.daily_question_review_usage_events enable row level security;
 
 revoke all on public.daily_question_review_runs from public, anon, authenticated;
 revoke all on public.daily_question_review_items from public, anon, authenticated;
 revoke all on public.daily_question_review_reservations from public, anon, authenticated;
+revoke all on public.daily_question_review_usage_events from public, anon, authenticated;
 
 grant select, insert, update on public.daily_question_review_runs to service_role;
 grant select, insert, update on public.daily_question_review_items to service_role;
 grant select, insert, update on public.daily_question_review_reservations to service_role;
+grant select on public.daily_question_review_usage_events to service_role;
 
 comment on table public.daily_question_review_runs is
   'Service-role-only operational record for each nightly Daily 5 verification run.';

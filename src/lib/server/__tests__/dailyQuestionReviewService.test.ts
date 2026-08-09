@@ -160,6 +160,7 @@ function createDependencies(options: {
   };
 } = {}) {
   let run = options.existingRun ?? makeRun();
+  const appliedUsageEvents = new Set<string>();
   const items = new Map<number, ReturnType<typeof makeStoredItem>>(
     (options.existingItems ?? []).map((item) => [item.slot, item]),
   );
@@ -206,15 +207,34 @@ function createDependencies(options: {
         replacement: input.replacement,
       } as DailyQuestionReviewItemRecord;
       items.set(input.slot, stored);
-      return stored;
+      const usageApplied = Boolean(
+        input.usageEvent && !appliedUsageEvents.has(input.usageEvent.id),
+      );
+      if (input.usageEvent && usageApplied) {
+        appliedUsageEvents.add(input.usageEvent.id);
+        run = {
+          ...run,
+          usage: {
+            model: run.usage.model,
+            inputTokens: (run.usage.inputTokens ?? 0) + input.usageEvent.inputTokens,
+            cachedInputTokens:
+              (run.usage.cachedInputTokens ?? 0) + input.usageEvent.cachedInputTokens,
+            cacheWriteTokens:
+              (run.usage.cacheWriteTokens ?? 0) + input.usageEvent.cacheWriteTokens,
+            outputTokens: (run.usage.outputTokens ?? 0) + input.usageEvent.outputTokens,
+            webSearchCalls: run.usage.webSearchCalls + input.usageEvent.webSearchCalls,
+          },
+          estimatedCostMicrodollars:
+            run.estimatedCostMicrodollars + input.usageEvent.estimatedCostMicrodollars,
+        } as DailyQuestionReviewRunRecord;
+      }
+      return { item: stored, run, usageApplied };
     }),
     completeRun: vi.fn(async (input) => {
       run = {
         ...run,
         status: input.status,
         completedAt: input.completedAt,
-        usage: { model: "gpt-5.6-terra", ...input.usage },
-        estimatedCostMicrodollars: input.estimatedCostMicrodollars,
         errors: input.errors,
       } as DailyQuestionReviewRunRecord;
       return run;
@@ -291,6 +311,7 @@ describe("runNightlyQuestionReview", () => {
       draft,
       flaggedSlot: 3,
       selection: draft.questions,
+      excludedQuestionIds: [],
     });
     expect(dependencies.saveItem).toHaveBeenCalledTimes(6);
     expect(dependencies.saveItem).toHaveBeenCalledBefore(
@@ -306,11 +327,7 @@ describe("runNightlyQuestionReview", () => {
       usage: { inputTokens: 60, outputTokens: 30 },
       estimatedCostMicrodollars: 600,
     });
-    expect(dependencies.reconcileReservation).toHaveBeenCalledWith({
-      reservationId: uuid(500),
-      actualMicrodollars: 600,
-      reconciledAt: now.toISOString(),
-    });
+    expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
     expect(dependencies.markEmailSent).toHaveBeenCalledOnce();
   });
@@ -357,6 +374,51 @@ describe("runNightlyQuestionReview", () => {
     expect(new Set(Array.from(items.values()).map((item) =>
       item.replacement?.questionId ?? item.question.id,
     )).size).toBe(5);
+  });
+
+  it("keeps ineligible replacements out of later composition selection", async () => {
+    const failedCandidate = makeQuestion(uuid(91), 0);
+    const passedCandidate = makeQuestion(uuid(92), 1);
+    const verifier = vi.fn(async ({ question }: { question: QuestionSnapshot }) => ({
+      finding: makeFinding(
+        question,
+        question.id === questionIds[0] ||
+          question.id === questionIds[1] ||
+          question.id === failedCandidate.id
+          ? "risk"
+          : "passed",
+      ),
+      usage: {
+        inputTokens: 10,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 5,
+      },
+      webSearchCalls: 0,
+      sources: [],
+    }));
+    const { dependencies, items } = createDependencies({ verifier });
+    const seenSelections: string[][] = [];
+    dependencies.selectReplacement = vi.fn(async (
+      input: Parameters<DailyQuestionReviewServiceDependencies["selectReplacement"]>[0],
+    ) => {
+      seenSelections.push(input.selection.map((question) => question.id));
+      return input.flaggedSlot === 1 ? failedCandidate : passedCandidate;
+    });
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+
+    expect(seenSelections).toHaveLength(2);
+    expect(seenSelections[1]).toContain(questionIds[0]);
+    expect(seenSelections[1]).not.toContain(failedCandidate.id);
+    expect(items.get(1)?.replacement).toMatchObject({
+      questionId: failedCandidate.id,
+      eligible: false,
+    });
+    expect(items.get(2)?.replacement).toMatchObject({
+      questionId: passedCandidate.id,
+      eligible: true,
+    });
   });
 
   it("persists an atomic budget denial and makes zero draft, verifier, or email calls", async () => {
@@ -427,11 +489,7 @@ describe("runNightlyQuestionReview", () => {
     expect(verifier).toHaveBeenCalledTimes(10);
     expect(dependencies.selectReplacement).toHaveBeenCalledTimes(5);
     expect(Array.from(items.values()).every((item) => item.replacement !== null)).toBe(true);
-    expect(dependencies.reconcileReservation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actualMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
-      }),
-    );
+    expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
   });
 
   it("records charged verifier failure usage and preserves the other completed findings", async () => {
@@ -470,9 +528,7 @@ describe("runNightlyQuestionReview", () => {
       estimatedCostMicrodollars: 500,
       errors: [expect.objectContaining({ phase: "verification", code: "timeout", questionId: questionIds[1] })],
     });
-    expect(dependencies.reconcileReservation).toHaveBeenCalledWith(
-      expect.objectContaining({ actualMicrodollars: 500 }),
-    );
+    expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
   });
 
@@ -525,7 +581,7 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.prepareDraft).toHaveBeenCalledOnce();
     expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
-    expect(dependencies.reconcileReservation).toHaveBeenCalledOnce();
+    expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
   });
 
   it("atomically reclaims a stale running run and resumes only unfinished slots", async () => {
@@ -561,6 +617,22 @@ describe("runNightlyQuestionReview", () => {
     expect(getRun()).toMatchObject({ status: "completed" });
   });
 
+  it("does not reconcile when token-fenced finalization reports lost ownership", async () => {
+    const { dependencies } = createDependencies();
+    vi.mocked(dependencies.completeRun).mockRejectedValue(
+      new Error("Daily review lease ownership was lost."),
+    );
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).rejects.toThrow("Daily review lease ownership was lost");
+
+    expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
+    expect(dependencies.sendReviewEmail).not.toHaveBeenCalled();
+  });
+
   it("resumes a failed partial run, skips completed slots, and retries failed or pending slots once", async () => {
     const existingRun = makeRun({
       status: "failed",
@@ -593,9 +665,7 @@ describe("runNightlyQuestionReview", () => {
       usage: { inputTokens: 50, outputTokens: 25 },
       estimatedCostMicrodollars: 500,
     });
-    expect(dependencies.reconcileReservation).toHaveBeenCalledWith(
-      expect.objectContaining({ actualMicrodollars: 300 }),
-    );
+    expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
   });
 
   it("resumes replacement verification for a persisted flagged finding", async () => {
@@ -619,11 +689,110 @@ describe("runNightlyQuestionReview", () => {
       draft,
       flaggedSlot: 3,
       selection: draft.questions,
+      excludedQuestionIds: [],
     });
     expect(dependencies.saveItem).toHaveBeenCalledOnce();
     expect(items.get(3)).toMatchObject({
       finding: { verdict: "risk" },
       replacement: { eligible: true, questionId: replacementId },
     });
+  });
+
+  it("resumes after a pre-finalization crash without losing or double-counting persisted usage", async () => {
+    const { dependencies } = createDependencies();
+    let persistedRun = makeRun();
+    const persistedItems = new Map<number, DailyQuestionReviewItemRecord>();
+    const usageEvents = new Set<string>();
+    let acquisition = 0;
+    vi.mocked(dependencies.acquireReservation).mockImplementation(async () => ({
+      acquired: true,
+      created: acquisition++ === 0,
+      reservationId: uuid(500),
+      reservedMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+    }));
+    vi.mocked(dependencies.claimExisting).mockImplementation(async () => ({
+      claimed: true,
+      claimToken: uuid(601),
+      run: persistedRun,
+    }));
+    vi.mocked(dependencies.loadReview).mockImplementation(async () => ({
+      run: persistedRun,
+      items: Array.from(persistedItems.values()),
+    }));
+    dependencies.saveItem = vi.fn(async (input) => {
+      const stored = {
+        ...makeStoredItem(input.slot, input.reviewStatus),
+        question: input.question,
+        sourceFetchResults: input.sourceFetchResults,
+        finding: input.finding,
+        replacement: input.replacement,
+      } as DailyQuestionReviewItemRecord;
+      persistedItems.set(input.slot, stored);
+      const event = "usageEvent" in input
+        ? (input as typeof input & {
+            usageEvent: null | {
+              id: string;
+              inputTokens: number;
+              cachedInputTokens: number;
+              cacheWriteTokens: number;
+              outputTokens: number;
+              webSearchCalls: number;
+              estimatedCostMicrodollars: number;
+            };
+          }).usageEvent
+        : null;
+      const usageApplied = Boolean(event && !usageEvents.has(event.id));
+      if (event && usageApplied) {
+        usageEvents.add(event.id);
+        persistedRun = makeRun({
+          ...persistedRun,
+          usage: {
+            model: persistedRun.usage.model,
+            inputTokens: (persistedRun.usage.inputTokens ?? 0) + event.inputTokens,
+            cachedInputTokens: (persistedRun.usage.cachedInputTokens ?? 0) + event.cachedInputTokens,
+            cacheWriteTokens: (persistedRun.usage.cacheWriteTokens ?? 0) + event.cacheWriteTokens,
+            outputTokens: (persistedRun.usage.outputTokens ?? 0) + event.outputTokens,
+            webSearchCalls: persistedRun.usage.webSearchCalls + event.webSearchCalls,
+          },
+          estimatedCostMicrodollars:
+            persistedRun.estimatedCostMicrodollars + event.estimatedCostMicrodollars,
+        });
+      }
+      return { item: stored, run: persistedRun, usageApplied } as never;
+    });
+    vi.mocked(dependencies.completeRun)
+      .mockRejectedValueOnce(new Error("crash before finalization"))
+      .mockImplementationOnce(async (input) => {
+        persistedRun = makeRun({
+          ...persistedRun,
+          status: input.status,
+          completedAt: input.completedAt,
+        });
+        return persistedRun;
+      });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).rejects.toThrow("crash before finalization");
+    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
+
+    const resumed = await runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    });
+
+    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
+    expect(resumed).toMatchObject({
+      kind: "completed",
+      run: {
+        usage: { inputTokens: 50, outputTokens: 25 },
+        estimatedCostMicrodollars: 500,
+      },
+    });
+    expect(usageEvents.size).toBe(5);
+    expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
   });
 });

@@ -560,15 +560,66 @@ describe("nightly question verification migration", () => {
     expect(claim).toContain("security definer");
     expect(claim).toContain("for update");
     expect(claim).toContain("status = 'failed'");
-    expect(claim).toContain("lease_expires_at <= p_claimed_at");
+    expect(claim).toContain("lease_expires_at <= clock_timestamp()");
     expect(claim).toContain("claim_token = gen_random_uuid()");
     expect(heartbeat).toContain("security definer");
     expect(heartbeat).toContain("claim_token = p_claim_token");
     expect(heartbeat).toContain("lease_expires_at > p_heartbeat_at");
+    expect(heartbeat).toContain("lease_expires_at > clock_timestamp()");
 
     for (const signature of [
       "public.claim_daily_question_review_run(date, date, timestamptz, timestamptz)",
       "public.heartbeat_daily_question_review_run(uuid, uuid, timestamptz, timestamptz)",
+    ]) {
+      expect(migration).toContain(
+        `revoke all on function ${signature} from public, anon, authenticated`,
+      );
+      expect(migration).toContain(
+        `grant execute on function ${signature} to service_role`,
+      );
+    }
+  });
+
+  it("atomically persists token-fenced progress and finalizes from persisted totals", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const progress = normalizedStatement(
+      migration,
+      "create or replace function public.persist_daily_question_review_progress",
+    );
+    const finalize = normalizedStatement(
+      migration,
+      "create or replace function public.finalize_daily_question_review_run",
+    );
+
+    expect(migration).toContain(
+      "create table if not exists public.daily_question_review_usage_events",
+    );
+    expect(migration).toContain("input_tokens integer not null");
+    expect(migration).toContain("estimated_cost_microdollars bigint not null");
+    expect(migration).toContain(
+      "revoke all on public.daily_question_review_usage_events from public, anon, authenticated",
+    );
+    expect(progress).toContain("security definer");
+    expect(progress).toContain("for update");
+    expect(progress).toContain("claim_token = p_claim_token");
+    expect(progress).toContain("lease_expires_at > p_heartbeat_at");
+    expect(progress).toContain("lease_expires_at > clock_timestamp()");
+    expect(progress).toContain("on conflict (id) do nothing");
+    expect(progress).toContain("usage_applied");
+    expect(progress).toContain("insert into public.daily_question_review_items");
+    expect(progress).toContain("heartbeat_at = p_heartbeat_at");
+    expect(finalize).toContain("security definer");
+    expect(finalize).toContain("claim_token = p_claim_token");
+    expect(finalize).toContain("lease_expires_at > p_completed_at");
+    expect(finalize).toContain("lease_expires_at > clock_timestamp()");
+    expect(finalize).toContain("actual_microdollars = v_run.estimated_cost_microdollars");
+    expect(finalize).toContain(
+      "v_run.estimated_cost_microdollars <= v_reservation.reserved_microdollars",
+    );
+
+    for (const signature of [
+      "public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint)",
+      "public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz, jsonb)",
     ]) {
       expect(migration).toContain(
         `revoke all on function ${signature} from public, anon, authenticated`,
