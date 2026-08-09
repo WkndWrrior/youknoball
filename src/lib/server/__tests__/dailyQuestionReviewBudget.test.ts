@@ -896,6 +896,7 @@ describe("budget preflight", () => {
   it("passes the validated atomic reservation context into work", async () => {
     const acquireReservation = vi.fn(async () => ({
       acquired: true,
+      created: true,
       reservationId: "  reservation-valid  ",
       reservedMicrodollars: 2_520_000,
     }));
@@ -924,6 +925,7 @@ describe("budget preflight", () => {
     });
     expect(operation).toHaveBeenCalledWith({
       reservationId: "reservation-valid",
+      acquiredNow: true,
       model: "gpt-5.6-terra",
       modelDerivedReservationMicrodollars: 2_520_000,
       requiredReservationMicrodollars: 2_520_000,
@@ -934,5 +936,29 @@ describe("budget preflight", () => {
       },
     });
     expect(result.value).toBe("verified");
+  });
+
+  it("identifies an already-active reservation so a duplicate caller only observes", async () => {
+    const acquireReservation = vi.fn(async () => ({
+      acquired: true,
+      created: false,
+      reservationId: "reservation-active",
+      reservedMicrodollars: 2_520_000,
+    }));
+    const operation = vi.fn(async (reservation) => reservation.acquiredNow);
+
+    const result = await runWithDailyQuestionReviewBudgetPreflight({
+      model: "gpt-5.6-terra",
+      now,
+      monthlyBudgetCents: 1_000,
+      records: [],
+      acquireReservation,
+      operation,
+    });
+
+    expect(result.value).toBe(false);
+    expect(operation).toHaveBeenCalledWith(
+      expect.objectContaining({ acquiredNow: false }),
+    );
   });
 });

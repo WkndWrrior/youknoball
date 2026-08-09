@@ -1,0 +1,658 @@
+import { describe, expect, it, vi } from "vitest";
+
+import type {
+  DailyQuestionReviewRunError,
+  DailyQuestionSourceFetchResult,
+  DailyQuestionVerificationFinding,
+} from "@/lib/dailyQuestionReview";
+import type { ServerSupabaseClient } from "@/lib/server/supabaseServer";
+import {
+  acquireDailyQuestionReviewReservation,
+  claimDailyQuestionReviewEmail,
+  completeDailyQuestionReviewRun,
+  listCurrentMonthDailyQuestionReviewCosts,
+  loadDailyQuestionReviewByRunId,
+  loadDailyQuestionReviewResolutions,
+  loadLatestDailyQuestionReview,
+  markDailyQuestionReviewEmailFailed,
+  markDailyQuestionReviewEmailSent,
+  reconcileDailyQuestionReviewReservation,
+  recordDailyQuestionReviewBudgetBlock,
+  startOrObserveDailyQuestionReviewRun,
+  upsertDailyQuestionReviewItem,
+} from "@/lib/server/dailyQuestionReviewRepository";
+
+type QueryResult<T> = { data: T; error: unknown };
+
+function createThenableQuery<T>(result: QueryResult<T>) {
+  const query: Record<string, unknown> = {};
+  for (const method of [
+    "select",
+    "insert",
+    "upsert",
+    "update",
+    "eq",
+    "neq",
+    "gte",
+    "lt",
+    "in",
+    "order",
+    "limit",
+  ]) {
+    query[method] = vi.fn(() => query);
+  }
+  query.single = vi.fn(async () => result);
+  query.maybeSingle = vi.fn(async () => result);
+  query.then = (
+    resolve: (value: QueryResult<T>) => unknown,
+    reject: (reason: unknown) => unknown,
+  ) => Promise.resolve(result).then(resolve, reject);
+  return query;
+}
+
+function createClientMock(
+  queries: Record<
+    string,
+    ReturnType<typeof createThenableQuery> |
+      Array<ReturnType<typeof createThenableQuery>>
+  > = {},
+  rpcResults: Record<string, QueryResult<unknown>> = {},
+) {
+  const calls = new Map<string, number>();
+  const client = {
+    from: vi.fn((table: string) => {
+      const configured = queries[table];
+      const index = calls.get(table) ?? 0;
+      calls.set(table, index + 1);
+      const query = Array.isArray(configured) ? configured[index] : configured;
+      if (!query) throw new Error(`Unexpected table: ${table}`);
+      return query;
+    }),
+    rpc: vi.fn(async (name: string) => {
+      const result = rpcResults[name];
+      if (!result) throw new Error(`Unexpected RPC: ${name}`);
+      return result;
+    }),
+  } as unknown as ServerSupabaseClient;
+  return client;
+}
+
+const ids = {
+  run: "10000000-0000-4000-8000-000000000001",
+  challenge: "20000000-0000-4000-8000-000000000001",
+  item: "30000000-0000-4000-8000-000000000001",
+  question: "40000000-0000-4000-8000-000000000001",
+  replacement: "40000000-0000-4000-8000-000000000002",
+  reservation: "50000000-0000-4000-8000-000000000001",
+};
+
+const timestamp = "2026-08-09T23:00:00.000Z";
+const finding: DailyQuestionVerificationFinding = {
+  questionId: ids.question,
+  verdict: "passed",
+  confidence: 0.98,
+  explanation: "The saved source supports the expected answer.",
+  conflicts: [],
+  evidence: [
+    {
+      url: "https://www.nba.com/example",
+      title: "NBA record",
+      excerpt: "The record supports the answer.",
+      retrievedAt: timestamp,
+    },
+  ],
+  verifiedAt: timestamp,
+};
+
+const snapshot = {
+  id: ids.question,
+  question_text: "Who holds the record?",
+  option_a: "Player A",
+  option_b: "Player B",
+  option_c: "Player C",
+  option_d: "Player D",
+  correct_option: "A",
+  sport: { slug: "nba", name: "NBA" },
+  difficulty: "easy",
+  source_notes: "https://www.nba.com/example",
+} as const;
+
+const runRow = {
+  id: ids.run,
+  daily_challenge_id: ids.challenge,
+  review_date: "2026-08-09",
+  challenge_date: "2026-08-10",
+  status: "running",
+  run_kind: "scheduled",
+  model: "gpt-5.6-terra",
+  verifier_version: "nightly-question-verifier-v1",
+  started_at: timestamp,
+  completed_at: null,
+  input_tokens: 0,
+  cached_input_tokens: 0,
+  cache_write_tokens: 0,
+  output_tokens: 0,
+  search_count: 0,
+  estimated_cost_microdollars: 0,
+  email_status: "pending",
+  email_sent_at: null,
+  email_metadata: {
+    provider: "resend",
+    providerMessageId: null,
+    attempts: 0,
+    lastAttemptAt: null,
+    failure: null,
+  },
+  errors: [],
+  created_at: timestamp,
+  updated_at: timestamp,
+};
+
+const itemRow = {
+  id: ids.item,
+  run_id: ids.run,
+  daily_challenge_id: ids.challenge,
+  slot: 1,
+  question_id: ids.question,
+  question_snapshot: snapshot,
+  review_status: "completed",
+  verdict: "passed",
+  confidence: 0.98,
+  explanation: finding.explanation,
+  conflicts: [],
+  source_fetch_results: [],
+  evidence: finding.evidence,
+  verified_at: timestamp,
+  replacement_question_id: null,
+  replacement_eligible: false,
+  replacement_question_snapshot: null,
+  replacement_finding: null,
+  resolution: "pending",
+  resolved_by: null,
+  resolved_at: null,
+  application_metadata: {},
+  applied_at: null,
+  created_at: timestamp,
+  updated_at: "2026-08-09T23:05:00.000Z",
+};
+
+const startInput = {
+  dailyChallengeId: ids.challenge,
+  reviewDate: "2026-08-09",
+  challengeDate: "2026-08-10",
+  model: "gpt-5.6-terra",
+  verifierVersion: "nightly-question-verifier-v1",
+  startedAt: timestamp,
+};
+
+describe("startOrObserveDailyQuestionReviewRun", () => {
+  it("creates a running scheduled run and reports ownership", async () => {
+    const insert = createThenableQuery({ data: runRow, error: null });
+    const client = createClientMock({ daily_question_review_runs: insert });
+
+    await expect(
+      startOrObserveDailyQuestionReviewRun(client, startInput),
+    ).resolves.toMatchObject({ created: true, claimed: true, run: { id: ids.run } });
+
+    expect(insert.insert).toHaveBeenCalledWith({
+      daily_challenge_id: ids.challenge,
+      review_date: "2026-08-09",
+      challenge_date: "2026-08-10",
+      status: "running",
+      run_kind: "scheduled",
+      model: "gpt-5.6-terra",
+      verifier_version: "nightly-question-verifier-v1",
+      started_at: timestamp,
+    });
+    expect(insert.select).toHaveBeenCalledWith(expect.stringContaining("estimated_cost_microdollars"));
+  });
+
+  it("recovers a unique conflict by loading and observing the existing run", async () => {
+    const conflict = createThenableQuery({
+      data: null,
+      error: { code: "23505", message: "duplicate" },
+    });
+    const existing = createThenableQuery({ data: runRow, error: null });
+    const client = createClientMock({
+      daily_question_review_runs: [conflict, existing],
+    });
+
+    await expect(
+      startOrObserveDailyQuestionReviewRun(client, startInput),
+    ).resolves.toMatchObject({ created: false, claimed: false, run: { id: ids.run } });
+
+    expect(existing.eq).toHaveBeenCalledWith("challenge_date", "2026-08-10");
+    expect(existing.eq).toHaveBeenCalledWith("run_kind", "scheduled");
+  });
+
+  it("recovers a review-date unique conflict when the challenge lookup is empty", async () => {
+    const conflict = createThenableQuery({
+      data: null,
+      error: { code: "23505", message: "duplicate" },
+    });
+    const missingChallenge = createThenableQuery({ data: null, error: null });
+    const reviewDateRun = createThenableQuery({
+      data: { ...runRow, challenge_date: "2026-08-11" },
+      error: null,
+    });
+    const client = createClientMock({
+      daily_question_review_runs: [conflict, missingChallenge, reviewDateRun],
+    });
+
+    await expect(
+      startOrObserveDailyQuestionReviewRun(client, startInput),
+    ).resolves.toMatchObject({
+      created: false,
+      claimed: false,
+      run: { challengeDate: "2026-08-11" },
+    });
+
+    expect(reviewDateRun.eq).toHaveBeenCalledWith("review_date", "2026-08-09");
+    expect(reviewDateRun.eq).toHaveBeenCalledWith("run_kind", "scheduled");
+  });
+
+  it("atomically claims a failed partial run for a deterministic resume", async () => {
+    const conflict = createThenableQuery({
+      data: null,
+      error: { code: "23505", message: "duplicate" },
+    });
+    const failed = createThenableQuery({
+      data: { ...runRow, status: "failed", completed_at: timestamp },
+      error: null,
+    });
+    const claimed = createThenableQuery({ data: runRow, error: null });
+    const client = createClientMock({
+      daily_question_review_runs: [conflict, failed, claimed],
+    });
+
+    await expect(
+      startOrObserveDailyQuestionReviewRun(client, startInput),
+    ).resolves.toMatchObject({ created: false, claimed: true, run: { status: "running" } });
+
+    expect(claimed.update).toHaveBeenCalledWith({
+      status: "running",
+      completed_at: null,
+    });
+    expect(claimed.eq).toHaveBeenCalledWith("status", "failed");
+  });
+});
+
+describe("review item persistence", () => {
+  it("upserts a completed finding by run and slot", async () => {
+    const upsert = createThenableQuery({ data: itemRow, error: null });
+    const client = createClientMock({ daily_question_review_items: upsert });
+
+    await expect(
+      upsertDailyQuestionReviewItem(client, {
+        runId: ids.run,
+        dailyChallengeId: ids.challenge,
+        slot: 1,
+        question: snapshot,
+        reviewStatus: "completed",
+        sourceFetchResults: [],
+        finding,
+        replacement: null,
+      }),
+    ).resolves.toMatchObject({ reviewStatus: "completed", finding });
+
+    expect(upsert.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        run_id: ids.run,
+        slot: 1,
+        verdict: "passed",
+        evidence: finding.evidence,
+        verified_at: finding.verifiedAt,
+      }),
+      { onConflict: "run_id,slot" },
+    );
+  });
+
+  it("persists a failed item without erasing source progress", async () => {
+    const failedSourceResults: DailyQuestionSourceFetchResult[] = [
+      {
+        sourceUrl: "https://www.nba.com/example",
+        finalUrl: null,
+        status: "failed",
+        httpStatus: null,
+        contentType: null,
+        attemptedAt: timestamp,
+        error: { code: "timeout", message: "Timed out" },
+      },
+    ];
+    const failedRow = {
+      ...itemRow,
+      review_status: "failed",
+      verdict: null,
+      confidence: null,
+      explanation: null,
+      evidence: [],
+      source_fetch_results: failedSourceResults,
+    };
+    const upsert = createThenableQuery({ data: failedRow, error: null });
+    const client = createClientMock({ daily_question_review_items: upsert });
+
+    await expect(
+      upsertDailyQuestionReviewItem(client, {
+        runId: ids.run,
+        dailyChallengeId: ids.challenge,
+        slot: 1,
+        question: snapshot,
+        reviewStatus: "failed",
+        sourceFetchResults: failedRow.source_fetch_results,
+        finding: null,
+        replacement: null,
+      }),
+    ).resolves.toMatchObject({ reviewStatus: "failed", finding: null });
+  });
+});
+
+describe("run accounting and reads", () => {
+  it("completes a partial run with exact integer usage, cost, and errors", async () => {
+    const runErrors: DailyQuestionReviewRunError[] = [
+      {
+        phase: "verification",
+        code: "timeout",
+        message: "Verifier timed out",
+        retryable: true,
+        occurredAt: timestamp,
+        questionId: ids.question,
+      },
+    ];
+    const completedRow = {
+      ...runRow,
+      status: "failed",
+      completed_at: timestamp,
+      input_tokens: 120,
+      cached_input_tokens: 20,
+      cache_write_tokens: 10,
+      output_tokens: 30,
+      search_count: 2,
+      estimated_cost_microdollars: 42_000,
+      errors: runErrors,
+    };
+    const update = createThenableQuery({ data: completedRow, error: null });
+    const client = createClientMock({ daily_question_review_runs: update });
+
+    await expect(
+      completeDailyQuestionReviewRun(client, {
+        runId: ids.run,
+        status: "failed",
+        completedAt: timestamp,
+        usage: {
+          inputTokens: 120,
+          cachedInputTokens: 20,
+          cacheWriteTokens: 10,
+          outputTokens: 30,
+          webSearchCalls: 2,
+        },
+        estimatedCostMicrodollars: 42_000,
+        errors: completedRow.errors,
+      }),
+    ).resolves.toMatchObject({ status: "failed", estimatedCostMicrodollars: 42_000 });
+
+    expect(update.update).toHaveBeenCalledWith(expect.objectContaining({
+      cached_input_tokens: 20,
+      cache_write_tokens: 10,
+      estimated_cost_microdollars: 42_000,
+    }));
+  });
+
+  it("queries only actual current-month run spend with an explicit projection", async () => {
+    const rows = [
+      {
+        id: ids.run,
+        status: "completed",
+        completed_at: timestamp,
+        estimated_cost_microdollars: 42_000,
+      },
+      { id: "bad", status: "completed", completed_at: timestamp, estimated_cost_microdollars: -1 },
+    ];
+    const query = createThenableQuery({ data: rows, error: null });
+    const client = createClientMock({ daily_question_review_runs: query });
+
+    await expect(
+      listCurrentMonthDailyQuestionReviewCosts(client, {
+        startInclusive: "2026-08-01T05:00:00.000Z",
+        endExclusive: "2026-09-01T05:00:00.000Z",
+      }),
+    ).resolves.toEqual([
+      {
+        id: ids.run,
+        status: "completed",
+        occurredAt: timestamp,
+        estimatedCostMicrodollars: 42_000,
+      },
+    ]);
+
+    expect(query.select).toHaveBeenCalledWith("id,status,completed_at,estimated_cost_microdollars");
+    expect(query.gte).toHaveBeenCalledWith("completed_at", "2026-08-01T05:00:00.000Z");
+    expect(query.lt).toHaveBeenCalledWith("completed_at", "2026-09-01T05:00:00.000Z");
+  });
+
+  it("loads the latest normalized review and its items", async () => {
+    const run = createThenableQuery({ data: runRow, error: null });
+    const items = createThenableQuery({ data: [itemRow, { id: "malformed" }], error: null });
+    const client = createClientMock({
+      daily_question_review_runs: run,
+      daily_question_review_items: items,
+    });
+
+    await expect(loadLatestDailyQuestionReview(client)).resolves.toMatchObject({
+      run: { id: ids.run },
+      items: [{ id: ids.item, finding }],
+    });
+    expect(run.order).toHaveBeenCalledWith("review_date", { ascending: false });
+    expect(run.limit).toHaveBeenCalledWith(1);
+    expect(items.eq).toHaveBeenCalledWith("run_id", ids.run);
+  });
+
+  it("loads an exact run and its progress for safe resume", async () => {
+    const run = createThenableQuery({ data: runRow, error: null });
+    const items = createThenableQuery({ data: [itemRow], error: null });
+    const client = createClientMock({
+      daily_question_review_runs: run,
+      daily_question_review_items: items,
+    });
+
+    await expect(
+      loadDailyQuestionReviewByRunId(client, ids.run),
+    ).resolves.toMatchObject({ run: { id: ids.run }, items: [{ id: ids.item }] });
+    expect(run.eq).toHaveBeenCalledWith("id", ids.run);
+    expect(items.eq).toHaveBeenCalledWith("run_id", ids.run);
+  });
+
+  it("loads only completed normalized resolutions", async () => {
+    const resolved = {
+      ...itemRow,
+      resolution: "kept",
+      resolved_by: "60000000-0000-4000-8000-000000000001",
+      resolved_at: timestamp,
+    };
+    const query = createThenableQuery({ data: [resolved, { id: "bad" }], error: null });
+    const client = createClientMock({ daily_question_review_items: query });
+
+    await expect(loadDailyQuestionReviewResolutions(client, ids.run)).resolves.toEqual([
+      expect.objectContaining({ id: ids.item, resolution: "kept" }),
+    ]);
+    expect(query.neq).toHaveBeenCalledWith("resolution", "pending");
+  });
+});
+
+describe("reservation and email state", () => {
+  it("acquires the exact worst-case reservation through the atomic RPC", async () => {
+    const client = createClientMock({}, {
+      acquire_daily_question_review_reservation: {
+        data: {
+          acquired: true,
+          created: true,
+          reservation_id: ids.reservation,
+          reserved_microdollars: 2_520_000,
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      acquireDailyQuestionReviewReservation(client, {
+        model: "gpt-5.6-terra",
+        modelDerivedReservationMicrodollars: 2_520_000,
+        requiredReservationMicrodollars: 2_520_000,
+        monthRange: {
+          startInclusive: "2026-08-01T05:00:00.000Z",
+          endExclusive: "2026-09-01T05:00:00.000Z",
+        },
+        spentMicrodollars: 0,
+        limitMicrodollars: 10_000_000,
+        remainingMicrodollars: 10_000_000,
+      }, {
+        reviewDate: "2026-08-09",
+        challengeDate: "2026-08-10",
+        now: timestamp,
+      }),
+    ).resolves.toEqual({
+      acquired: true,
+      created: true,
+      reservationId: ids.reservation,
+      reservedMicrodollars: 2_520_000,
+    });
+
+    expect(client.rpc).toHaveBeenCalledWith("acquire_daily_question_review_reservation", {
+      p_challenge_date: "2026-08-10",
+      p_limit_microdollars: 10_000_000,
+      p_model: "gpt-5.6-terra",
+      p_model_derived_reservation_microdollars: 2_520_000,
+      p_month_end: "2026-09-01T05:00:00.000Z",
+      p_month_start: "2026-08-01T05:00:00.000Z",
+      p_now: timestamp,
+      p_required_reservation_microdollars: 2_520_000,
+      p_review_date: "2026-08-09",
+    });
+  });
+
+  it("persists one reportable budget block and tolerates an idempotent conflict", async () => {
+    const insert = createThenableQuery({ data: null, error: null });
+    const client = createClientMock({
+      daily_question_review_reservations: insert,
+    });
+
+    await expect(
+      recordDailyQuestionReviewBudgetBlock(client, {
+        reviewDate: "2026-08-09",
+        challengeDate: "2026-08-10",
+        model: "gpt-5.6-terra",
+        reservedMicrodollars: 2_520_000,
+        monthRange: {
+          startInclusive: "2026-08-01T05:00:00.000Z",
+          endExclusive: "2026-09-01T05:00:00.000Z",
+        },
+        attemptedAt: timestamp,
+        reason: "monthly_budget_exceeded",
+      }),
+    ).resolves.toBeUndefined();
+    expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      challenge_date: "2026-08-10",
+      status: "denied",
+      reserved_microdollars: 2_520_000,
+      denial_reason: "monthly_budget_exceeded",
+    }));
+
+    const conflict = createThenableQuery({
+      data: null,
+      error: { code: "23505", message: "already recorded" },
+    });
+    const conflictClient = createClientMock({
+      daily_question_review_reservations: conflict,
+    });
+    await expect(
+      recordDailyQuestionReviewBudgetBlock(conflictClient, {
+        reviewDate: "2026-08-09",
+        challengeDate: "2026-08-10",
+        model: "gpt-5.6-terra",
+        reservedMicrodollars: 2_520_000,
+        monthRange: {
+          startInclusive: "2026-08-01T05:00:00.000Z",
+          endExclusive: "2026-09-01T05:00:00.000Z",
+        },
+        attemptedAt: timestamp,
+        reason: "monthly_budget_exceeded",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reconciles charged failure usage through an atomic RPC", async () => {
+    const client = createClientMock({}, {
+      reconcile_daily_question_review_reservation: {
+        data: { outcome: "reconciled", actual_microdollars: 84_000 },
+        error: null,
+      },
+    });
+
+    await expect(
+      reconcileDailyQuestionReviewReservation(client, {
+        reservationId: ids.reservation,
+        actualMicrodollars: 84_000,
+        reconciledAt: timestamp,
+      }),
+    ).resolves.toEqual({ outcome: "reconciled", actualMicrodollars: 84_000 });
+  });
+
+  it("claims email atomically and persists sent and failed states", async () => {
+    const claimClient = createClientMock({}, {
+      claim_daily_question_review_email: {
+        data: { claimed: true, attempts: 1 },
+        error: null,
+      },
+    });
+    await expect(
+      claimDailyQuestionReviewEmail(claimClient, ids.run, timestamp),
+    ).resolves.toEqual({ claimed: true, attempts: 1 });
+
+    const sentQuery = createThenableQuery({
+      data: {
+        ...runRow,
+        email_status: "sent",
+        email_sent_at: timestamp,
+        email_metadata: {
+          provider: "resend",
+          providerMessageId: "message-1",
+          attempts: 1,
+          lastAttemptAt: timestamp,
+          failure: null,
+        },
+      },
+      error: null,
+    });
+    const sentClient = createClientMock({ daily_question_review_runs: sentQuery });
+    await expect(
+      markDailyQuestionReviewEmailSent(sentClient, ids.run, {
+        sentAt: timestamp,
+        providerMessageId: "message-1",
+        attempts: 1,
+      }),
+    ).resolves.toMatchObject({ email: { status: "sent" } });
+
+    const failedQuery = createThenableQuery({
+      data: {
+        ...runRow,
+        email_status: "failed",
+        email_metadata: {
+          provider: "resend",
+          providerMessageId: null,
+          attempts: 1,
+          lastAttemptAt: timestamp,
+          failure: { code: "send_failed", message: "No route", occurredAt: timestamp },
+        },
+      },
+      error: null,
+    });
+    const failedClient = createClientMock({ daily_question_review_runs: failedQuery });
+    await expect(
+      markDailyQuestionReviewEmailFailed(failedClient, ids.run, {
+        attemptedAt: timestamp,
+        attempts: 1,
+        code: "send_failed",
+        message: "No route",
+      }),
+    ).resolves.toMatchObject({ email: { status: "failed" } });
+  });
+});

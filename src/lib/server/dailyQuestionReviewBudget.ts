@@ -109,6 +109,7 @@ export interface DailyQuestionReviewReservationRequest {
 
 export interface DailyQuestionReviewReservationContext {
   reservationId: string;
+  acquiredNow: boolean;
   model: string;
   modelDerivedReservationMicrodollars: number;
   requiredReservationMicrodollars: number;
@@ -734,6 +735,7 @@ export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
 
   const reservationContext: DailyQuestionReviewReservationContext = {
     reservationId: acquisition.reservationId.trim(),
+    acquiredNow: acquisition.created !== false,
     model: options.model,
     modelDerivedReservationMicrodollars: modelReservationMicrodollars,
     requiredReservationMicrodollars,

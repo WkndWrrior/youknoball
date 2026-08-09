@@ -509,10 +509,17 @@ create table if not exists public.daily_question_review_runs (
   started_at timestamptz,
   completed_at timestamptz,
   input_tokens integer not null default 0 check (input_tokens >= 0),
+  cached_input_tokens integer not null default 0 check (cached_input_tokens >= 0),
+  cache_write_tokens integer not null default 0 check (cache_write_tokens >= 0),
   output_tokens integer not null default 0 check (output_tokens >= 0),
   search_count integer not null default 0 check (search_count >= 0),
+  estimated_cost_microdollars bigint not null default 0
+    check (estimated_cost_microdollars between 0 and 999999999999),
   estimated_cost_usd numeric(12, 6) not null default 0
     check (estimated_cost_usd >= 0),
+  check (
+    estimated_cost_usd = estimated_cost_microdollars::numeric / 1000000
+  ),
   email_status text not null default 'pending'
     check (email_status in ('pending', 'sending', 'sent', 'failed')),
   email_sent_at timestamptz,
@@ -633,6 +640,59 @@ create table if not exists public.daily_question_review_runs (
   )
 );
 
+create table if not exists public.daily_question_review_reservations (
+  id uuid primary key default gen_random_uuid(),
+  review_date date not null,
+  challenge_date date not null,
+  run_kind text not null default 'scheduled'
+    check (run_kind in ('scheduled')),
+  model text not null check (char_length(btrim(model)) between 1 and 100),
+  status text not null
+    check (status in ('active', 'reconciled', 'released', 'denied')),
+  reserved_microdollars bigint not null
+    check (reserved_microdollars between 1 and 9007199254740991),
+  actual_microdollars bigint not null default 0
+    check (actual_microdollars between 0 and reserved_microdollars),
+  month_start timestamptz not null,
+  month_end timestamptz not null,
+  acquired_at timestamptz not null,
+  reconciled_at timestamptz,
+  denial_reason text check (
+    denial_reason is null
+    or char_length(btrim(denial_reason)) between 1 and 100
+  ),
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  check (review_date < challenge_date),
+  check (month_start < month_end),
+  check (
+    (
+      status = 'active'
+      and actual_microdollars = 0
+      and reconciled_at is null
+      and denial_reason is null
+    )
+    or (
+      status = 'reconciled'
+      and actual_microdollars > 0
+      and reconciled_at is not null
+      and denial_reason is null
+    )
+    or (
+      status = 'released'
+      and actual_microdollars = 0
+      and reconciled_at is not null
+      and denial_reason is null
+    )
+    or (
+      status = 'denied'
+      and actual_microdollars = 0
+      and reconciled_at is not null
+      and denial_reason is not null
+    )
+  )
+);
+
 create table if not exists public.daily_question_review_items (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references public.daily_question_review_runs (id) on delete cascade,
@@ -704,6 +764,7 @@ create table if not exists public.daily_question_review_items (
       jsonb_typeof(evidence) = 'array'
       and jsonb_array_length(evidence) <= 10
     ),
+  verified_at timestamptz,
   replacement_question_id uuid references public.questions (id) on delete restrict,
   replacement_eligible boolean not null default false,
   replacement_question_snapshot jsonb
@@ -803,12 +864,14 @@ create table if not exists public.daily_question_review_items (
       and explanation is null
       and jsonb_array_length(conflicts) = 0
       and jsonb_array_length(evidence) = 0
+      and verified_at is null
     )
     or (
       review_status = 'completed'
       and verdict is not null
       and confidence is not null
       and explanation is not null
+      and verified_at is not null
     )
   ),
   check (
@@ -878,6 +941,303 @@ create table if not exists public.daily_question_review_items (
   )
 );
 
+create or replace function public.acquire_daily_question_review_reservation(
+  p_review_date date,
+  p_challenge_date date,
+  p_model text,
+  p_model_derived_reservation_microdollars bigint,
+  p_required_reservation_microdollars bigint,
+  p_month_start timestamptz,
+  p_month_end timestamptz,
+  p_limit_microdollars bigint,
+  p_now timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_existing public.daily_question_review_reservations%rowtype;
+  v_reservation_id uuid;
+  v_committed_microdollars bigint;
+begin
+  if p_review_date is null
+    or p_challenge_date is null
+    or p_review_date >= p_challenge_date
+    or p_model is null
+    or char_length(btrim(p_model)) not between 1 and 100
+    or p_model_derived_reservation_microdollars is null
+    or not (
+      btrim(p_model) = 'gpt-5.6-terra'
+      and p_model_derived_reservation_microdollars = 2520000
+    )
+    or p_required_reservation_microdollars is null
+    or p_required_reservation_microdollars <= 0
+    or not (
+      p_required_reservation_microdollars = p_model_derived_reservation_microdollars
+    )
+    or p_required_reservation_microdollars > 9007199254740991
+    or p_month_start is null
+    or p_month_end is null
+    or p_month_start >= p_month_end
+    or p_limit_microdollars is null
+    or p_limit_microdollars <= 0
+    or p_limit_microdollars > 9007199254740991
+    or p_now is null
+    or p_now < p_month_start
+    or p_now >= p_month_end
+  then
+    return jsonb_build_object('acquired', false, 'reason', 'invalid_request');
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(p_month_start::text || '/' || p_month_end::text, 0)
+  );
+
+  select r.*
+  into v_existing
+  from public.daily_question_review_reservations r
+  where r.challenge_date = p_challenge_date
+    and r.run_kind = 'scheduled'
+    and r.status = 'active'
+  for update;
+
+  if found then
+    if v_existing.model <> btrim(p_model)
+      or v_existing.reserved_microdollars <> p_required_reservation_microdollars
+      or v_existing.month_start <> p_month_start
+      or v_existing.month_end <> p_month_end
+    then
+      return jsonb_build_object('acquired', false, 'reason', 'active_conflict');
+    end if;
+
+    return jsonb_build_object(
+      'acquired', true,
+      'created', false,
+      'reservation_id', v_existing.id,
+      'reserved_microdollars', v_existing.reserved_microdollars
+    );
+  end if;
+
+  select coalesce(sum(
+    case when status = 'active' then reserved_microdollars else actual_microdollars end
+  ), 0)::bigint
+  into v_committed_microdollars
+  from public.daily_question_review_reservations
+  where acquired_at >= p_month_start
+    and acquired_at < p_month_end
+    and status in ('active', 'reconciled', 'released');
+
+  if v_committed_microdollars + p_required_reservation_microdollars > p_limit_microdollars
+  then
+    insert into public.daily_question_review_reservations (
+      review_date,
+      challenge_date,
+      model,
+      status,
+      reserved_microdollars,
+      actual_microdollars,
+      month_start,
+      month_end,
+      acquired_at,
+      reconciled_at,
+      denial_reason
+    ) values (
+      p_review_date,
+      p_challenge_date,
+      btrim(p_model),
+      'denied',
+      p_required_reservation_microdollars,
+      0,
+      p_month_start,
+      p_month_end,
+      p_now,
+      p_now,
+      'monthly_budget_exceeded'
+    )
+    on conflict (challenge_date, run_kind)
+      where status = 'denied'
+    do nothing;
+
+    return jsonb_build_object(
+      'acquired', false,
+      'reason', 'monthly_budget_exceeded',
+      'committed_microdollars', v_committed_microdollars
+    );
+  end if;
+
+  insert into public.daily_question_review_reservations (
+    review_date,
+    challenge_date,
+    model,
+    status,
+    reserved_microdollars,
+    actual_microdollars,
+    month_start,
+    month_end,
+    acquired_at
+  ) values (
+    p_review_date,
+    p_challenge_date,
+    btrim(p_model),
+    'active',
+    p_required_reservation_microdollars,
+    0,
+    p_month_start,
+    p_month_end,
+    p_now
+  )
+  returning id into v_reservation_id;
+
+  return jsonb_build_object(
+    'acquired', true,
+    'created', true,
+    'reservation_id', v_reservation_id,
+    'reserved_microdollars', p_required_reservation_microdollars
+  );
+end;
+$function$;
+
+revoke all on function public.acquire_daily_question_review_reservation(date, date, text, bigint, bigint, timestamptz, timestamptz, bigint, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.acquire_daily_question_review_reservation(date, date, text, bigint, bigint, timestamptz, timestamptz, bigint, timestamptz) to service_role;
+
+comment on function public.acquire_daily_question_review_reservation(date, date, text, bigint, bigint, timestamptz, timestamptz, bigint, timestamptz) is
+  'Service-role-only atomic monthly budget reservation for nightly question verification.';
+
+create or replace function public.reconcile_daily_question_review_reservation(
+  p_reservation_id uuid,
+  p_actual_microdollars bigint,
+  p_reconciled_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_month_start timestamptz;
+  v_month_end timestamptz;
+  v_reservation public.daily_question_review_reservations%rowtype;
+begin
+  if p_reservation_id is null
+    or p_actual_microdollars is null
+    or p_actual_microdollars < 0
+    or p_actual_microdollars > 9007199254740991
+    or p_reconciled_at is null
+  then
+    return jsonb_build_object('outcome', 'invalid', 'actual_microdollars', 0);
+  end if;
+
+  select month_start, month_end
+  into v_month_start, v_month_end
+  from public.daily_question_review_reservations
+  where id = p_reservation_id;
+
+  if not found then
+    return jsonb_build_object('outcome', 'missing', 'actual_microdollars', 0);
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(v_month_start::text || '/' || v_month_end::text, 0)
+  );
+
+  select r.*
+  into v_reservation
+  from public.daily_question_review_reservations r
+  where r.id = p_reservation_id
+  for update;
+
+  if v_reservation.status in ('reconciled', 'released') then
+    return jsonb_build_object(
+      'outcome',
+      case when v_reservation.actual_microdollars = 0 then 'released' else 'reconciled' end,
+      'actual_microdollars',
+      v_reservation.actual_microdollars
+    );
+  end if;
+
+  if v_reservation.status <> 'active'
+    or not (p_actual_microdollars <= v_reservation.reserved_microdollars)
+  then
+    return jsonb_build_object('outcome', 'conflict', 'actual_microdollars', 0);
+  end if;
+
+  update public.daily_question_review_reservations
+  set actual_microdollars = p_actual_microdollars,
+      status = case when p_actual_microdollars = 0 then 'released' else 'reconciled' end,
+      reconciled_at = p_reconciled_at
+  where id = p_reservation_id;
+
+  return jsonb_build_object(
+    'outcome',
+    case when p_actual_microdollars = 0 then 'released' else 'reconciled' end,
+    'actual_microdollars',
+    p_actual_microdollars
+  );
+end;
+$function$;
+
+revoke all on function public.reconcile_daily_question_review_reservation(uuid, bigint, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.reconcile_daily_question_review_reservation(uuid, bigint, timestamptz) to service_role;
+
+comment on function public.reconcile_daily_question_review_reservation(uuid, bigint, timestamptz) is
+  'Service-role-only reconciliation of reserved verification budget to API-reported actual spend.';
+
+create or replace function public.claim_daily_question_review_email(
+  p_run_id uuid,
+  p_attempted_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_attempts integer;
+begin
+  if p_run_id is null or p_attempted_at is null then
+    return jsonb_build_object('claimed', false, 'attempts', 0);
+  end if;
+
+  update public.daily_question_review_runs
+  set email_status = 'sending',
+      email_metadata = jsonb_build_object(
+        'provider', 'resend',
+        'providerMessageId', null,
+        'attempts', 1,
+        'lastAttemptAt', p_attempted_at,
+        'failure', null
+      )
+  where id = p_run_id
+    and email_status = 'pending'
+  returning (email_metadata->>'attempts')::integer into v_attempts;
+
+  if not found then
+    select (email_metadata->>'attempts')::integer
+    into v_attempts
+    from public.daily_question_review_runs
+    where id = p_run_id;
+
+    return jsonb_build_object(
+      'claimed', false,
+      'attempts', coalesce(v_attempts, 0)
+    );
+  end if;
+
+  return jsonb_build_object('claimed', true, 'attempts', v_attempts);
+end;
+$function$;
+
+revoke all on function public.claim_daily_question_review_email(uuid, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.claim_daily_question_review_email(uuid, timestamptz) to service_role;
+
+comment on function public.claim_daily_question_review_email(uuid, timestamptz) is
+  'Service-role-only atomic claim for one nightly review email attempt.';
+
 drop trigger if exists daily_question_review_runs_set_updated_at
   on public.daily_question_review_runs;
 create trigger daily_question_review_runs_set_updated_at
@@ -889,6 +1249,13 @@ drop trigger if exists daily_question_review_items_set_updated_at
   on public.daily_question_review_items;
 create trigger daily_question_review_items_set_updated_at
 before update on public.daily_question_review_items
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists daily_question_review_reservations_set_updated_at
+  on public.daily_question_review_reservations;
+create trigger daily_question_review_reservations_set_updated_at
+before update on public.daily_question_review_reservations
 for each row
 execute function public.set_updated_at();
 
@@ -910,20 +1277,37 @@ create index if not exists daily_question_review_items_resolution_idx
 create index if not exists daily_question_review_items_question_id_idx
   on public.daily_question_review_items (question_id);
 
+create unique index if not exists daily_question_review_reservations_active_challenge_unique
+  on public.daily_question_review_reservations (challenge_date, run_kind)
+  where status = 'active';
+
+create unique index if not exists daily_question_review_reservations_denied_challenge_unique
+  on public.daily_question_review_reservations (challenge_date, run_kind)
+  where status = 'denied';
+
+create index if not exists daily_question_review_reservations_month_status_idx
+  on public.daily_question_review_reservations (month_start, month_end, status, acquired_at);
+
 alter table public.daily_question_review_runs enable row level security;
 alter table public.daily_question_review_items enable row level security;
+alter table public.daily_question_review_reservations enable row level security;
 
 revoke all on public.daily_question_review_runs from public, anon, authenticated;
 revoke all on public.daily_question_review_items from public, anon, authenticated;
+revoke all on public.daily_question_review_reservations from public, anon, authenticated;
 
 grant select, insert, update on public.daily_question_review_runs to service_role;
 grant select, insert, update on public.daily_question_review_items to service_role;
+grant select, insert, update on public.daily_question_review_reservations to service_role;
 
 comment on table public.daily_question_review_runs is
   'Service-role-only operational record for each nightly Daily 5 verification run.';
 
 comment on table public.daily_question_review_items is
   'Service-role-only verification findings and administrator resolutions for a nightly Daily 5 review.';
+
+comment on table public.daily_question_review_reservations is
+  'Service-role-only atomic budget reservation ledger for nightly Daily 5 verification.';
 
 create schema if not exists internal;
 
@@ -944,8 +1328,11 @@ select
   r.started_at,
   r.completed_at,
   r.input_tokens,
+  r.cached_input_tokens,
+  r.cache_write_tokens,
   r.output_tokens,
   r.search_count,
+  r.estimated_cost_microdollars,
   r.estimated_cost_usd,
   r.email_status,
   r.email_sent_at,
@@ -965,6 +1352,7 @@ select
   i.conflicts,
   i.source_fetch_results,
   i.evidence,
+  i.verified_at,
   i.replacement_question_id,
   i.replacement_eligible,
   i.replacement_question_snapshot,

@@ -20,6 +20,7 @@ import {
 import { sortLeaderboardEntries, type LeaderboardEntry } from "@/lib/leaderboard";
 import {
   generateDailyChallengeQuestions,
+  selectDailyChallengeReplacement,
   type GeneratedDailyChallengeQuestion,
 } from "@/lib/server/dailyChallengeGenerator";
 import type { ServerSupabaseClient } from "@/lib/server/supabaseServer";
@@ -1115,6 +1116,34 @@ export async function prepareDailyChallengeDraftForDate(
   }
 
   throw new Error(`Unable to prepare the Daily 5 draft for ${challengeDate}.`);
+}
+
+export async function selectDailyChallengeReplacementForDraft({
+  draft,
+  flaggedSlot,
+}: {
+  draft: PreparedDailyChallengeDraft;
+  flaggedSlot: number;
+}): Promise<VerificationQuestionSnapshot | null> {
+  const adminClient = supabaseAdmin();
+  const candidates = await loadReusableQuestionCandidates(adminClient);
+  if (candidates.kind !== "ready") {
+    throw new Error("Unable to load Daily 5 replacement candidates.");
+  }
+
+  const recentHistory = await loadRecentQuestionIds(adminClient);
+  if (recentHistory.kind !== "ready") {
+    throw new Error("Unable to load Daily 5 replacement history.");
+  }
+
+  const replacement = selectDailyChallengeReplacement({
+    selection: draft.questions as unknown as readonly GeneratedDailyChallengeQuestion[],
+    flaggedSlot,
+    candidates: candidates.candidates,
+    recentQuestionIds: recentHistory.recentQuestionIds,
+  });
+
+  return replacement ? parseQuestionSnapshot(replacement, replacement.id) : null;
 }
 
 async function resolveServeableChallengeForDate(

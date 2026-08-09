@@ -7,6 +7,7 @@ import {
   getServeableChallengeForDate,
   prepareDailyChallengeDraftForDate,
   resolveCanonicalChallengeIdForDate,
+  selectDailyChallengeReplacementForDraft,
 } from "@/lib/server/dailyChallengeRepository";
 
 type QueryResult<T> = {
@@ -14,9 +15,14 @@ type QueryResult<T> = {
   error: unknown;
 };
 
-const { supabaseAdmin, generateDailyChallengeQuestions } = vi.hoisted(() => ({
+const {
+  supabaseAdmin,
+  generateDailyChallengeQuestions,
+  selectDailyChallengeReplacement,
+} = vi.hoisted(() => ({
   supabaseAdmin: vi.fn(),
   generateDailyChallengeQuestions: vi.fn(),
+  selectDailyChallengeReplacement: vi.fn(),
 }));
 
 vi.mock("@/lib/supabaseAdmin", () => ({
@@ -25,6 +31,7 @@ vi.mock("@/lib/supabaseAdmin", () => ({
 
 vi.mock("@/lib/server/dailyChallengeGenerator", () => ({
   generateDailyChallengeQuestions,
+  selectDailyChallengeReplacement,
 }));
 
 function createThenableQuery<T>(result: QueryResult<T>) {
@@ -293,6 +300,72 @@ const preparedQuestions = reusableQuestionRows.map((question, index) => ({
   difficulty: question.difficulty,
   source_notes: question.source_notes,
 }));
+
+describe("selectDailyChallengeReplacementForDraft", () => {
+  it("uses the full eligible bank and newest-first challenge history", async () => {
+    const replacement = {
+      ...reusableQuestionRows[1],
+      id: "00000000-0000-4000-8000-000000000099",
+      question_text: "Safe replacement",
+    };
+    const recentChallenges = createThenableQuery({
+      data: [
+        { id: CHALLENGE_IDS.generated2, challenge_date: "2026-04-01" },
+        { id: CHALLENGE_IDS.generated1, challenge_date: "2026-03-31" },
+      ],
+      error: null,
+    });
+    const recentItems = createThenableQuery({
+      data: [
+        {
+          daily_challenge_id: CHALLENGE_IDS.generated2,
+          question_id: QUESTION_IDS[4],
+          slot: 1,
+        },
+        {
+          daily_challenge_id: CHALLENGE_IDS.generated1,
+          question_id: QUESTION_IDS[0],
+          slot: 1,
+        },
+      ],
+      error: null,
+    });
+    const candidates = createThenableQuery({
+      data: [...reusableQuestionRows, replacement],
+      error: null,
+    });
+    const adminClient = createClientMock({
+      questions: candidates,
+      daily_challenges: recentChallenges,
+      daily_challenge_items: recentItems,
+    });
+    supabaseAdmin.mockReturnValue(adminClient);
+    selectDailyChallengeReplacement.mockReturnValue(replacement);
+
+    await expect(
+      selectDailyChallengeReplacementForDraft({
+        draft: {
+          challengeId: CHALLENGE_IDS.generated1,
+          challengeDate: "2026-04-02",
+          questionIds: [...QUESTION_IDS],
+          questions: preparedQuestions as never,
+        },
+        flaggedSlot: 2,
+      }),
+    ).resolves.toMatchObject({
+      id: replacement.id,
+      difficulty: "medium",
+      source_notes: null,
+    });
+
+    expect(selectDailyChallengeReplacement).toHaveBeenCalledWith({
+      selection: preparedQuestions,
+      flaggedSlot: 2,
+      candidates: [...reusableQuestionRows, replacement],
+      recentQuestionIds: [QUESTION_IDS[4], QUESTION_IDS[0]],
+    });
+  });
+});
 
 describe("prepareDailyChallengeDraftForDate", () => {
   beforeEach(() => {

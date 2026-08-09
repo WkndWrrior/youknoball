@@ -215,6 +215,9 @@ describe("nightly question verification migration", () => {
     expect(runsTable).toContain(
       "jsonb_typeof(email_metadata->'failure') = 'object'",
     );
+    expect(runsTable).toContain(
+      "estimated_cost_usd = estimated_cost_microdollars::numeric / 1000000",
+    );
   });
 
   it("creates review item storage with snapshots, findings, and resolutions", async () => {
@@ -274,6 +277,7 @@ describe("nightly question verification migration", () => {
       "jsonb_array_length(source_fetch_results) <= 20",
     );
     expect(migration).toContain("evidence jsonb not null default '[]'::jsonb");
+    expect(migration).toContain("verified_at timestamptz");
     expect(migration).toContain("jsonb_array_length(evidence) <= 10");
     expect(migration).toMatch(
       /replacement_question_id uuid references public\.questions \(id\) on delete restrict/,
@@ -440,6 +444,114 @@ describe("nightly question verification migration", () => {
     );
     expect(migration).not.toMatch(
       /grant\s+(?:all|delete)[^;]*daily_question_review_(?:runs|items)[^;]*service_role/i,
+    );
+  });
+
+  it("stores bounded integer usage and an atomic private reservation ledger", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+
+    expect(migration).toContain("cached_input_tokens integer not null default 0");
+    expect(migration).toContain("cache_write_tokens integer not null default 0");
+    expect(migration).toContain(
+      "estimated_cost_microdollars bigint not null default 0",
+    );
+    expect(migration).toContain(
+      "create table if not exists public.daily_question_review_reservations",
+    );
+    expect(migration).toContain(
+      "reserved_microdollars bigint not null",
+    );
+    expect(migration).toContain(
+      "actual_microdollars bigint not null default 0",
+    );
+    expect(migration).toContain(
+      "check (status in ('active', 'reconciled', 'released', 'denied'))",
+    );
+    expect(migration).toMatch(
+      /create unique index if not exists daily_question_review_reservations_active_challenge_unique[\s\S]*where status = 'active';/,
+    );
+    expect(migration).toMatch(
+      /create unique index if not exists daily_question_review_reservations_denied_challenge_unique[\s\S]*where status = 'denied';/,
+    );
+    expect(migration).toContain(
+      "alter table public.daily_question_review_reservations enable row level security",
+    );
+    expect(migration).toContain(
+      "revoke all on public.daily_question_review_reservations from public, anon, authenticated",
+    );
+    expect(migration).toContain(
+      "grant select, insert, update on public.daily_question_review_reservations to service_role",
+    );
+  });
+
+  it("acquires and reconciles reservations atomically under a database lock", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const acquire = normalizedStatement(
+      migration,
+      "create or replace function public.acquire_daily_question_review_reservation",
+    );
+    const reconcile = normalizedStatement(
+      migration,
+      "create or replace function public.reconcile_daily_question_review_reservation",
+    );
+
+    expect(acquire).toContain("security definer");
+    expect(acquire).toContain("set search_path = pg_catalog, public");
+    expect(acquire).toContain("pg_advisory_xact_lock");
+    expect(acquire).toContain(
+      "p_required_reservation_microdollars = p_model_derived_reservation_microdollars",
+    );
+    expect(acquire).toContain(
+      "p_model_derived_reservation_microdollars = 2520000",
+    );
+    expect(acquire).toMatch(
+      /case when status = 'active' then reserved_microdollars else actual_microdollars end/,
+    );
+    expect(acquire).toContain(
+      "v_committed_microdollars + p_required_reservation_microdollars > p_limit_microdollars",
+    );
+    expect(acquire).toContain(
+      "on conflict (challenge_date, run_kind) where status = 'denied' do nothing",
+    );
+    expect(acquire).toContain("'reserved_microdollars', p_required_reservation_microdollars");
+    expect(reconcile).toContain("security definer");
+    expect(reconcile).toContain("pg_advisory_xact_lock");
+    expect(reconcile).toContain("p_actual_microdollars <= v_reservation.reserved_microdollars");
+    expect(reconcile).toContain(
+      "status = case when p_actual_microdollars = 0 then 'released' else 'reconciled' end",
+    );
+
+    for (const signature of [
+      "public.acquire_daily_question_review_reservation(date, date, text, bigint, bigint, timestamptz, timestamptz, bigint, timestamptz)",
+      "public.reconcile_daily_question_review_reservation(uuid, bigint, timestamptz)",
+    ]) {
+      expect(migration).toContain(
+        `revoke all on function ${signature} from public, anon, authenticated`,
+      );
+      expect(migration).toContain(
+        `grant execute on function ${signature} to service_role`,
+      );
+    }
+    expect(migration).not.toMatch(
+      /grant execute on function public\.(?:acquire|reconcile)_daily_question_review_reservation[^;]*to (?:public|anon|authenticated)/,
+    );
+  });
+
+  it("claims review email delivery with a service-role-only atomic transition", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const claim = normalizedStatement(
+      migration,
+      "create or replace function public.claim_daily_question_review_email",
+    );
+
+    expect(claim).toContain("security definer");
+    expect(claim).toContain("email_status = 'pending'");
+    expect(claim).toContain("email_status = 'sending'");
+    expect(migration).toContain(
+      "revoke all on function public.claim_daily_question_review_email(uuid, timestamptz) from public, anon, authenticated",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.claim_daily_question_review_email(uuid, timestamptz) to service_role",
     );
   });
 
