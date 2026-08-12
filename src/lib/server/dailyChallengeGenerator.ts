@@ -321,7 +321,7 @@ export function scoreDailyChallengeSelection(
   return getSelectionScore(selection, recentQuestionIdRanks);
 }
 
-function isValidDailyChallengeSelection(
+export function isValidDailyChallengeSelection(
   selection: readonly GeneratedDailyChallengeQuestion[],
 ) {
   if (selection.length !== DAILY_CHALLENGE_SLOT_DIFFICULTIES.length) {
@@ -343,6 +343,45 @@ function isValidDailyChallengeSelection(
     questionIds.add(question.id);
     return true;
   });
+}
+
+export function isDailyChallengeReplacementValid({
+  selection,
+  flaggedSlot,
+  replacement,
+  recentQuestionIds = [],
+}: {
+  selection: readonly GeneratedDailyChallengeQuestion[];
+  flaggedSlot: number;
+  replacement: GeneratedDailyChallengeQuestion;
+  recentQuestionIds?: readonly string[];
+}) {
+  if (
+    !isValidDailyChallengeSelection(selection) ||
+    !Number.isInteger(flaggedSlot) ||
+    flaggedSlot < 1 ||
+    flaggedSlot > selection.length ||
+    selection.some((question) => question.id === replacement.id) ||
+    recentQuestionIds.includes(replacement.id) ||
+    replacement.difficulty !== selection[flaggedSlot - 1]?.difficulty
+  ) {
+    return false;
+  }
+  const resultingSelection = selection.map((question, index) =>
+    index === flaggedSlot - 1
+      ? { ...replacement, slot: flaggedSlot }
+      : { ...question },
+  );
+  return (
+    isValidDailyChallengeSelection(resultingSelection) &&
+    preservesSelectionComposition(
+      scoreDailyChallengeSelection(resultingSelection, [...recentQuestionIds]),
+      scoreDailyChallengeSelection(
+        selection.map((question) => ({ ...question })),
+        [...recentQuestionIds],
+      ),
+    )
+  );
 }
 
 function preservesSelectionComposition(

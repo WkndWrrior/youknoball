@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   generateDailyChallengeQuestions,
+  isDailyChallengeReplacementValid,
   scoreDailyChallengeSelection,
   selectDailyChallengeReplacement,
 } from "@/lib/server/dailyChallengeGenerator";
@@ -400,6 +401,23 @@ function makeSelection(
 }
 
 describe("selectDailyChallengeReplacement", () => {
+  it("revalidates stored replacements for difficulty, freshness, uniqueness, and composition", () => {
+    const selection = makeSelection();
+    const valid = { ...makeReplacementQuestion(10, "medium", "CFB"), slot: 3 };
+    expect(isDailyChallengeReplacementValid({ selection, flaggedSlot: 3, replacement: valid })).toBe(true);
+    expect(isDailyChallengeReplacementValid({
+      selection,
+      flaggedSlot: 3,
+      replacement: valid,
+      recentQuestionIds: [valid.id],
+    })).toBe(false);
+    expect(isDailyChallengeReplacementValid({
+      selection,
+      flaggedSlot: 1,
+      replacement: { ...makeReplacementQuestion(11, "easy", "CFB"), slot: 1 },
+    })).toBe(false);
+  });
+
   it("selects the flagged slot difficulty without changing the selected lineup", () => {
     const selection = makeSelection();
     const replacement = makeReplacementQuestion(10, "medium", "NASCAR");

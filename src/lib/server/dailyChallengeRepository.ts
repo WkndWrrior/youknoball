@@ -20,6 +20,7 @@ import {
 import { sortLeaderboardEntries, type LeaderboardEntry } from "@/lib/leaderboard";
 import {
   generateDailyChallengeQuestions,
+  isDailyChallengeReplacementValid,
   selectDailyChallengeReplacement,
   type GeneratedDailyChallengeQuestion,
 } from "@/lib/server/dailyChallengeGenerator";
@@ -1150,6 +1151,44 @@ export async function selectDailyChallengeReplacementForDraft({
   });
 
   return replacement ? parseQuestionSnapshot(replacement, replacement.id) : null;
+}
+
+export async function validateDailyChallengeReplacementForDraft({
+  challengeDate,
+  flaggedSlot,
+  replacement,
+}: {
+  challengeDate: string;
+  flaggedSlot: number;
+  replacement: VerificationQuestionSnapshot;
+}) {
+  const draft = await prepareDailyChallengeDraftForDate(challengeDate);
+  const history = await loadRecentQuestionIds(supabaseAdmin());
+  if (history.kind !== "ready") return false;
+  return isDailyChallengeReplacementValid({
+    selection: draft.questions as unknown as readonly GeneratedDailyChallengeQuestion[],
+    flaggedSlot,
+    replacement: {
+      ...replacement,
+      slot: flaggedSlot,
+      sport: {
+        id: replacement.sport.slug,
+        slug: replacement.sport.slug,
+        name: replacement.sport.name,
+        is_active: true,
+        sort_order: 0,
+        created_at: "",
+      },
+      status: "ready",
+      eligible_for_daily: true,
+      eligible_for_sport_quiz: true,
+      authoring_method: "manual",
+      reviewed_at: null,
+      created_at: "",
+      updated_at: "",
+    },
+    recentQuestionIds: history.recentQuestionIds,
+  });
 }
 
 async function resolveServeableChallengeForDate(

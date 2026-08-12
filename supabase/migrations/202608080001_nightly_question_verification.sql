@@ -1733,3 +1733,160 @@ revoke all on internal.daily_question_review from public, anon, authenticated;
 
 grant usage on schema internal to service_role;
 grant select on internal.daily_question_review to service_role;
+
+create or replace function public.resolve_daily_question_review_item(
+  p_review_item_id uuid,
+  p_challenge_date date,
+  p_action text,
+  p_replacement_question_id uuid,
+  p_resolved_by uuid,
+  p_resolved_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_item public.daily_question_review_items%rowtype;
+  v_run public.daily_question_review_runs%rowtype;
+  v_challenge public.daily_challenges%rowtype;
+  v_challenge_item public.daily_challenge_items%rowtype;
+  v_question public.questions%rowtype;
+  v_expected_resolution text;
+begin
+  if p_action not in ('keep', 'replace')
+    or p_resolved_by is null
+    or p_resolved_at is null
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  select i.* into v_item
+  from public.daily_question_review_items i
+  where i.id = p_review_item_id
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+
+  select r.* into v_run
+  from public.daily_question_review_runs r
+  where r.id = v_item.run_id
+    and r.challenge_date = p_challenge_date
+    and r.daily_challenge_id = v_item.daily_challenge_id
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+
+  v_expected_resolution := case when p_action = 'keep' then 'kept' else 'replaced' end;
+  if v_item.resolution <> 'pending' then
+    if v_item.resolution = v_expected_resolution
+      and (
+        p_action = 'keep'
+        or v_item.replacement_question_id = p_replacement_question_id
+      )
+    then
+      return jsonb_build_object(
+        'outcome', 'already_resolved',
+        'resolution', v_item.resolution
+      );
+    end if;
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  if v_item.review_status <> 'completed'
+    or v_item.verdict not in ('risk', 'unable_to_verify')
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  select c.* into v_challenge
+  from public.daily_challenges c
+  where c.id = v_item.daily_challenge_id
+    and c.challenge_date = p_challenge_date
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+  if v_challenge.status <> 'generated' or v_challenge.published_at is not null then
+    return jsonb_build_object('outcome', 'not_draft');
+  end if;
+
+  if p_action = 'keep' then
+    if p_replacement_question_id is not null then
+      return jsonb_build_object('outcome', 'conflict');
+    end if;
+    update public.daily_question_review_items
+    set resolution = 'kept',
+        resolved_by = p_resolved_by,
+        resolved_at = p_resolved_at
+    where id = v_item.id;
+    return jsonb_build_object('outcome', 'resolved', 'resolution', 'kept');
+  end if;
+
+  if not v_item.replacement_eligible
+    or v_item.replacement_question_id is null
+    or v_item.replacement_question_id <> p_replacement_question_id
+    or v_item.replacement_question_snapshot is null
+    or v_item.replacement_finding->>'verdict' <> 'passed'
+    or jsonb_array_length(v_item.replacement_finding->'evidence') = 0
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  select q.* into v_question
+  from public.questions q
+  where q.id = p_replacement_question_id
+    and q.status = 'ready'
+    and q.eligible_for_daily is true
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  select i.* into v_challenge_item
+  from public.daily_challenge_items i
+  where i.daily_challenge_id = v_item.daily_challenge_id
+    and i.slot = v_item.slot
+  for update;
+  if not found or v_challenge_item.question_id <> v_item.question_id then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+  if v_item.replacement_question_snapshot->>'difficulty'
+      <> v_item.question_snapshot->>'difficulty'
+    or exists (
+      select 1
+      from public.daily_challenge_items other
+      where other.daily_challenge_id = v_item.daily_challenge_id
+        and other.slot <> v_item.slot
+        and other.question_id = p_replacement_question_id
+    )
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  update public.daily_challenge_items
+  set question_id = p_replacement_question_id,
+      question_snapshot = v_item.replacement_question_snapshot
+  where id = v_challenge_item.id;
+
+  update public.daily_question_review_items
+  set resolution = 'replaced',
+      resolved_by = p_resolved_by,
+      resolved_at = p_resolved_at,
+      applied_at = p_resolved_at,
+      application_metadata = jsonb_build_object(
+        'previousQuestionId', v_item.question_id,
+        'replacementQuestionId', p_replacement_question_id
+      )
+  where id = v_item.id;
+
+  return jsonb_build_object('outcome', 'resolved', 'resolution', 'replaced');
+end;
+$function$;
+
+revoke all on function public.resolve_daily_question_review_item(uuid, date, text, uuid, uuid, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.resolve_daily_question_review_item(uuid, date, text, uuid, uuid, timestamptz) to service_role;

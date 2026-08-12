@@ -818,4 +818,30 @@ describe("nightly question verification migration", () => {
       /revoke all on function public\.daily_challenge_text_is_valid\(text, integer, boolean\)\s+from public, anon, authenticated/,
     );
   });
+
+  it("resolves only the stored replacement while the challenge remains a draft", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const statement = normalizedStatement(
+      migration,
+      "create or replace function public.resolve_daily_question_review_item",
+    );
+    expect(statement).toContain("security definer");
+    expect(statement).toContain("for update");
+    expect(statement).toContain("replacement_eligible");
+    expect(statement).toContain("replacement_question_id");
+    expect(statement).toContain("status = 'ready'");
+    expect(statement).toContain("eligible_for_daily");
+    expect(statement).toContain("v_challenge.published_at is not null");
+    expect(statement).toContain("v_challenge.status <> 'generated'");
+    expect(statement).toContain("replacement_question_snapshot->>'difficulty'");
+    expect(statement).toContain("question_snapshot->>'difficulty'");
+    expect(statement).toContain("update public.daily_challenge_items");
+    expect(statement).toContain("application_metadata");
+    expect(migration).toMatch(
+      /revoke all on function public\.resolve_daily_question_review_item\(uuid, date, text, uuid, uuid, timestamptz\)\s+from public, anon, authenticated/,
+    );
+    expect(migration).toMatch(
+      /grant execute on function public\.resolve_daily_question_review_item\(uuid, date, text, uuid, uuid, timestamptz\)\s+to service_role/,
+    );
+  });
 });

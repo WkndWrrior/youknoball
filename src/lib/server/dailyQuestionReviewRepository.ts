@@ -649,6 +649,57 @@ export async function loadDailyQuestionReviewByRunId(
   return { run, items };
 }
 
+export async function loadDailyQuestionReviewByDate(
+  client: ServerSupabaseClient,
+  challengeDate: string,
+) {
+  const runResult = await client
+    .from("daily_question_review_runs")
+    .select(RUN_COLUMNS)
+    .eq("challenge_date", challengeDate)
+    .maybeSingle();
+  throwIfError(runResult.error);
+  if (runResult.data === null) return null;
+  const run = requireRun(runResult.data);
+  const itemResult = await client
+    .from("daily_question_review_items")
+    .select(ITEM_COLUMNS)
+    .eq("run_id", run.id)
+    .order("slot", { ascending: true });
+  throwIfError(itemResult.error);
+  return {
+    run,
+    items: (Array.isArray(itemResult.data) ? itemResult.data : [])
+      .map(parseItem)
+      .filter((item): item is DailyQuestionReviewItemRecord => item !== null),
+  };
+}
+
+export async function resolveDailyQuestionReviewItem(
+  client: ServerSupabaseClient,
+  input: {
+    action: "keep" | "replace";
+    challengeDate: string;
+    reviewItemId: string;
+    replacementQuestionId: string | null;
+    resolvedBy: string;
+  },
+) {
+  const { data, error } = await client.rpc("resolve_daily_question_review_item", {
+    p_review_item_id: input.reviewItemId,
+    p_challenge_date: input.challengeDate,
+    p_action: input.action,
+    p_replacement_question_id: input.replacementQuestionId,
+    p_resolved_by: input.resolvedBy,
+    p_resolved_at: new Date().toISOString(),
+  });
+  throwIfError(error);
+  if (!isRecord(data) || typeof data.outcome !== "string") {
+    throw new Error("Daily review resolution returned invalid data.");
+  }
+  return data;
+}
+
 export async function loadDailyQuestionReviewResolutions(
   client: ServerSupabaseClient,
   runId: string,
