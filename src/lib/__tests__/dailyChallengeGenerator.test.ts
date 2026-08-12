@@ -471,7 +471,7 @@ describe("selectDailyChallengeReplacement", () => {
     ).toBe(questionId(11));
   });
 
-  it("uses newest-first history to prefer an older repeat in replacement", () => {
+  it("returns null when every otherwise-valid replacement is recent", () => {
     const selection = makeSelection();
 
     expect(
@@ -483,11 +483,11 @@ describe("selectDailyChallengeReplacement", () => {
           makeReplacementQuestion(11, "medium", "CFB"),
         ],
         recentQuestionIds: [questionId(10), questionId(11)],
-      })?.id,
-    ).toBe(questionId(11));
+      }),
+    ).toBeNull();
   });
 
-  it("preserves NBA and NFL target coverage", () => {
+  it("returns null when the only fresh option would reduce target coverage", () => {
     const selection = makeSelection();
 
     expect(
@@ -499,11 +499,11 @@ describe("selectDailyChallengeReplacement", () => {
           makeReplacementQuestion(11, "easy", "NBA"),
         ],
         recentQuestionIds: [questionId(11)],
-      })?.id,
-    ).toBe(questionId(11));
+      }),
+    ).toBeNull();
   });
 
-  it("preserves sport diversity when a same-difficulty option can", () => {
+  it("returns null when the only fresh option would reduce sport diversity", () => {
     const selection = makeSelection();
 
     expect(
@@ -515,11 +515,11 @@ describe("selectDailyChallengeReplacement", () => {
           makeReplacementQuestion(11, "medium", "CFB"),
         ],
         recentQuestionIds: [questionId(11)],
-      })?.id,
-    ).toBe(questionId(11));
+      }),
+    ).toBeNull();
   });
 
-  it("preserves the max-two-per-sport condition when possible", () => {
+  it("returns null when the only fresh option would exceed the sport limit", () => {
     const selection = makeSelection([
       [1, "easy", "NBA"],
       [2, "easy", "NFL"],
@@ -537,8 +537,8 @@ describe("selectDailyChallengeReplacement", () => {
           makeReplacementQuestion(11, "hard", "MLB"),
         ],
         recentQuestionIds: [questionId(11)],
-      })?.id,
-    ).toBe(questionId(11));
+      }),
+    ).toBeNull();
   });
 
   it("chooses a preserving candidate over a lexically earlier degrading candidate", () => {
@@ -556,7 +556,7 @@ describe("selectDailyChallengeReplacement", () => {
     ).toBe(questionId(99));
   });
 
-  it("scores the resulting full five when removal changes composition", () => {
+  it("selects a fresh preserving option when removal changes composition", () => {
     const selection = makeSelection([
       [1, "easy", "NBA"],
       [2, "easy", "NFL"],
@@ -575,7 +575,7 @@ describe("selectDailyChallengeReplacement", () => {
         ],
         recentQuestionIds: [questionId(11)],
       })?.id,
-    ).toBe(questionId(11));
+    ).toBe(questionId(10));
   });
 
   it("uses question ID as a stable final tie-break independent of candidate order", () => {

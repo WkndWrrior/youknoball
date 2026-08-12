@@ -413,6 +413,7 @@ export function selectDailyChallengeReplacement({
   const flaggedQuestion = selection[flaggedSlot - 1];
   const selectedQuestionIds = new Set(selection.map((question) => question.id));
   const recentIds = Array.from(recentQuestionIds);
+  const recentIdSet = new Set(recentIds);
   const candidateIdCounts = new Map<string, number>();
   candidates.forEach((candidate) => {
     candidateIdCounts.set(
@@ -428,7 +429,8 @@ export function selectDailyChallengeReplacement({
         candidate.status === "ready" &&
         candidate.eligible_for_daily &&
         parseQuestionSnapshot(candidate, candidate.id) !== null &&
-        !selectedQuestionIds.has(candidate.id),
+        !selectedQuestionIds.has(candidate.id) &&
+        !recentIdSet.has(candidate.id),
     )
     .sort((left, right) => left.id.localeCompare(right.id));
 
@@ -455,10 +457,11 @@ export function selectDailyChallengeReplacement({
   const preservingCandidates = scoredCandidates.filter(({ score }) =>
     preservesSelectionComposition(score, baselineScore),
   );
-  const rankedCandidates =
-    preservingCandidates.length > 0 ? preservingCandidates : scoredCandidates;
+  if (preservingCandidates.length === 0) {
+    return null;
+  }
 
-  return rankedCandidates.reduce((best, current) =>
+  return preservingCandidates.reduce((best, current) =>
     compareSelectionScore(current.score, best.score) > 0 ? current : best,
   ).candidate;
 }
