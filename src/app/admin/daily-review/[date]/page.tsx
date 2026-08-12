@@ -53,8 +53,8 @@ export default async function DailyReviewPage({
         <p style={{ margin: 0, color: "#b44b16", fontWeight: 700 }}>Daily 5 review</p>
         <h1 style={{ margin: "4px 0 8px", fontSize: 32 }}>{date}</h1>
         <p style={{ margin: 0 }}>
-          Status: <strong>{review.run.status}</strong> · Estimated cost: $ 
-          {(review.run.estimatedCostMicrodollars / 1_000_000).toFixed(6)}
+          Status: <strong>{review.run.status}</strong> · Estimated cost:{" "}
+          {`$${(review.run.estimatedCostMicrodollars / 1_000_000).toFixed(6)}`}
         </p>
       </header>
 
