@@ -756,7 +756,14 @@ as $function$
       or (
         r.status in ('completed', 'completed_with_flags', 'failed')
         and r.completed_at is not null
-        and r.email_status in ('pending', 'failed', 'sending')
+        and (r.email_metadata->>'attempts')::integer < 10
+        and (
+          r.email_status in ('pending', 'failed')
+          or (
+            r.email_status = 'sending'
+            and r.updated_at <= clock_timestamp() - interval '15 minutes'
+          )
+        )
       )
     )
   order by r.challenge_date, r.created_at
@@ -1632,12 +1639,13 @@ begin
 
   if v_run.status = 'failed'
     or (
-      v_run.status = 'running'
+      v_run.status in ('preparing', 'running')
       and v_run.lease_expires_at <= clock_timestamp()
     )
   then
     update public.daily_question_review_runs
     set status = 'running',
+        started_at = coalesce(v_run.started_at, p_claimed_at),
         completed_at = null,
         claim_token = gen_random_uuid(),
         heartbeat_at = p_claimed_at,

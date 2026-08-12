@@ -596,7 +596,14 @@ describe("nightly question verification migration", () => {
     expect(recovery).toContain("p_before_challenge_date date");
     expect(recovery).toContain("r.challenge_date < p_before_challenge_date");
     expect(recovery).toContain("r.status in ('preparing', 'running')");
-    expect(recovery).toContain("r.email_status in ('pending', 'failed', 'sending')");
+    expect(recovery).toContain("r.email_status in ('pending', 'failed')");
+    expect(recovery).toContain("r.email_status = 'sending'");
+    expect(recovery).toContain(
+      "r.updated_at <= clock_timestamp() - interval '15 minutes'",
+    );
+    expect(recovery).toContain(
+      "(r.email_metadata->>'attempts')::integer < 10",
+    );
     expect(recovery).toContain("order by r.challenge_date, r.created_at");
     expect(migration).toContain(
       "revoke all on function public.find_oldest_recoverable_daily_question_review(date) from public, anon, authenticated",
@@ -623,7 +630,11 @@ describe("nightly question verification migration", () => {
     expect(claim).toContain("security definer");
     expect(claim).toContain("for update");
     expect(claim).toContain("status = 'failed'");
+    expect(claim).toContain("v_run.status in ('preparing', 'running')");
     expect(claim).toContain("lease_expires_at <= clock_timestamp()");
+    expect(claim).toContain(
+      "started_at = coalesce(v_run.started_at, p_claimed_at)",
+    );
     expect(claim).toContain("claim_token = gen_random_uuid()");
     expect(heartbeat).toContain("security definer");
     expect(heartbeat).toContain("claim_token = p_claim_token");

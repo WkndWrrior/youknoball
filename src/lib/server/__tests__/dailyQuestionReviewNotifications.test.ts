@@ -138,6 +138,7 @@ function item(
           },
         }
       : null,
+    replacementAttempted: replacement,
     resolution: "pending",
     resolvedBy: null,
     resolvedAt: null,
