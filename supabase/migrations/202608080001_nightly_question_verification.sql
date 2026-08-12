@@ -700,6 +700,73 @@ create table if not exists public.daily_question_review_reservations (
   )
 );
 
+create or replace function public.guard_daily_question_review_run_reservation()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+begin
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      'daily-question-review-reservation/' || new.challenge_date::text || '/' || new.run_kind,
+      0
+    )
+  );
+
+  if not exists (
+    select 1
+    from public.daily_question_review_reservations r
+    where r.challenge_date = new.challenge_date
+      and r.run_kind = new.run_kind
+      and r.status = 'active'
+  ) then
+    raise exception 'An active reservation is required before binding a daily review run.'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$function$;
+
+drop trigger if exists daily_question_review_runs_guard_reservation
+  on public.daily_question_review_runs;
+create trigger daily_question_review_runs_guard_reservation
+before insert on public.daily_question_review_runs
+for each row execute function public.guard_daily_question_review_run_reservation();
+
+revoke all on function public.guard_daily_question_review_run_reservation()
+  from public, anon, authenticated;
+
+create or replace function public.find_oldest_recoverable_daily_question_review(
+  p_before_challenge_date date
+)
+returns uuid
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $function$
+  select r.id
+  from public.daily_question_review_runs r
+  where p_before_challenge_date is not null
+    and r.challenge_date < p_before_challenge_date
+    and (
+      r.status in ('preparing', 'running')
+      or (
+        r.status in ('completed', 'completed_with_flags', 'failed')
+        and r.completed_at is not null
+        and r.email_status in ('pending', 'failed', 'sending')
+      )
+    )
+  order by r.challenge_date, r.created_at
+  limit 1;
+$function$;
+
+revoke all on function public.find_oldest_recoverable_daily_question_review(date) from public, anon, authenticated;
+
+grant execute on function public.find_oldest_recoverable_daily_question_review(date) to service_role;
+
 create table if not exists public.daily_question_review_items (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references public.daily_question_review_runs (id) on delete cascade,
@@ -1467,6 +1534,13 @@ begin
   where r.id = p_reservation_id
   for update;
 
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      'daily-question-review-reservation/' || v_reservation.challenge_date::text || '/' || v_reservation.run_kind,
+      0
+    )
+  );
+
   if v_reservation.status in ('reconciled', 'released') then
     return jsonb_build_object(
       'outcome',
@@ -1480,6 +1554,17 @@ begin
     or not (p_actual_microdollars <= v_reservation.reserved_microdollars)
   then
     return jsonb_build_object('outcome', 'conflict', 'actual_microdollars', 0);
+  end if;
+
+  if p_actual_microdollars = 0
+    and exists (
+      select 1
+      from public.daily_question_review_runs r
+      where r.challenge_date = v_reservation.challenge_date
+        and r.run_kind = v_reservation.run_kind
+    )
+  then
+    return jsonb_build_object('outcome', 'bound', 'actual_microdollars', 0);
   end if;
 
   update public.daily_question_review_reservations

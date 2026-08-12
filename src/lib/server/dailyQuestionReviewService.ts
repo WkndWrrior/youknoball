@@ -24,6 +24,7 @@ import {
   runWithDailyQuestionReviewBudgetPreflight,
   type ChicagoCalendarMonthRange,
   type DailyQuestionReviewBudgetResult,
+  type DailyQuestionReviewReservationContext,
   type DailyQuestionReviewReservationRequest,
   type PersistedDailyQuestionReviewCost,
 } from "@/lib/server/dailyQuestionReviewBudget";
@@ -33,8 +34,10 @@ import {
   claimDailyQuestionReviewEmail,
   completeDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
+  loadActiveDailyQuestionReviewReservation,
   loadDailyQuestionReviewByDate,
   loadDailyQuestionReviewByRunId,
+  loadOldestRecoverableDailyQuestionReview,
   heartbeatDailyQuestionReviewRun,
   markDailyQuestionReviewEmailFailed,
   markDailyQuestionReviewEmailSent,
@@ -132,6 +135,13 @@ export interface DailyQuestionReviewServiceDependencies {
     run: DailyQuestionReviewRunRecord;
     items: DailyQuestionReviewItemRecord[];
   } | null>;
+  loadOldestRecoverable: (beforeChallengeDate: string) => Promise<{
+    run: DailyQuestionReviewRunRecord;
+    items: DailyQuestionReviewItemRecord[];
+  } | null>;
+  loadActiveReservation: (
+    challengeDate: string,
+  ) => Promise<DailyQuestionReviewReservationContext | null>;
   saveItem: (input: ItemSaveInput) => ReturnType<typeof upsertDailyQuestionReviewItem>;
   completeRun: (input: CompleteRunInput) => Promise<DailyQuestionReviewRunRecord>;
   collectEvidence: (
@@ -278,6 +288,28 @@ function makeRunError(
   };
 }
 
+function beginBillableResultPersistence(
+  runErrors: DailyQuestionReviewRunError[],
+  phase: "verification" | "replacement",
+  occurredAt: string,
+  questionId: string,
+): () => void {
+  const pendingError: DailyQuestionReviewRunError = {
+    phase,
+    code: "billable_result_persistence_pending",
+    message:
+      "Billable verification started, but its terminal result has not yet been durably persisted.",
+    retryable: false,
+    occurredAt,
+    questionId,
+  };
+  runErrors.unshift(pendingError);
+  return () => {
+    const index = runErrors.indexOf(pendingError);
+    if (index >= 0) runErrors.splice(index, 1);
+  };
+}
+
 function terminalUnableFinding(
   question: QuestionSnapshot,
   error: unknown,
@@ -405,6 +437,10 @@ function createDefaultDependencies(context: {
     currentTime: () => new Date(),
     loadReview: (runId) => loadDailyQuestionReviewByRunId(client, runId),
     loadExisting: (challengeDate) => loadDailyQuestionReviewByDate(client, challengeDate),
+    loadOldestRecoverable: (beforeChallengeDate) =>
+      loadOldestRecoverableDailyQuestionReview(client, beforeChallengeDate),
+    loadActiveReservation: (challengeDate) =>
+      loadActiveDailyQuestionReviewReservation(client, challengeDate),
     saveItem: (input) => upsertDailyQuestionReviewItem(client, input),
     completeRun: (input) => completeDailyQuestionReviewRun(client, input),
     collectEvidence: async (question) => {
@@ -497,21 +533,30 @@ export async function runNightlyQuestionReview({
     throw new RangeError("Invalid nightly review invocation bounds.");
   }
   const occurredAt = now.toISOString();
-  const reviewDate = getReviewDate(now);
-  if (reviewDate >= challengeDate) {
+  const currentReviewDate = getReviewDate(now);
+  if (currentReviewDate >= challengeDate) {
     throw new RangeError("Nightly review date must precede the challenge date.");
   }
+  const priorReview = dependencies
+    ? await dependencies.loadOldestRecoverable(challengeDate)
+    : await loadOldestRecoverableDailyQuestionReview(
+        supabaseAdmin(),
+        challengeDate,
+      );
+  const reviewDate = priorReview?.run.reviewDate ?? currentReviewDate;
+  const targetChallengeDate = priorReview?.run.challengeDate ?? challengeDate;
   const deps =
     dependencies ??
     createDefaultDependencies({
       reviewDate,
-      challengeDate,
+      challengeDate: targetChallengeDate,
       now: occurredAt,
       siteUrlFallback,
     });
   const monthRange = getChicagoCalendarMonthRange(now);
   const records = await deps.listMonthlyCosts(monthRange);
-  const existingReview = await deps.loadExisting(challengeDate);
+  const existingReview =
+    priorReview ?? await deps.loadExisting(targetChallengeDate);
   if (
     existingReview &&
     ["completed", "completed_with_flags", "failed"].includes(existingReview.run.status)
@@ -533,12 +578,13 @@ export async function runNightlyQuestionReview({
     };
   }
 
-  const preflight = await runWithDailyQuestionReviewBudgetPreflight({
-    model: deps.model,
-    records,
-    now,
-    acquireReservation: deps.acquireReservation,
-    operation: async (reservation) => {
+  const recoveredReservation = priorReview
+    ? await deps.loadActiveReservation(targetChallengeDate)
+    : null;
+
+  const processReservation = async (
+    reservation: DailyQuestionReviewReservationContext,
+  ) => {
       let releaseUnboundReservation = reservation.acquiredNow;
       try {
         const initialLease = getLeaseWindow(now);
@@ -548,16 +594,16 @@ export async function runNightlyQuestionReview({
         if (!reservation.acquiredNow) {
           const existing = await deps.claimExisting({
             reviewDate,
-            challengeDate,
+            challengeDate: targetChallengeDate,
             claimedAt: initialLease.heartbeatAt,
             leaseExpiresAt: initialLease.leaseExpiresAt,
           });
           if (!existing.run) {
-            draft = await deps.prepareDraft(challengeDate);
+            draft = await deps.prepareDraft(targetChallengeDate);
             const started = await deps.startOrObserve({
               dailyChallengeId: draft.challengeId,
               reviewDate,
-              challengeDate,
+              challengeDate: targetChallengeDate,
               model: deps.model,
               verifierVersion: deps.verifierVersion,
               startedAt: initialLease.heartbeatAt,
@@ -576,14 +622,14 @@ export async function runNightlyQuestionReview({
             claimedRun = existing.run;
             claimToken = existing.claimToken;
             releaseUnboundReservation = false;
-            draft = await deps.prepareDraft(challengeDate);
+            draft = await deps.prepareDraft(targetChallengeDate);
           }
         } else {
-          draft = await deps.prepareDraft(challengeDate);
+          draft = await deps.prepareDraft(targetChallengeDate);
           const started = await deps.startOrObserve({
             dailyChallengeId: draft.challengeId,
             reviewDate,
-            challengeDate,
+            challengeDate: targetChallengeDate,
             model: deps.model,
             verifierVersion: deps.verifierVersion,
             startedAt: initialLease.heartbeatAt,
@@ -697,16 +743,27 @@ export async function runNightlyQuestionReview({
             return { kind: "in_progress" as const, run: persistedRun };
           }
 
-          await saveProgress({
-            dailyChallengeId: draft.challengeId,
-            slot: question.slot,
-            question,
-            reviewStatus: "failed",
-            sourceFetchResults: evidence.sourceFetchResults,
-            finding: null,
-            replacement: null,
-            usageEvent: null,
-          });
+          const clearPendingPersistence = beginBillableResultPersistence(
+            runErrors,
+            "verification",
+            occurredAt,
+            question.id,
+          );
+          try {
+            await saveProgress({
+              dailyChallengeId: draft.challengeId,
+              slot: question.slot,
+              question,
+              reviewStatus: "failed",
+              sourceFetchResults: evidence.sourceFetchResults,
+              finding: null,
+              replacement: null,
+              usageEvent: null,
+            });
+          } catch (error) {
+            clearPendingPersistence();
+            throw error;
+          }
           let verification: OpenAiQuestionVerifierResult;
           try {
             verification = await deps.verifyQuestion({
@@ -714,6 +771,7 @@ export async function runNightlyQuestionReview({
               savedEvidence: evidence.savedEvidence,
             });
           } catch (error) {
+            clearPendingPersistence();
             const chargedUsage = errorUsage(error);
             runErrors.push(
               makeRunError(
@@ -751,6 +809,7 @@ export async function runNightlyQuestionReview({
             return { kind: "in_progress" as const, run: persistedRun };
           }
 
+          clearPendingPersistence();
           try {
             await saveProgress({
               dailyChallengeId: draft.challengeId,
@@ -916,17 +975,28 @@ export async function runNightlyQuestionReview({
               continue;
             }
 
-            await saveProgress({
-              dailyChallengeId: draft.challengeId,
-              slot: question.slot,
-              question: primaryItem.question,
-              reviewStatus: "failed",
-              sourceFetchResults: primaryItem.sourceFetchResults,
-              finding: primaryItem.finding,
-              replacement: null,
-              replacementAttempted: true,
-              usageEvent: null,
-            });
+            const clearPendingPersistence = beginBillableResultPersistence(
+              runErrors,
+              "replacement",
+              occurredAt,
+              candidate.id,
+            );
+            try {
+              await saveProgress({
+                dailyChallengeId: draft.challengeId,
+                slot: question.slot,
+                question: primaryItem.question,
+                reviewStatus: "failed",
+                sourceFetchResults: primaryItem.sourceFetchResults,
+                finding: primaryItem.finding,
+                replacement: null,
+                replacementAttempted: true,
+                usageEvent: null,
+              });
+            } catch (error) {
+              clearPendingPersistence();
+              throw error;
+            }
             placeholderPersisted = true;
             let candidateVerification: OpenAiQuestionVerifierResult;
             try {
@@ -935,6 +1005,7 @@ export async function runNightlyQuestionReview({
                 savedEvidence: candidateEvidence.savedEvidence,
               });
             } catch (error) {
+              clearPendingPersistence();
               runErrors.push(
                 makeRunError(
                   "replacement",
@@ -962,6 +1033,7 @@ export async function runNightlyQuestionReview({
               });
               continue;
             }
+            clearPendingPersistence();
             const replacementCandidate: DailyQuestionReplacementCandidate = {
               questionId: candidate.id,
               snapshot: candidate,
@@ -1066,16 +1138,34 @@ export async function runNightlyQuestionReview({
           });
         }
       }
-    },
-  });
+  };
+  const preflight = recoveredReservation
+    ? {
+        budget: checkDailyQuestionReviewBudget({
+          model: deps.model,
+          records,
+          now,
+        }),
+        value: await processReservation(recoveredReservation),
+      }
+    : await runWithDailyQuestionReviewBudgetPreflight({
+        model: deps.model,
+        records,
+        now,
+        acquireReservation: deps.acquireReservation,
+        operation: processReservation,
+      });
 
-  if (!preflight.budget.allowed || preflight.value === null) {
+  if (
+    (!preflight.budget.allowed && recoveredReservation === null) ||
+    preflight.value === null
+  ) {
     const atomicDenial = preflight.budget.reason === "atomic_reservation_denied";
     const created = atomicDenial
       ? preflight.budget.denialCreated === true
       : (await deps.recordBudgetBlock({
           reviewDate,
-          challengeDate,
+          challengeDate: targetChallengeDate,
           model: deps.model,
           reservedMicrodollars: preflight.budget.reservedMicrodollars,
           monthRange,
@@ -1084,7 +1174,7 @@ export async function runNightlyQuestionReview({
         })).created;
     if (created && deps.sendBudgetBlockEmail) {
       await deps.sendBudgetBlockEmail({
-        challengeDate,
+        challengeDate: targetChallengeDate,
         reason: preflight.budget.reason,
         reservedMicrodollars: preflight.budget.reservedMicrodollars,
         remainingMicrodollars: preflight.budget.remainingMicrodollars,

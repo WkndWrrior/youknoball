@@ -211,6 +211,8 @@ function createDependencies(options: {
           items: Array.from(items.values()).sort((left, right) => left.slot - right.slot),
         }
       : null),
+    loadOldestRecoverable: vi.fn(async () => null),
+    loadActiveReservation: vi.fn(async () => null),
     saveItem: vi.fn(async (input) => {
       const stored = {
         ...makeStoredItem(input.slot, input.reviewStatus),
@@ -406,7 +408,10 @@ describe("runNightlyQuestionReview", () => {
         finding: null,
         replacement: null,
         usageEvent: null,
-        runErrors: [],
+        runErrors: [expect.objectContaining({
+          code: "billable_result_persistence_pending",
+          questionId: questionIds[0],
+        })],
       }),
     );
     expect(context.dependencies.saveItem).toHaveBeenNthCalledWith(
@@ -417,6 +422,7 @@ describe("runNightlyQuestionReview", () => {
       .toBeLessThan(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0]);
     expect(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(context.dependencies.verifyQuestion).mock.invocationCallOrder[0]);
+    expect(context.getRun().errors).toEqual([]);
   });
 
   it("persists primary source collection failure as non-billable terminal progress", async () => {
@@ -494,6 +500,12 @@ describe("runNightlyQuestionReview", () => {
 
     expect(context.dependencies.verifyQuestion).toHaveBeenCalledOnce();
     expect(context.items.get(1)).toMatchObject({ reviewStatus: "failed" });
+    expect(context.getRun().errors).toEqual([
+      expect.objectContaining({
+        code: "billable_result_persistence_pending",
+        questionId: questionIds[0],
+      }),
+    ]);
     expect(context.dependencies.completeRun).toHaveBeenCalledWith(
       expect.objectContaining({ status: "failed" }),
     );
@@ -646,12 +658,17 @@ describe("runNightlyQuestionReview", () => {
         replacement: null,
         replacementAttempted: true,
         usageEvent: null,
+        runErrors: [expect.objectContaining({
+          code: "billable_result_persistence_pending",
+          questionId: replacementId,
+        })],
       }),
     );
     expect(vi.mocked(context.dependencies.collectEvidence).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0]);
     expect(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(context.dependencies.verifyQuestion).mock.invocationCallOrder[0]);
+    expect(context.getRun().errors).toEqual([]);
   });
 
   it("persists replacement source collection failure as non-billable terminal progress", async () => {
@@ -736,6 +753,12 @@ describe("runNightlyQuestionReview", () => {
       finding: { verdict: "risk" },
       replacement: null,
     });
+    expect(context.getRun().errors).toEqual([
+      expect.objectContaining({
+        code: "billable_result_persistence_pending",
+        questionId: replacementId,
+      }),
+    ]);
   });
 
   it("persists unavailable replacement selection as a non-billable terminal state", async () => {
@@ -1202,6 +1225,88 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.acquireReservation).not.toHaveBeenCalled();
     expect(dependencies.claimEmail).toHaveBeenCalledWith(completedRun.id, now.toISOString());
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
+  });
+
+  it("recovers the oldest prior terminal email before current-date work", async () => {
+    const priorRun = makeRun({
+      reviewDate: "2026-08-08",
+      challengeDate: "2026-08-09",
+      status: "completed_with_flags",
+      completedAt: "2026-08-08T23:20:00.000Z",
+      email: { ...makeRun().email, status: "failed" },
+    });
+    const priorItems = [1, 2, 3, 4, 5].map((slot) =>
+      makeStoredItem(slot, "completed"),
+    );
+    const { dependencies } = createDependencies();
+    vi.mocked(dependencies.loadOldestRecoverable).mockResolvedValue({
+      run: priorRun,
+      items: priorItems,
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).resolves.toMatchObject({
+      kind: "observed",
+      run: { challengeDate: "2026-08-09" },
+    });
+
+    expect(dependencies.loadExisting).not.toHaveBeenCalled();
+    expect(dependencies.acquireReservation).not.toHaveBeenCalled();
+    expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
+  });
+
+  it("processes one unit from the oldest prior unfinished run before current-date work", async () => {
+    const priorRun = makeRun({
+      reviewDate: "2026-08-08",
+      challengeDate: "2026-08-09",
+    });
+    const context = createDependencies({
+      existingRun: priorRun,
+      claimExistingResult: {
+        claimed: true,
+        claimToken: uuid(601),
+        run: priorRun,
+      },
+    });
+    vi.mocked(context.dependencies.loadOldestRecoverable).mockResolvedValue({
+      run: priorRun,
+      items: [],
+    });
+    vi.mocked(context.dependencies.loadActiveReservation).mockResolvedValue({
+      reservationId: uuid(500),
+      acquiredNow: false,
+      model: "gpt-5.6-terra",
+      modelDerivedReservationMicrodollars:
+        DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+      requiredReservationMicrodollars:
+        DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+      reservedMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+      runCostBaselineMicrodollars: 0,
+      monthRange: {
+        startInclusive: "2026-08-01T05:00:00.000Z",
+        endExclusive: "2026-09-01T05:00:00.000Z",
+      },
+    });
+    vi.mocked(context.dependencies.prepareDraft).mockResolvedValue({
+      ...draft,
+      challengeDate: "2026-08-09",
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({
+      kind: "in_progress",
+      run: { challengeDate: "2026-08-09" },
+    });
+
+    expect(context.dependencies.acquireReservation).not.toHaveBeenCalled();
+    expect(context.dependencies.prepareDraft).toHaveBeenCalledWith("2026-08-09");
+    expect(context.dependencies.verifyQuestion).toHaveBeenCalledOnce();
   });
 
   it("observes a failed terminal run and retries stale-sending mail without reserving budget", async () => {

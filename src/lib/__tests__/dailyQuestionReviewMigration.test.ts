@@ -545,6 +545,10 @@ describe("nightly question verification migration", () => {
     expect(acquire).toContain("'reserved_microdollars', p_required_reservation_microdollars");
     expect(reconcile).toContain("security definer");
     expect(reconcile).toContain("pg_advisory_xact_lock");
+    expect(reconcile).toContain("daily-question-review-reservation/");
+    expect(reconcile).toContain("p_actual_microdollars = 0");
+    expect(reconcile).toContain("from public.daily_question_review_runs");
+    expect(reconcile).toContain("'outcome', 'bound'");
     expect(reconcile).toContain("p_actual_microdollars <= v_reservation.reserved_microdollars");
     expect(reconcile).toContain(
       "status = case when p_actual_microdollars = 0 then 'released' else 'reconciled' end",
@@ -563,6 +567,42 @@ describe("nightly question verification migration", () => {
     }
     expect(migration).not.toMatch(
       /grant execute on function public\.(?:acquire|reconcile)_daily_question_review_reservation[^;]*to (?:public|anon|authenticated)/,
+    );
+  });
+
+  it("serializes run binding with zero-cost reservation release", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const guard = normalizedStatement(
+      migration,
+      "create or replace function public.guard_daily_question_review_run_reservation",
+    );
+
+    expect(guard).toContain("pg_advisory_xact_lock");
+    expect(guard).toContain("daily-question-review-reservation/");
+    expect(guard).toContain("status = 'active'");
+    expect(guard).toContain("raise exception");
+    expect(migration).toContain(
+      "create trigger daily_question_review_runs_guard_reservation",
+    );
+  });
+
+  it("finds the oldest recoverable prior review without exposing it to clients", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const recovery = normalizedStatement(
+      migration,
+      "create or replace function public.find_oldest_recoverable_daily_question_review",
+    );
+
+    expect(recovery).toContain("p_before_challenge_date date");
+    expect(recovery).toContain("r.challenge_date < p_before_challenge_date");
+    expect(recovery).toContain("r.status in ('preparing', 'running')");
+    expect(recovery).toContain("r.email_status in ('pending', 'failed', 'sending')");
+    expect(recovery).toContain("order by r.challenge_date, r.created_at");
+    expect(migration).toContain(
+      "revoke all on function public.find_oldest_recoverable_daily_question_review(date) from public, anon, authenticated",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.find_oldest_recoverable_daily_question_review(date) to service_role",
     );
   });
 

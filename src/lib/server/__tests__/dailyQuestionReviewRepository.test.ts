@@ -12,9 +12,11 @@ import {
   completeDailyQuestionReviewRun,
   heartbeatDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
+  loadActiveDailyQuestionReviewReservation,
   loadDailyQuestionReviewByRunId,
   loadDailyQuestionReviewResolutions,
   loadLatestDailyQuestionReview,
+  loadOldestRecoverableDailyQuestionReview,
   markDailyQuestionReviewEmailFailed,
   markDailyQuestionReviewEmailSent,
   reconcileDailyQuestionReviewReservation,
@@ -692,6 +694,59 @@ describe("run accounting and reads", () => {
     expect(items.eq).toHaveBeenCalledWith("run_id", ids.run);
   });
 
+  it("loads the oldest recoverable prior run selected by SQL", async () => {
+    const run = createThenableQuery({ data: runRow, error: null });
+    const items = createThenableQuery({ data: [itemRow], error: null });
+    const client = createClientMock(
+      {
+        daily_question_review_runs: run,
+        daily_question_review_items: items,
+      },
+      {
+        find_oldest_recoverable_daily_question_review: {
+          data: ids.run,
+          error: null,
+        },
+      },
+    );
+
+    await expect(
+      loadOldestRecoverableDailyQuestionReview(client, "2026-08-11"),
+    ).resolves.toMatchObject({ run: { id: ids.run }, items: [{ id: ids.item }] });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "find_oldest_recoverable_daily_question_review",
+      { p_before_challenge_date: "2026-08-11" },
+    );
+  });
+
+  it("loads an existing active reservation for prior-run recovery", async () => {
+    const reservation = createThenableQuery({
+      data: {
+        id: ids.reservation,
+        model: "gpt-5.6-terra",
+        reserved_microdollars: 5_040_000,
+        run_cost_baseline_microdollars: 200,
+        month_start: "2026-08-01T05:00:00.000Z",
+        month_end: "2026-09-01T05:00:00.000Z",
+      },
+      error: null,
+    });
+    const client = createClientMock({
+      daily_question_review_reservations: reservation,
+    });
+
+    await expect(
+      loadActiveDailyQuestionReviewReservation(client, "2026-08-10"),
+    ).resolves.toMatchObject({
+      reservationId: ids.reservation,
+      acquiredNow: false,
+      reservedMicrodollars: 5_040_000,
+      runCostBaselineMicrodollars: 200,
+    });
+    expect(reservation.eq).toHaveBeenCalledWith("challenge_date", "2026-08-10");
+    expect(reservation.eq).toHaveBeenCalledWith("status", "active");
+  });
+
   it("loads only completed normalized resolutions", async () => {
     const resolved = {
       ...itemRow,
@@ -911,6 +966,23 @@ describe("reservation and email state", () => {
         reconciledAt: timestamp,
       }),
     ).resolves.toEqual({ outcome: "reconciled", actualMicrodollars: 84_000 });
+  });
+
+  it("accepts refusal to release a reservation now bound to a run", async () => {
+    const client = createClientMock({}, {
+      reconcile_daily_question_review_reservation: {
+        data: { outcome: "bound", actual_microdollars: 0 },
+        error: null,
+      },
+    });
+
+    await expect(
+      reconcileDailyQuestionReviewReservation(client, {
+        reservationId: ids.reservation,
+        actualMicrodollars: 0,
+        reconciledAt: timestamp,
+      }),
+    ).resolves.toEqual({ outcome: "bound", actualMicrodollars: 0 });
   });
 
   it("claims retryable email atomically and persists sent and failed states", async () => {

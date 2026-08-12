@@ -21,6 +21,7 @@ import {
 } from "@/lib/dailyQuestionReview";
 import type {
   ChicagoCalendarMonthRange,
+  DailyQuestionReviewReservationContext,
   DailyQuestionReviewReservationRequest,
   DailyQuestionReviewUsage,
   PersistedDailyQuestionReviewCost,
@@ -685,6 +686,65 @@ export async function loadDailyQuestionReviewByDate(
   };
 }
 
+export async function loadOldestRecoverableDailyQuestionReview(
+  client: ServerSupabaseClient,
+  beforeChallengeDate: string,
+) {
+  const { data, error } = await client.rpc(
+    "find_oldest_recoverable_daily_question_review",
+    { p_before_challenge_date: beforeChallengeDate },
+  );
+  throwIfError(error);
+  if (data === null) return null;
+  if (!isUuid(data)) {
+    throw new Error("Recoverable daily review lookup returned invalid data.");
+  }
+  return loadDailyQuestionReviewByRunId(client, data);
+}
+
+export async function loadActiveDailyQuestionReviewReservation(
+  client: ServerSupabaseClient,
+  challengeDate: string,
+): Promise<DailyQuestionReviewReservationContext | null> {
+  const { data, error } = await client
+    .from("daily_question_review_reservations")
+    .select(
+      "id,model,reserved_microdollars,run_cost_baseline_microdollars,month_start,month_end",
+    )
+    .eq("challenge_date", challengeDate)
+    .eq("run_kind", "scheduled")
+    .eq("status", "active")
+    .maybeSingle();
+  throwIfError(error);
+  if (data === null) return null;
+  if (
+    !isRecord(data) ||
+    !isUuid(data.id) ||
+    typeof data.model !== "string" ||
+    !data.model.trim() ||
+    !isNonnegativeInteger(data.reserved_microdollars) ||
+    data.reserved_microdollars === 0 ||
+    !isNonnegativeInteger(data.run_cost_baseline_microdollars) ||
+    !isTimestamp(data.month_start) ||
+    !isTimestamp(data.month_end)
+  ) {
+    throw new Error("Active daily review reservation data is invalid.");
+  }
+  return {
+    reservationId: data.id,
+    acquiredNow: false,
+    model: data.model,
+    modelDerivedReservationMicrodollars: data.reserved_microdollars,
+    requiredReservationMicrodollars: data.reserved_microdollars,
+    reservedMicrodollars: data.reserved_microdollars,
+    runCostBaselineMicrodollars: data.run_cost_baseline_microdollars,
+    monthRange: {
+      startInclusive: data.month_start,
+      endExclusive: data.month_end,
+    },
+  };
+}
+
 export async function resolveDailyQuestionReviewItem(
   client: ServerSupabaseClient,
   input: {
@@ -824,7 +884,11 @@ export async function reconcileDailyQuestionReviewReservation(
   throwIfError(error);
   if (
     !isRecord(data) ||
-    (data.outcome !== "reconciled" && data.outcome !== "released") ||
+    (
+      data.outcome !== "reconciled" &&
+      data.outcome !== "released" &&
+      data.outcome !== "bound"
+    ) ||
     !isNonnegativeInteger(data.actual_microdollars)
   ) {
     throw new Error("Reservation reconciliation returned invalid data.");
