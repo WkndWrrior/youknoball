@@ -52,6 +52,10 @@ import {
   type OpenAiQuestionVerifierInput,
   type OpenAiQuestionVerifierResult,
 } from "@/lib/server/openAiQuestionVerifier";
+import {
+  sendDailyQuestionReviewBudgetBlockNotification,
+  sendDailyQuestionReviewNotification,
+} from "@/lib/server/dailyQuestionReviewNotifications";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const MAX_REVIEW_CONCURRENCY = 2;
@@ -92,7 +96,7 @@ export interface DailyQuestionReviewServiceDependencies {
     monthRange: ChicagoCalendarMonthRange;
     attemptedAt: string;
     reason: string;
-  }) => Promise<void>;
+  }) => Promise<{ created: boolean }>;
   prepareDraft: (challengeDate: string) => Promise<PreparedDailyChallengeDraft>;
   startOrObserve: (
     input: Parameters<typeof startOrObserveDailyQuestionReviewRun>[1],
@@ -137,6 +141,14 @@ export interface DailyQuestionReviewServiceDependencies {
         run: DailyQuestionReviewRunRecord;
         items: DailyQuestionReviewItemRecord[];
       }) => Promise<{ providerMessageId: string }>)
+    | null;
+  sendBudgetBlockEmail:
+    | ((input: {
+        challengeDate: string;
+        reason: string;
+        reservedMicrodollars: number;
+        remainingMicrodollars: number;
+      }) => Promise<void>)
     | null;
   markEmailSent: (
     runId: string,
@@ -322,6 +334,7 @@ function createDefaultDependencies(context: {
   reviewDate: string;
   challengeDate: string;
   now: string;
+  siteUrlFallback?: string;
 }): DailyQuestionReviewServiceDependencies {
   const client = supabaseAdmin();
   return {
@@ -357,7 +370,26 @@ function createDefaultDependencies(context: {
     selectReplacement: selectDailyChallengeReplacementForDraft,
     claimEmail: (runId, attemptedAt) =>
       claimDailyQuestionReviewEmail(client, runId, attemptedAt),
-    sendReviewEmail: null,
+    sendReviewEmail: async (input) => {
+      const result = await sendDailyQuestionReviewNotification({
+        ...input,
+        siteUrlFallback: context.siteUrlFallback,
+      });
+      if (!result.sent) {
+        throw new Error(
+          result.reason === "not_configured"
+            ? "Nightly review email is not configured."
+            : "Nightly review email was already sent.",
+        );
+      }
+      return { providerMessageId: result.providerMessageId };
+    },
+    sendBudgetBlockEmail: async (input) => {
+      await sendDailyQuestionReviewBudgetBlockNotification({
+        ...input,
+        siteUrlFallback: context.siteUrlFallback,
+      });
+    },
     markEmailSent: (runId, input) =>
       markDailyQuestionReviewEmailSent(client, runId, input),
     markEmailFailed: (runId, input) =>
@@ -385,10 +417,12 @@ export async function runNightlyQuestionReview({
   challengeDate,
   now,
   dependencies,
+  siteUrlFallback,
 }: {
   challengeDate: string;
   now: Date;
   dependencies?: DailyQuestionReviewServiceDependencies;
+  siteUrlFallback?: string;
 }): Promise<NightlyQuestionReviewResult> {
   validateInput(challengeDate, now);
   const occurredAt = now.toISOString();
@@ -398,7 +432,12 @@ export async function runNightlyQuestionReview({
   }
   const deps =
     dependencies ??
-    createDefaultDependencies({ reviewDate, challengeDate, now: occurredAt });
+    createDefaultDependencies({
+      reviewDate,
+      challengeDate,
+      now: occurredAt,
+      siteUrlFallback,
+    });
   const monthRange = getChicagoCalendarMonthRange(now);
   const records = await deps.listMonthlyCosts(monthRange);
 
@@ -798,7 +837,7 @@ export async function runNightlyQuestionReview({
   });
 
   if (!preflight.budget.allowed || preflight.value === null) {
-    await deps.recordBudgetBlock({
+    const recorded = await deps.recordBudgetBlock({
       reviewDate,
       challengeDate,
       model: deps.model,
@@ -807,6 +846,14 @@ export async function runNightlyQuestionReview({
       attemptedAt: occurredAt,
       reason: preflight.budget.reason,
     });
+    if (recorded.created && deps.sendBudgetBlockEmail) {
+      await deps.sendBudgetBlockEmail({
+        challengeDate,
+        reason: preflight.budget.reason,
+        reservedMicrodollars: preflight.budget.reservedMicrodollars,
+        remainingMicrodollars: preflight.budget.remainingMicrodollars,
+      });
+    }
     return { kind: "budget_blocked", budget: preflight.budget };
   }
   return { ...preflight.value, budget: preflight.budget };

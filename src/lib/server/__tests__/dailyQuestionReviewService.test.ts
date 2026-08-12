@@ -179,7 +179,7 @@ function createDependencies(options: {
       outcome: input.actualMicrodollars === 0 ? "released" : "reconciled",
       actualMicrodollars: input.actualMicrodollars,
     })),
-    recordBudgetBlock: vi.fn(async () => undefined),
+    recordBudgetBlock: vi.fn(async () => ({ created: true })),
     prepareDraft: vi.fn(async () => draft),
     startOrObserve: vi.fn(async () => ({
       created: options.existingRun === undefined,
@@ -263,6 +263,7 @@ function createDependencies(options: {
     sendReviewEmail:
       options.sendEmail ??
       vi.fn(async () => ({ providerMessageId: "email-1" })),
+    sendBudgetBlockEmail: vi.fn(async () => undefined),
     markEmailSent: vi.fn(async () => undefined),
     markEmailFailed: vi.fn(async () => undefined),
   };
@@ -421,7 +422,7 @@ describe("runNightlyQuestionReview", () => {
     });
   });
 
-  it("persists an atomic budget denial and makes zero draft, verifier, or email calls", async () => {
+  it("persists an atomic budget denial, sends one alert, and makes no draft or verifier calls", async () => {
     const { dependencies } = createDependencies();
     vi.mocked(dependencies.acquireReservation).mockResolvedValue({ acquired: false });
 
@@ -442,6 +443,7 @@ describe("runNightlyQuestionReview", () => {
         reservedMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
       }),
     );
+    expect(dependencies.sendBudgetBlockEmail).toHaveBeenCalledOnce();
   });
 
   it("persists unsupported-model budget blocks with zero reservation and no verifier call", async () => {
@@ -468,6 +470,16 @@ describe("runNightlyQuestionReview", () => {
         reservedMicrodollars: 0,
       }),
     );
+  });
+
+  it("does not resend a budget alert when the denial record already exists", async () => {
+    const { dependencies } = createDependencies();
+    vi.mocked(dependencies.acquireReservation).mockResolvedValue({ acquired: false });
+    vi.mocked(dependencies.recordBudgetBlock).mockResolvedValue({ created: false });
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+
+    expect(dependencies.sendBudgetBlockEmail).not.toHaveBeenCalled();
   });
 
   it("fits all five required replacements inside the exact worst-case reservation", async () => {

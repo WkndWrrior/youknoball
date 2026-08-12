@@ -699,7 +699,7 @@ describe("reservation and email state", () => {
         attemptedAt: timestamp,
         reason: "monthly_budget_exceeded",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ created: true });
     expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({
       challenge_date: "2026-08-10",
       status: "denied",
@@ -727,7 +727,7 @@ describe("reservation and email state", () => {
         attemptedAt: timestamp,
         reason: "monthly_budget_exceeded",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ created: false });
   });
 
   it("persists an unsupported-model budget block with a zero reservation", async () => {

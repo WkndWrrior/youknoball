@@ -717,7 +717,7 @@ export async function recordDailyQuestionReviewBudgetBlock(
     attemptedAt: string;
     reason: string;
   },
-): Promise<void> {
+): Promise<{ created: boolean }> {
   const { error } = await client
     .from("daily_question_review_reservations")
     .insert({
@@ -734,7 +734,11 @@ export async function recordDailyQuestionReviewBudgetBlock(
       reconciled_at: input.attemptedAt,
       denial_reason: input.reason.slice(0, 100),
     });
-  if (error && !isUniqueConflict(error)) throw error;
+  if (error) {
+    if (isUniqueConflict(error)) return { created: false };
+    throw error;
+  }
+  return { created: true };
 }
 
 export async function reconcileDailyQuestionReviewReservation(
