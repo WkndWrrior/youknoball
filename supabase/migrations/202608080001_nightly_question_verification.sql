@@ -772,6 +772,7 @@ create table if not exists public.daily_question_review_items (
       and jsonb_array_length(evidence) <= 10
     ),
   verified_at timestamptz,
+  replacement_attempted boolean not null default false,
   replacement_question_id uuid references public.questions (id) on delete restrict,
   replacement_eligible boolean not null default false,
   replacement_question_snapshot jsonb
@@ -916,13 +917,22 @@ create table if not exists public.daily_question_review_items (
   ),
   check (
     (
-      replacement_question_id is null
+      not replacement_attempted
+      and replacement_question_id is null
       and replacement_question_snapshot is null
       and replacement_finding is null
       and not replacement_eligible
     )
     or (
-      replacement_question_id is not null
+      replacement_attempted
+      and replacement_question_id is null
+      and replacement_question_snapshot is null
+      and replacement_finding is null
+      and not replacement_eligible
+    )
+    or (
+      replacement_attempted
+      and replacement_question_id is not null
       and replacement_question_snapshot is not null
       and replacement_finding is not null
       and replacement_question_id <> question_id
@@ -1000,6 +1010,7 @@ create or replace function public.persist_daily_question_review_progress(
   p_conflicts jsonb,
   p_evidence jsonb,
   p_verified_at timestamptz,
+  p_replacement_attempted boolean,
   p_replacement_question_id uuid,
   p_replacement_eligible boolean,
   p_replacement_question_snapshot jsonb,
@@ -1099,13 +1110,15 @@ begin
   insert into public.daily_question_review_items (
     run_id, daily_challenge_id, slot, question_id, question_snapshot,
     review_status, verdict, confidence, explanation, conflicts,
-    source_fetch_results, evidence, verified_at, replacement_question_id,
+    source_fetch_results, evidence, verified_at, replacement_attempted,
+    replacement_question_id,
     replacement_eligible, replacement_question_snapshot, replacement_finding
   ) values (
     p_run_id, p_daily_challenge_id, p_slot, p_question_id,
     p_question_snapshot, p_review_status, p_verdict, p_confidence,
     p_explanation, p_conflicts, p_source_fetch_results, p_evidence,
-    p_verified_at, p_replacement_question_id, p_replacement_eligible,
+    p_verified_at, p_replacement_attempted, p_replacement_question_id,
+    p_replacement_eligible,
     p_replacement_question_snapshot, p_replacement_finding
   )
   on conflict (run_id, slot) do update set
@@ -1119,6 +1132,7 @@ begin
     source_fetch_results = excluded.source_fetch_results,
     evidence = excluded.evidence,
     verified_at = excluded.verified_at,
+    replacement_attempted = excluded.replacement_attempted,
     replacement_question_id = excluded.replacement_question_id,
     replacement_eligible = excluded.replacement_eligible,
     replacement_question_snapshot = excluded.replacement_question_snapshot,
@@ -1134,9 +1148,9 @@ begin
 end;
 $function$;
 
-revoke all on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) from public, anon, authenticated;
+revoke all on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, boolean, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) from public, anon, authenticated;
 
-grant execute on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) to service_role;
+grant execute on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, boolean, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) to service_role;
 
 create or replace function public.finalize_daily_question_review_run(
   p_run_id uuid,

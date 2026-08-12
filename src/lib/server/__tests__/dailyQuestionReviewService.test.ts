@@ -140,6 +140,7 @@ function makeStoredItem(
     sourceFetchResults: [],
     finding: reviewStatus === "completed" ? makeFinding(question) : null,
     replacement: null,
+    replacementAttempted: false,
     resolution: "pending",
     resolvedBy: null,
     resolvedAt: null,
@@ -217,6 +218,8 @@ function createDependencies(options: {
         sourceFetchResults: input.sourceFetchResults,
         finding: input.finding,
         replacement: input.replacement,
+        replacementAttempted:
+          input.replacementAttempted ?? input.replacement !== null,
       } as DailyQuestionReviewItemRecord;
       items.set(input.slot, stored);
       run = {
@@ -385,7 +388,7 @@ describe("runNightlyQuestionReview", () => {
     expect(context.dependencies.completeRun).toHaveBeenCalledOnce();
   });
 
-  it("persists a failed primary placeholder before starting external work", async () => {
+  it("collects primary evidence before persisting a failed placeholder immediately before verification", async () => {
     const context = createDependencies();
 
     await runNightlyQuestionReview({
@@ -410,8 +413,55 @@ describe("runNightlyQuestionReview", () => {
       2,
       expect.objectContaining({ slot: 1, reviewStatus: "completed" }),
     );
+    expect(vi.mocked(context.dependencies.collectEvidence).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0]);
     expect(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(context.dependencies.collectEvidence).mock.invocationCallOrder[0]);
+      .toBeLessThan(vi.mocked(context.dependencies.verifyQuestion).mock.invocationCallOrder[0]);
+  });
+
+  it("persists primary source collection failure as non-billable terminal progress", async () => {
+    const existingItems = [2, 3, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
+    const context = createDependencies({
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: { claimed: true, claimToken: uuid(601), run: makeRun() },
+    });
+    enableResumableInvocations(context, true);
+    context.dependencies.collectEvidence = vi.fn(async () => {
+      throw new Error("source unavailable");
+    });
+    context.dependencies.selectReplacement = vi.fn(async () => null);
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({
+      kind: "completed",
+      run: { status: "completed_with_flags" },
+    });
+
+    expect(context.dependencies.verifyQuestion).not.toHaveBeenCalled();
+    expect(context.dependencies.saveItem).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reviewStatus: "failed" }),
+    );
+    expect(context.items.get(1)).toMatchObject({
+      reviewStatus: "completed",
+      finding: { verdict: "unable_to_verify" },
+      replacement: null,
+      replacementAttempted: true,
+    });
   });
 
   it("does not repeat billed primary work after its final progress save fails", async () => {
@@ -566,7 +616,7 @@ describe("runNightlyQuestionReview", () => {
     expect(verifier).toHaveBeenCalledOnce();
   });
 
-  it("persists a failed replacement placeholder before replacement external work", async () => {
+  it("collects replacement evidence before persisting a failed placeholder immediately before verification", async () => {
     const flaggedItem = {
       ...makeStoredItem(3, "completed"),
       finding: makeFinding(questions[2], "risk"),
@@ -594,11 +644,57 @@ describe("runNightlyQuestionReview", () => {
         reviewStatus: "failed",
         finding: flaggedItem.finding,
         replacement: null,
+        replacementAttempted: true,
         usageEvent: null,
       }),
     );
+    expect(vi.mocked(context.dependencies.collectEvidence).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0]);
     expect(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(context.dependencies.collectEvidence).mock.invocationCallOrder[0]);
+      .toBeLessThan(vi.mocked(context.dependencies.verifyQuestion).mock.invocationCallOrder[0]);
+  });
+
+  it("persists replacement source collection failure as non-billable terminal progress", async () => {
+    const flaggedItem = {
+      ...makeStoredItem(3, "completed"),
+      finding: makeFinding(questions[2], "risk"),
+    } as DailyQuestionReviewItemRecord;
+    const existingItems = [1, 2, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
+    existingItems.push(flaggedItem);
+    const context = createDependencies({
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: { claimed: true, claimToken: uuid(601), run: makeRun() },
+    });
+    enableResumableInvocations(context, true);
+    context.dependencies.collectEvidence = vi.fn(async () => {
+      throw new Error("replacement source unavailable");
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({
+      kind: "completed",
+      run: { status: "completed_with_flags" },
+    });
+
+    expect(context.dependencies.verifyQuestion).not.toHaveBeenCalled();
+    expect(context.dependencies.saveItem).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reviewStatus: "failed" }),
+    );
+    expect(context.items.get(3)).toMatchObject({
+      reviewStatus: "completed",
+      replacementAttempted: true,
+      replacement: { eligible: false, questionId: replacementId },
+    });
   });
 
   it("does not repeat billed replacement work after its final progress save fails", async () => {
@@ -642,7 +738,7 @@ describe("runNightlyQuestionReview", () => {
     });
   });
 
-  it("persists unavailable replacement selection as a failed terminal state without retry", async () => {
+  it("persists unavailable replacement selection as a non-billable terminal state", async () => {
     const flaggedItem = {
       ...makeStoredItem(3, "completed"),
       finding: makeFinding(questions[2], "risk"),
@@ -667,14 +763,18 @@ describe("runNightlyQuestionReview", () => {
       challengeDate: "2026-08-10",
       now,
       dependencies: context.dependencies,
-    })).resolves.toMatchObject({ kind: "completed", run: { status: "failed" } });
+    })).resolves.toMatchObject({
+      kind: "completed",
+      run: { status: "completed_with_flags" },
+    });
 
     expect(context.dependencies.selectReplacement).toHaveBeenCalledOnce();
     expect(context.dependencies.verifyQuestion).not.toHaveBeenCalled();
     expect(context.items.get(3)).toMatchObject({
-      reviewStatus: "failed",
+      reviewStatus: "completed",
       finding: { verdict: "risk" },
       replacement: null,
+      replacementAttempted: true,
     });
     expect(context.getRun().errors).toEqual([
       expect.objectContaining({ code: "replacement_unavailable" }),

@@ -169,6 +169,7 @@ const itemRow = {
   source_fetch_results: [],
   evidence: finding.evidence,
   verified_at: timestamp,
+  replacement_attempted: false,
   replacement_question_id: null,
   replacement_eligible: false,
   replacement_question_snapshot: null,
@@ -352,6 +353,7 @@ describe("review item persistence", () => {
         sourceFetchResults: [],
         finding,
         replacement: null,
+        replacementAttempted: false,
         runErrors,
         usageEvent: {
           id: ids.usageEvent,
@@ -380,6 +382,7 @@ describe("review item persistence", () => {
         p_input_tokens: 120,
         p_estimated_cost_microdollars: 42_000,
         p_run_errors: runErrors,
+        p_replacement_attempted: false,
       }),
     );
   });
@@ -388,6 +391,7 @@ describe("review item persistence", () => {
     const failedRow = {
       ...itemRow,
       review_status: "failed",
+      replacement_attempted: true,
     };
     const client = createClientMock({}, {
       persist_daily_question_review_progress: {
@@ -413,11 +417,57 @@ describe("review item persistence", () => {
       sourceFetchResults: [],
       finding,
       replacement: null,
+      replacementAttempted: true,
       runErrors: [],
       usageEvent: null,
     })).resolves.toMatchObject({
-      item: { reviewStatus: "failed", finding },
+      item: { reviewStatus: "failed", finding, replacementAttempted: true },
     });
+  });
+
+  it("persists a terminal no-candidate attempt without a replacement row", async () => {
+    const noCandidateRow = {
+      ...itemRow,
+      replacement_attempted: true,
+    };
+    const client = createClientMock({}, {
+      persist_daily_question_review_progress: {
+        data: {
+          outcome: "persisted",
+          usage_applied: false,
+          item: noCandidateRow,
+          run: runRow,
+        },
+        error: null,
+      },
+    });
+
+    await expect(upsertDailyQuestionReviewItem(client, {
+      runId: ids.run,
+      claimToken: ids.claim,
+      heartbeatAt: timestamp,
+      leaseExpiresAt: "2026-08-09T23:15:00.000Z",
+      dailyChallengeId: ids.challenge,
+      slot: 1,
+      question: snapshot,
+      reviewStatus: "completed",
+      sourceFetchResults: [],
+      finding,
+      replacement: null,
+      replacementAttempted: true,
+      runErrors: [],
+      usageEvent: null,
+    })).resolves.toMatchObject({
+      item: {
+        reviewStatus: "completed",
+        replacement: null,
+        replacementAttempted: true,
+      },
+    });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "persist_daily_question_review_progress",
+      expect.objectContaining({ p_replacement_attempted: true }),
+    );
   });
 
   it("persists a failed item without erasing source progress", async () => {
@@ -466,6 +516,7 @@ describe("review item persistence", () => {
         sourceFetchResults: failedRow.source_fetch_results,
         finding: null,
         replacement: null,
+        replacementAttempted: false,
         runErrors: [],
         usageEvent: null,
       }),
@@ -492,6 +543,7 @@ describe("review item persistence", () => {
       sourceFetchResults: [],
       finding,
       replacement: null,
+      replacementAttempted: false,
       runErrors: [],
       usageEvent: null,
     })).rejects.toThrow("Daily review lease ownership was lost");

@@ -70,6 +70,7 @@ const ITEM_COLUMNS = [
   "source_fetch_results",
   "evidence",
   "verified_at",
+  "replacement_attempted",
   "replacement_question_id",
   "replacement_eligible",
   "replacement_question_snapshot",
@@ -162,6 +163,7 @@ export interface DailyQuestionReviewItemRecord {
   sourceFetchResults: DailyQuestionSourceFetchResult[];
   finding: DailyQuestionVerificationFinding | null;
   replacement: DailyQuestionReplacementCandidate | null;
+  replacementAttempted: boolean;
   resolution: DailyQuestionReviewResolution;
   resolvedBy: string | null;
   resolvedAt: string | null;
@@ -252,6 +254,7 @@ function parseItem(value: unknown): DailyQuestionReviewItemRecord | null {
     value.slot > 5 ||
     typeof value.review_status !== "string" ||
     !ITEM_STATUSES.has(value.review_status as DailyQuestionReviewItemStatus) ||
+    typeof value.replacement_attempted !== "boolean" ||
     typeof value.resolution !== "string" ||
     !RESOLUTIONS.has(value.resolution as DailyQuestionReviewResolution) ||
     (value.resolved_by !== null && !isUuid(value.resolved_by)) ||
@@ -311,6 +314,7 @@ function parseItem(value: unknown): DailyQuestionReviewItemRecord | null {
     sourceFetchResults,
     finding,
     replacement,
+    replacementAttempted: value.replacement_attempted,
     resolution: value.resolution as DailyQuestionReviewResolution,
     resolvedBy: value.resolved_by as string | null,
     resolvedAt: value.resolved_at,
@@ -471,6 +475,7 @@ export async function upsertDailyQuestionReviewItem(
     sourceFetchResults: DailyQuestionSourceFetchResult[];
     finding: DailyQuestionVerificationFinding | null;
     replacement: DailyQuestionReplacementCandidate | null;
+    replacementAttempted?: boolean;
     runErrors: DailyQuestionReviewRunError[];
     usageEvent: null | {
       id: string;
@@ -510,6 +515,8 @@ export async function upsertDailyQuestionReviewItem(
       p_conflicts: finding?.conflicts ?? [],
       p_evidence: finding?.evidence ?? [],
       p_verified_at: finding?.verifiedAt ?? null,
+      p_replacement_attempted:
+        input.replacementAttempted ?? replacement !== null,
       p_replacement_question_id: replacement?.questionId ?? null,
       p_replacement_eligible: replacement?.eligible ?? false,
       p_replacement_question_snapshot: replacement?.snapshot ?? null,

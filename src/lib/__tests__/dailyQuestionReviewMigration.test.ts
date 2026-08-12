@@ -290,6 +290,9 @@ describe("nightly question verification migration", () => {
     expect(migration).toContain(
       "replacement_eligible boolean not null default false",
     );
+    expect(migration).toContain(
+      "replacement_attempted boolean not null default false",
+    );
     expect(migration).toContain("resolution text not null default 'pending'");
     expect(migration).toContain(
       "check (resolution in ('pending', 'kept', 'replaced'))",
@@ -337,6 +340,12 @@ describe("nightly question verification migration", () => {
     );
     expect(itemsTable).toContain(
       "replacement_finding->>'verdict' = 'passed'",
+    );
+    expect(itemsTable).toContain(
+      "not replacement_attempted and replacement_question_id is null",
+    );
+    expect(itemsTable).toContain(
+      "replacement_attempted and replacement_question_id is null",
     );
     expect(itemsTable).toContain(
       "jsonb_array_length(replacement_finding->'evidence') > 0",
@@ -623,6 +632,8 @@ describe("nightly question verification migration", () => {
     expect(progress).toContain("insert into public.daily_question_review_items");
     expect(progress).toContain("heartbeat_at = p_heartbeat_at");
     expect(progress).toContain("p_run_errors jsonb");
+    expect(progress).toContain("p_replacement_attempted boolean");
+    expect(progress).toContain("replacement_attempted = excluded.replacement_attempted");
     expect(progress).toContain("jsonb_array_length(p_run_errors) > 20");
     expect(progress).toContain("octet_length(p_run_errors::text) > 20000");
     expect(progress).toContain("errors = p_run_errors");
@@ -645,7 +656,7 @@ describe("nightly question verification migration", () => {
     );
 
     for (const signature of [
-      "public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint)",
+      "public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, boolean, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint)",
       "public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz)",
     ]) {
       expect(migration).toContain(

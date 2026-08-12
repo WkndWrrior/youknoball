@@ -659,16 +659,6 @@ export async function runNightlyQuestionReview({
         if (pendingQuestions.length > 0) {
           const question = pendingQuestions[0];
           await assertLease();
-          await saveProgress({
-            dailyChallengeId: draft.challengeId,
-            slot: question.slot,
-            question,
-            reviewStatus: "failed",
-            sourceFetchResults: [],
-            finding: null,
-            replacement: null,
-            usageEvent: null,
-          });
           let evidence: DailyQuestionReviewEvidenceCollection;
           try {
             evidence = await deps.collectEvidence(question);
@@ -707,6 +697,16 @@ export async function runNightlyQuestionReview({
             return { kind: "in_progress" as const, run: persistedRun };
           }
 
+          await saveProgress({
+            dailyChallengeId: draft.challengeId,
+            slot: question.slot,
+            question,
+            reviewStatus: "failed",
+            sourceFetchResults: evidence.sourceFetchResults,
+            finding: null,
+            replacement: null,
+            usageEvent: null,
+          });
           let verification: OpenAiQuestionVerifierResult;
           try {
             verification = await deps.verifyQuestion({
@@ -785,7 +785,7 @@ export async function runNightlyQuestionReview({
           return (
             item?.reviewStatus === "completed" &&
             item.finding?.verdict !== "passed" &&
-            item.replacement === null
+            !item.replacementAttempted
           );
         });
         let replacementSelection = draft.questions.map((question) => {
@@ -839,10 +839,11 @@ export async function runNightlyQuestionReview({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
                 question: primaryItem.question,
-                reviewStatus: "failed",
+                reviewStatus: "completed",
                 sourceFetchResults: primaryItem.sourceFetchResults,
                 finding: primaryItem.finding,
                 replacement: null,
+                replacementAttempted: true,
                 usageEvent: null,
               });
               continue;
@@ -889,18 +890,6 @@ export async function runNightlyQuestionReview({
             }
             attemptedReplacementIds.add(candidate.id);
 
-            await saveProgress({
-              dailyChallengeId: draft.challengeId,
-              slot: question.slot,
-              question: primaryItem.question,
-              reviewStatus: "failed",
-              sourceFetchResults: primaryItem.sourceFetchResults,
-              finding: primaryItem.finding,
-              replacement: null,
-              usageEvent: null,
-            });
-            placeholderPersisted = true;
-
             let candidateEvidence: DailyQuestionReviewEvidenceCollection;
             try {
               candidateEvidence = await deps.collectEvidence(candidate);
@@ -926,6 +915,19 @@ export async function runNightlyQuestionReview({
               });
               continue;
             }
+
+            await saveProgress({
+              dailyChallengeId: draft.challengeId,
+              slot: question.slot,
+              question: primaryItem.question,
+              reviewStatus: "failed",
+              sourceFetchResults: primaryItem.sourceFetchResults,
+              finding: primaryItem.finding,
+              replacement: null,
+              replacementAttempted: true,
+              usageEvent: null,
+            });
+            placeholderPersisted = true;
             let candidateVerification: OpenAiQuestionVerifierResult;
             try {
               candidateVerification = await deps.verifyQuestion({
@@ -1005,16 +1007,17 @@ export async function runNightlyQuestionReview({
             if (
               !placeholderPersisted &&
               currentItem?.finding &&
-              currentItem.replacement === null
+              !currentItem.replacementAttempted
             ) {
               await saveProgress({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
                 question: currentItem.question,
-                reviewStatus: "failed",
+                reviewStatus: "completed",
                 sourceFetchResults: currentItem.sourceFetchResults,
                 finding: currentItem.finding,
                 replacement: null,
+                replacementAttempted: true,
                 usageEvent: null,
               });
             }
