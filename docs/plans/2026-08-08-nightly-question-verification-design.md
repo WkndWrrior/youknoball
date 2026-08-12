@@ -161,3 +161,8 @@ Implementation and automated verification happen locally first. The user then:
 5. deploys the application to Vercel production.
 
 The nightly schedule starts only after the production deployment. A custom website domain is not required for the cron job; Vercel can invoke the production `vercel.app` deployment. Resend can send independently once its sending domain is verified.
+
+Production setup and operations are documented in
+`docs/runbooks/nightly-question-verification.md`. Deployment remains a manual
+handoff: the migration, Vercel configuration, OpenAI credit/key creation, and
+the first real email are not performed by the local implementation workflow.

@@ -8,6 +8,32 @@ YouKnowBall is a Next.js + Supabase trivia app for the daily sports challenge, p
 - Start the app with `npm run dev`
 - Run the test suite with `npm test`
 
+## Nightly Daily 5 Verification
+
+The production cron privately drafts and verifies tomorrow's Daily 5 at 6 PM
+Central, emails an owner report, and exposes flagged items on an allowlisted
+admin page. It never automatically edits or retires reusable questions.
+
+Required production configuration:
+
+- `OPENAI_API_KEY`
+- `CRON_SECRET`
+- `DAILY_REVIEW_ADMIN_USER_IDS`
+- `RESEND_API_KEY`
+- `QUESTION_REPORT_EMAIL_FROM`
+- `QUESTION_REPORT_EMAIL_TO`
+- `NEXT_PUBLIC_SITE_URL`
+- the existing Supabase public and service-role settings
+
+Optional configuration:
+
+- `DAILY_REVIEW_OPENAI_MODEL` defaults to `gpt-5.6-terra`
+- `DAILY_REVIEW_MONTHLY_BUDGET_CENTS` defaults to `1000`
+- `DAILY_REVIEW_APPROVED_SOURCE_DOMAINS` adds comma-separated domains
+
+See [the nightly verification runbook](docs/runbooks/nightly-question-verification.md)
+for setup, review queries, smoke testing, diagnosis, and rollback.
+
 ## Database Migrations
 
 Schema changes live in `supabase/migrations/`.
