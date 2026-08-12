@@ -31,6 +31,10 @@ const SOURCE_TIMEOUT = Symbol("source_timeout");
 const CLEANUP_TIMEOUT = Symbol("cleanup_timeout");
 const UTF8_ENCODER = new TextEncoder();
 
+export const MAX_DAILY_QUESTION_SOURCE_COLLECTION_DURATION_MS =
+  Math.ceil(MAX_SAVED_SOURCE_URLS / MAX_SOURCE_CONCURRENCY) *
+  (DEFAULT_TIMEOUT_MS + DEFAULT_CLEANUP_TIMEOUT_MS);
+
 // Configurable sources are intentionally limited to TLDs used by US leagues,
 // teams, colleges, and governing bodies. This avoids treating public suffixes
 // from broader country-code namespaces as organization-owned apex domains.

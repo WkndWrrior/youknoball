@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createTestOnlyOpenAiQuestionVerifier,
+  MAX_DAILY_QUESTION_VERIFIER_DURATION_MS,
   MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE,
   OpenAiQuestionVerifierError,
   type OpenAiQuestionVerifierInput,
@@ -142,6 +143,10 @@ async function captureVerifierError(
 }
 
 describe("OpenAI question verifier", () => {
+  it("pins the maximum production verifier duration", () => {
+    expect(MAX_DAILY_QUESTION_VERIFIER_DURATION_MS).toBe(60_000);
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();

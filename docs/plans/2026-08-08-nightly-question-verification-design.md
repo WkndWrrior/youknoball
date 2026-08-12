@@ -21,7 +21,7 @@ The new feature extends those paths instead of introducing a separate content sy
 
 ## Architecture
 
-Vercel Cron invokes a private Next.js route twice in the relevant UTC window. The route checks Central Time and proceeds only during the 6 PM hour. This accommodates daylight-saving changes while database idempotency prevents duplicate work or email.
+Vercel Cron invokes a private Next.js route through distinct once-daily Hobby-compatible entries. The route checks Central Time and proceeds only during the 6 PM and 7 PM hours. Each invocation performs at most one verification unit, allowing the persisted run to finish within function limits while database idempotency prevents duplicate work or email.
 
 The job creates tomorrow's canonical challenge as an unpublished `generated` draft by calling the existing generator. It then fetches evidence from saved question sources, requests structured analysis from the OpenAI Responses API using GPT-5.6 Terra, stores the findings in Supabase, and sends a report through the existing Resend configuration.
 
@@ -110,9 +110,9 @@ The review page requires a valid Supabase session and an administrator allowlist
 
 ## Scheduling And Idempotency
 
-Vercel cron entries cover the UTC hours corresponding to 6 PM Central in standard and daylight time. The route computes Central local time and exits outside the intended hour. Vercel Hobby timing may drift within that hour.
+Thirty-six once-daily Vercel cron entries use five-minute offsets across UTC hours 23, 00, and 01. This remains compatible with Vercel Hobby's once-per-day expression restriction and covers 6-8 PM Central across daylight-saving changes. The route accepts only local hours 18 and 19; irrelevant or drifted invocations exit without work.
 
-The scheduled run key, unique challenge date, and transactional state transitions ensure repeated invocations cannot create duplicate challenges, reports, replacements, or emails. Concurrent callers either observe the active run or return the completed result.
+One invocation processes one unfinished primary, otherwise one required replacement, otherwise finalizes and attempts email. A three-minute token-fenced lease, active budget reservation, unique challenge date, persisted usage events, and transactional state transitions make retries deterministic. Concurrent callers observe the active run; email may arrive after 6 PM as the units complete.
 
 ## Budget Controls
 

@@ -12,6 +12,8 @@ export const maxDuration = 300;
 type ReviewRunner = (input: {
   challengeDate: string;
   now: Date;
+  unitLimit: 1;
+  deadline: Date;
   siteUrlFallback?: string;
 }) => Promise<{ kind: string }>;
 
@@ -74,6 +76,8 @@ export function createDailyQuestionReviewCronHandler(options: {
       const result = await runReview({
         challengeDate: schedule.challengeDate,
         now: currentTime,
+        unitLimit: 1,
+        deadline: new Date(currentTime.getTime() + 240_000),
         siteUrlFallback: productionSiteFallback(productionUrl()),
       });
       return NextResponse.json({

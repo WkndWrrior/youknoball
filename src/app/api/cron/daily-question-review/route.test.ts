@@ -50,10 +50,10 @@ describe("GET /api/cron/daily-question-review", () => {
     },
   );
 
-  it("returns 204 outside the 6 PM Central window", async () => {
+  it("returns 204 outside the 6-7 PM Central window", async () => {
     const runReview = vi.fn();
     const response = await createDailyQuestionReviewCronHandler({
-      now: () => new Date("2026-08-13T00:10:00.000Z"),
+      now: () => new Date("2026-08-13T01:10:00.000Z"),
       runReview,
     })(request("Bearer a-long-random-cron-secret"));
 
@@ -62,7 +62,7 @@ describe("GET /api/cron/daily-question-review", () => {
   });
 
   it("runs tomorrow's review during the Central window", async () => {
-    const runReview = vi.fn(async () => ({ kind: "completed" as const }));
+    const runReview = vi.fn(async () => ({ kind: "in_progress" as const }));
     const response = await createDailyQuestionReviewCronHandler({
       now: () => summerNow,
       runReview,
@@ -73,11 +73,13 @@ describe("GET /api/cron/daily-question-review", () => {
     expect(runReview).toHaveBeenCalledWith({
       challengeDate: "2026-08-13",
       now: summerNow,
+      unitLimit: 1,
+      deadline: new Date("2026-08-12T23:14:00.000Z"),
       siteUrlFallback: "https://youknoball.vercel.app",
     });
     await expect(response.json()).resolves.toEqual({
       challengeDate: "2026-08-13",
-      status: "completed",
+      status: "in_progress",
     });
   });
 
@@ -107,11 +109,19 @@ describe("GET /api/cron/daily-question-review", () => {
     expect(await response.json()).toEqual({ message: "Nightly review failed." });
   });
 
-  it("configures both UTC schedules against the same idempotent route", () => {
+  it("configures 36 distinct once-daily Hobby schedules at five-minute offsets", () => {
     const config = JSON.parse(readFileSync("vercel.json", "utf8"));
-    expect(config.crons).toEqual([
-      { path: "/api/cron/daily-question-review", schedule: "0 23 * * *" },
-      { path: "/api/cron/daily-question-review", schedule: "0 0 * * *" },
-    ]);
+    const expected = [23, 0, 1].flatMap((hour) =>
+      Array.from({ length: 12 }, (_, index) => ({
+        path: "/api/cron/daily-question-review",
+        schedule: `${index * 5} ${hour} * * *`,
+      })),
+    );
+    expect(config.crons).toEqual(expected);
+    expect(new Set(config.crons.map((cron: { schedule: string }) => cron.schedule)).size)
+      .toBe(36);
+    expect(config.crons.every((cron: { schedule: string }) =>
+      /^\d{1,2} (?:23|0|1) \* \* \*$/.test(cron.schedule),
+    )).toBe(true);
   });
 });

@@ -2,8 +2,9 @@
 
 ## Purpose
 
-At 6 PM America/Chicago, Vercel invokes a private route that drafts tomorrow's
-Daily 5, checks authoritative sources, stores findings, and emails the owner.
+Starting at 6 PM America/Chicago, Vercel invokes a private route that drafts
+tomorrow's Daily 5, checks authoritative sources, stores findings, and emails
+the owner after all work completes.
 Findings are advisory; automation never rewrites, retires, or reclassifies a
 reusable question.
 
@@ -46,12 +47,19 @@ The existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
 
 ## Schedule And Manual Run
 
-`vercel.json` invokes `/api/cron/daily-question-review` at 23:00 UTC and 00:00
-UTC. The route checks America/Chicago time, so only the invocation in the 6 PM
-Central hour proceeds across daylight-saving changes. Leases, unique run keys,
-usage-event IDs, and email claims make duplicate calls safe.
+`vercel.json` contains 36 distinct once-daily entries at five-minute offsets
+across UTC hours 23, 00, and 01. Each expression satisfies Vercel Hobby's
+once-per-day restriction. The route accepts only the 6 PM and 7 PM Central
+hours, so the extra UTC hour covers daylight-saving changes and irrelevant
+invocations return `204`. Hobby delivery can drift within an hour.
 
-During the 6 PM Central hour:
+Each accepted invocation verifies at most one primary or replacement question.
+The run keeps its active reservation and resumes deterministically on later
+invocations. Leases, unique run keys, usage-event IDs, and email claims make
+duplicate or imprecise delivery safe. The email can arrive after 6 PM as the
+units complete; this design does not require a Pro plan.
+
+During the 6 PM or 7 PM Central hour:
 
 ```bash
 curl --fail-with-body \
@@ -59,8 +67,8 @@ curl --fail-with-body \
   "https://youknoball.com/api/cron/daily-question-review"
 ```
 
-Outside that hour, an authorized request returns `204` and does no work. Never
-add a query parameter that bypasses the time gate.
+Outside those hours, an authorized request returns `204` and does no work.
+Never add a query parameter that bypasses the time gate.
 
 ## Owner Review
 
@@ -92,7 +100,9 @@ These objects are service-role-only and are not player-visible.
 1. Confirm the migration appears in `npx supabase migration list`.
 2. Confirm Auto Recharge is off and the OpenAI project has no unrelated keys.
 3. Confirm Vercel Production variables exist without printing their values.
-4. During the 6 PM Central hour, invoke the cron once.
+4. During the 6 PM or 7 PM Central hour, invoke the cron repeatedly until its
+   response is `completed`; each `in_progress` response represents at most one
+   persisted verification unit.
 5. Confirm one draft, one scheduled run, five review items, and one reconciled
    reservation exist for tomorrow.
 6. Confirm the email arrives and its admin link requires authentication.
@@ -107,7 +117,7 @@ explicit owner authorization. Automated tests use mocks and spend no credit.
 
 - `401`: the bearer value does not match `CRON_SECRET`.
 - `503`: `CRON_SECRET` is absent or malformed.
-- `204`: the request is outside the 6 PM Central hour.
+- `204`: the request is outside the 6 PM and 7 PM Central hours.
 - Budget blocked: inspect `daily_question_review_reservations`; no OpenAI call
   should have occurred.
 - Source failure: inspect `source_fetch_results` for blocked domains, redirects,

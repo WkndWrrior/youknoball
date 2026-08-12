@@ -15,6 +15,9 @@ import type {
   DailyQuestionReviewRunRecord,
 } from "@/lib/server/dailyQuestionReviewRepository";
 import {
+  DAILY_QUESTION_REVIEW_INVOCATION_MS,
+  DAILY_QUESTION_REVIEW_MIN_UNIT_REMAINING_MS,
+  MAX_DAILY_QUESTION_VERIFICATION_UNIT_DURATION_MS,
   runNightlyQuestionReview,
   type DailyQuestionReviewServiceDependencies,
 } from "@/lib/server/dailyQuestionReviewService";
@@ -280,8 +283,232 @@ function createDependencies(options: {
   return { dependencies, items, getRun: () => run };
 }
 
+function enableResumableInvocations(
+  context: ReturnType<typeof createDependencies>,
+  runExists = false,
+) {
+  let reservationCalls = runExists ? 1 : 0;
+  const originalStart = context.dependencies.startOrObserve;
+  context.dependencies.acquireReservation = vi.fn(async () => ({
+    acquired: true,
+    created: reservationCalls++ === 0,
+    reservationId: uuid(500),
+    reservedMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+    runCostBaselineMicrodollars: 0,
+  }));
+  context.dependencies.startOrObserve = vi.fn(async (input) => {
+    runExists = true;
+    return originalStart(input);
+  });
+  context.dependencies.loadExisting = vi.fn(async () =>
+    runExists
+      ? {
+          run: context.getRun(),
+          items: Array.from(context.items.values()).sort(
+            (left, right) => left.slot - right.slot,
+          ),
+        }
+      : null,
+  );
+  context.dependencies.claimExisting = vi.fn(async () => ({
+    claimed: true,
+    claimToken: uuid(601),
+    run: context.getRun(),
+  }));
+}
+
+async function runUntilTerminal(
+  context: ReturnType<typeof createDependencies>,
+  runExists = false,
+) {
+  enableResumableInvocations(context, runExists);
+  for (let invocation = 0; invocation < 11; invocation += 1) {
+    const result = await runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    });
+    if (result.kind !== "in_progress") return result;
+  }
+  throw new Error("Nightly review did not reach a terminal state.");
+}
+
 describe("runNightlyQuestionReview", () => {
-  it("gates budget, verifies five slots with concurrency two, verifies only flagged replacements, and emails once", async () => {
+  it("pins one bounded verification unit below the invocation deadline", () => {
+    expect(MAX_DAILY_QUESTION_VERIFICATION_UNIT_DURATION_MS).toBe(111_250);
+    expect(DAILY_QUESTION_REVIEW_MIN_UNIT_REMAINING_MS).toBe(125_000);
+    expect(DAILY_QUESTION_REVIEW_INVOCATION_MS).toBe(240_000);
+  });
+
+  it("processes one primary per invocation and finalizes on the sixth invocation", async () => {
+    const context = createDependencies();
+    enableResumableInvocations(context);
+
+    for (let invocation = 1; invocation <= 5; invocation += 1) {
+      await expect(runNightlyQuestionReview({
+        challengeDate: "2026-08-10",
+        now,
+        unitLimit: 1,
+        deadline: new Date(now.getTime() + DAILY_QUESTION_REVIEW_INVOCATION_MS),
+        dependencies: context.dependencies,
+      })).resolves.toMatchObject({ kind: "in_progress" });
+      expect(context.dependencies.verifyQuestion).toHaveBeenCalledTimes(invocation);
+      expect(context.items.size).toBe(invocation);
+      expect(context.dependencies.completeRun).not.toHaveBeenCalled();
+      expect(context.dependencies.reconcileReservation).not.toHaveBeenCalled();
+    }
+
+    expect(context.dependencies.startOrObserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: "2026-08-09T23:00:00.000Z",
+        leaseExpiresAt: "2026-08-09T23:03:00.000Z",
+      }),
+    );
+    expect(context.dependencies.saveItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        heartbeatAt: "2026-08-09T23:00:00.000Z",
+        leaseExpiresAt: "2026-08-09T23:03:00.000Z",
+      }),
+    );
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      unitLimit: 1,
+      deadline: new Date(now.getTime() + DAILY_QUESTION_REVIEW_INVOCATION_MS),
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "completed" });
+    expect(context.dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
+    expect(context.dependencies.completeRun).toHaveBeenCalledOnce();
+  });
+
+  it("processes five primaries and five replacements without repeats, then finalizes", async () => {
+    const verifier = vi.fn(async ({ question }: { question: QuestionSnapshot }) => ({
+      finding: makeFinding(
+        question,
+        questionIds.includes(question.id) ? "risk" : "passed",
+      ),
+      usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 5 },
+      webSearchCalls: 0,
+      sources: [],
+    }));
+    const context = createDependencies({ verifier });
+    enableResumableInvocations(context);
+
+    for (let invocation = 1; invocation <= 10; invocation += 1) {
+      await expect(runNightlyQuestionReview({
+        challengeDate: "2026-08-10",
+        now,
+        dependencies: context.dependencies,
+      })).resolves.toMatchObject({ kind: "in_progress" });
+      expect(verifier).toHaveBeenCalledTimes(invocation);
+    }
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "completed" });
+    expect(verifier).toHaveBeenCalledTimes(10);
+    expect(new Set(verifier.mock.calls.map(([input]) => input.question.id)).size).toBe(10);
+  });
+
+  it("persists primary operational failures as terminal unable findings", async () => {
+    const verifier = vi.fn()
+      .mockRejectedValueOnce(new OpenAiQuestionVerifierError("timeout", "Timed out", {
+        retryable: true,
+        accounting: {
+          usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 5 },
+          webSearchCalls: 0,
+          sources: [],
+        },
+      }))
+      .mockImplementation(async ({ question }: { question: QuestionSnapshot }) => ({
+        finding: makeFinding(question),
+        usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 5 },
+        webSearchCalls: 0,
+        sources: [],
+      }));
+    const context = createDependencies({ verifier });
+    enableResumableInvocations(context);
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies: context.dependencies });
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies: context.dependencies });
+
+    expect(context.items.get(1)).toMatchObject({
+      reviewStatus: "completed",
+      finding: { verdict: "unable_to_verify" },
+    });
+    expect(verifier.mock.calls.map(([input]) => input.question.id)).toEqual([
+      questionIds[0],
+      questionIds[1],
+    ]);
+    expect(context.getRun().usage).toMatchObject({ inputTokens: 20, outputTokens: 10 });
+  });
+
+  it("persists replacement operational failures as terminal ineligible outcomes", async () => {
+    const flaggedItem = {
+      ...makeStoredItem(3, "completed"),
+      finding: makeFinding(questions[2], "risk"),
+    } as DailyQuestionReviewItemRecord;
+    const existingItems = [1, 2, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
+    existingItems.push(flaggedItem);
+    const verifier = vi.fn(async () => {
+      throw new OpenAiQuestionVerifierError("timeout", "Timed out", {
+        retryable: true,
+        accounting: {
+          usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 5 },
+          webSearchCalls: 0,
+          sources: [],
+        },
+      });
+    });
+    const context = createDependencies({
+      verifier,
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: { claimed: true, claimToken: uuid(601), run: makeRun() },
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    expect(context.items.get(3)?.replacement).toMatchObject({
+      eligible: false,
+      questionId: replacementId,
+      finding: { verdict: "unable_to_verify" },
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "completed" });
+    expect(verifier).toHaveBeenCalledOnce();
+  });
+
+  it("does no external work when fewer than 125 seconds remain", async () => {
+    const context = createDependencies();
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      unitLimit: 1,
+      deadline: new Date(now.getTime() + DAILY_QUESTION_REVIEW_MIN_UNIT_REMAINING_MS - 1),
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+
+    expect(context.dependencies.collectEvidence).not.toHaveBeenCalled();
+    expect(context.dependencies.verifyQuestion).not.toHaveBeenCalled();
+    expect(context.dependencies.saveItem).not.toHaveBeenCalled();
+    expect(context.dependencies.completeRun).not.toHaveBeenCalled();
+    expect(context.dependencies.reconcileReservation).not.toHaveBeenCalled();
+  });
+
+  it("gates budget, verifies one unit at a time, verifies only flagged replacements, and emails once", async () => {
     let active = 0;
     let maxActive = 0;
     const verifier = vi.fn(async ({ question }: { question: QuestionSnapshot }) => {
@@ -301,21 +528,17 @@ describe("runNightlyQuestionReview", () => {
         sources: [],
       };
     });
-    const { dependencies, items, getRun } = createDependencies({ verifier });
-
-    const result = await runNightlyQuestionReview({
-      challengeDate: "2026-08-10",
-      now,
-      dependencies,
-    });
+    const context = createDependencies({ verifier });
+    const { dependencies, items, getRun } = context;
+    const result = await runUntilTerminal(context);
 
     expect(result).toMatchObject({ kind: "completed", run: { status: "completed_with_flags" } });
     expect(dependencies.listMonthlyCosts).toHaveBeenCalledBefore(
       dependencies.prepareDraft as ReturnType<typeof vi.fn>,
     );
-    expect(dependencies.prepareDraft).toHaveBeenCalledOnce();
+    expect(dependencies.prepareDraft).toHaveBeenCalledTimes(7);
     expect(verifier).toHaveBeenCalledTimes(6);
-    expect(maxActive).toBe(2);
+    expect(maxActive).toBe(1);
     expect(dependencies.selectReplacement).toHaveBeenCalledTimes(1);
     expect(dependencies.selectReplacement).toHaveBeenCalledWith({
       draft,
@@ -363,7 +586,8 @@ describe("runNightlyQuestionReview", () => {
       webSearchCalls: 0,
       sources: [],
     }));
-    const { dependencies, items } = createDependencies({ verifier });
+    const context = createDependencies({ verifier });
+    const { dependencies, items } = context;
     const seenSelections: string[][] = [];
     dependencies.selectReplacement = vi.fn(async (
       input: Parameters<DailyQuestionReviewServiceDependencies["selectReplacement"]>[0],
@@ -375,7 +599,7 @@ describe("runNightlyQuestionReview", () => {
       ) ?? null;
     });
 
-    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await runUntilTerminal(context);
 
     expect(seenSelections).toHaveLength(2);
     expect(seenSelections[1]).toContain(easyReplacements[0].id);
@@ -407,7 +631,8 @@ describe("runNightlyQuestionReview", () => {
       webSearchCalls: 0,
       sources: [],
     }));
-    const { dependencies, items } = createDependencies({ verifier });
+    const context = createDependencies({ verifier });
+    const { dependencies, items } = context;
     const seenSelections: string[][] = [];
     dependencies.selectReplacement = vi.fn(async (
       input: Parameters<DailyQuestionReviewServiceDependencies["selectReplacement"]>[0],
@@ -416,7 +641,7 @@ describe("runNightlyQuestionReview", () => {
       return input.flaggedSlot === 1 ? failedCandidate : passedCandidate;
     });
 
-    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await runUntilTerminal(context);
 
     expect(seenSelections).toHaveLength(2);
     expect(seenSelections[1]).toContain(questionIds[0]);
@@ -504,9 +729,10 @@ describe("runNightlyQuestionReview", () => {
       webSearchCalls: DAILY_REVIEW_MAX_REQUEST_USAGE.webSearchCalls * 2,
       sources: [],
     }));
-    const { dependencies, items } = createDependencies({ verifier });
+    const context = createDependencies({ verifier });
+    const { dependencies, items } = context;
 
-    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await runUntilTerminal(context);
 
     expect(verifier).toHaveBeenCalledTimes(10);
     expect(dependencies.selectReplacement).toHaveBeenCalledTimes(5);
@@ -538,17 +764,21 @@ describe("runNightlyQuestionReview", () => {
         sources: [],
       };
     });
-    const { dependencies, items, getRun } = createDependencies({ verifier });
+    const context = createDependencies({ verifier });
+    const { dependencies, items, getRun } = context;
 
-    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await runUntilTerminal(context);
 
-    expect(items.get(2)).toMatchObject({ reviewStatus: "failed", finding: null });
-    expect(Array.from(items.values()).filter((item) => item.reviewStatus === "completed")).toHaveLength(4);
+    expect(items.get(2)).toMatchObject({
+      reviewStatus: "completed",
+      finding: { verdict: "unable_to_verify" },
+      replacement: { eligible: true },
+    });
+    expect(Array.from(items.values()).filter((item) => item.reviewStatus === "completed")).toHaveLength(5);
     expect(getRun()).toMatchObject({
-      status: "failed",
-      usage: { inputTokens: 50, outputTokens: 25 },
-      estimatedCostMicrodollars: 500,
-      errors: [expect.objectContaining({ phase: "verification", code: "timeout", questionId: questionIds[1] })],
+      status: "completed_with_flags",
+      usage: { inputTokens: 60, outputTokens: 30 },
+      estimatedCostMicrodollars: 600,
     });
     expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
@@ -558,10 +788,11 @@ describe("runNightlyQuestionReview", () => {
     const sendEmail = vi.fn(async () => {
       throw new Error("email unavailable");
     });
-    const { dependencies, getRun } = createDependencies({ sendEmail });
+    const context = createDependencies({ sendEmail });
+    const { dependencies, getRun } = context;
 
     await expect(
-      runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies }),
+      runUntilTerminal(context),
     ).resolves.toMatchObject({ kind: "completed", run: { status: "completed" } });
 
     expect(getRun()).toMatchObject({ status: "completed" });
@@ -572,10 +803,11 @@ describe("runNightlyQuestionReview", () => {
   });
 
   it("leaves email pending when Task 8 has not injected a sender", async () => {
-    const { dependencies } = createDependencies();
+    const context = createDependencies();
+    const { dependencies } = context;
     dependencies.sendReviewEmail = null;
 
-    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await runUntilTerminal(context);
 
     expect(dependencies.claimEmail).not.toHaveBeenCalled();
     expect(dependencies.markEmailSent).not.toHaveBeenCalled();
@@ -598,12 +830,12 @@ describe("runNightlyQuestionReview", () => {
       runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies }),
     ]);
 
-    expect([first.kind, second.kind].sort()).toEqual(["completed", "observed"]);
+    expect([first.kind, second.kind].sort()).toEqual(["in_progress", "observed"]);
     expect([first, second].find((result) => result.kind === "observed"))
       .toMatchObject({ run: { id: uuid(300) } });
     expect(dependencies.prepareDraft).toHaveBeenCalledOnce();
-    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
-    expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
+    expect(dependencies.verifyQuestion).toHaveBeenCalledOnce();
+    expect(dependencies.sendReviewEmail).not.toHaveBeenCalled();
     expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
   });
 
@@ -636,11 +868,11 @@ describe("runNightlyQuestionReview", () => {
       challengeDate: "2026-08-10",
       now,
       dependencies,
-    })).resolves.toMatchObject({ kind: "completed" });
+    })).resolves.toMatchObject({ kind: "in_progress" });
 
     expect(dependencies.prepareDraft).toHaveBeenCalledOnce();
     expect(dependencies.startOrObserve).toHaveBeenCalledOnce();
-    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
+    expect(dependencies.verifyQuestion).toHaveBeenCalledOnce();
   });
 
   it("observes a completed run and retries its unsent email without reserving budget", async () => {
@@ -726,7 +958,7 @@ describe("runNightlyQuestionReview", () => {
       makeStoredItem(4, "pending"),
       makeStoredItem(5, "pending"),
     ];
-    const { dependencies, getRun } = createDependencies({
+    const context = createDependencies({
       reservationCreated: false,
       existingRun: staleRun,
       existingItems,
@@ -736,18 +968,34 @@ describe("runNightlyQuestionReview", () => {
         run: staleRun,
       },
     });
+    const { dependencies, getRun } = context;
 
-    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await runUntilTerminal(context, true);
 
-    expect(dependencies.claimExisting).toHaveBeenCalledOnce();
+    expect(dependencies.claimExisting).toHaveBeenCalledTimes(4);
     expect(dependencies.startOrObserve).not.toHaveBeenCalled();
     expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(dependencies.verifyQuestion).mock.calls.map(([input]) => input.question.id))
+      .toEqual(questionIds.slice(2));
     expect(dependencies.heartbeatRun).toHaveBeenCalled();
     expect(getRun()).toMatchObject({ status: "completed" });
   });
 
   it("does not reconcile when token-fenced finalization reports lost ownership", async () => {
-    const { dependencies } = createDependencies();
+    const completedItems = [1, 2, 3, 4, 5].map((slot) =>
+      makeStoredItem(slot, "completed"),
+    );
+    const runningRun = makeRun();
+    const { dependencies } = createDependencies({
+      reservationCreated: false,
+      existingRun: runningRun,
+      existingItems: completedItems,
+      claimExistingResult: {
+        claimed: true,
+        claimToken: uuid(601),
+        run: runningRun,
+      },
+    });
     vi.mocked(dependencies.completeRun).mockRejectedValue(
       new Error("Daily review lease ownership was lost."),
     );
@@ -760,6 +1008,8 @@ describe("runNightlyQuestionReview", () => {
 
     expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
     expect(dependencies.sendReviewEmail).not.toHaveBeenCalled();
+    expect(dependencies.verifyQuestion).not.toHaveBeenCalled();
+    expect(dependencies.completeRun).toHaveBeenCalledOnce();
   });
 
   it("resumes a failed partial run, skips completed slots, and retries failed or pending slots once", async () => {
@@ -783,12 +1033,15 @@ describe("runNightlyQuestionReview", () => {
       makeStoredItem(4, "pending"),
       makeStoredItem(5, "pending"),
     ];
-    const { dependencies, getRun } = createDependencies({ existingRun, existingItems });
+    const context = createDependencies({ existingRun, existingItems });
+    const { dependencies, getRun } = context;
 
-    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await runUntilTerminal(context, true);
 
     expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(3);
     expect(dependencies.saveItem).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(dependencies.verifyQuestion).mock.calls.map(([input]) => input.question.id))
+      .toEqual(questionIds.slice(2));
     expect(getRun()).toMatchObject({
       status: "completed",
       usage: { inputTokens: 50, outputTokens: 25 },
@@ -927,12 +1180,22 @@ describe("runNightlyQuestionReview", () => {
         return persistedRun;
       });
 
+    for (let invocation = 0; invocation < 5; invocation += 1) {
+      await expect(runNightlyQuestionReview({
+        challengeDate: "2026-08-10",
+        now,
+        dependencies,
+      })).resolves.toMatchObject({ kind: "in_progress" });
+    }
+    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
+
     await expect(runNightlyQuestionReview({
       challengeDate: "2026-08-10",
       now,
       dependencies,
     })).rejects.toThrow("crash before finalization");
     expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
+    expect(usageEvents.size).toBe(5);
 
     const resumed = await runNightlyQuestionReview({
       challengeDate: "2026-08-10",

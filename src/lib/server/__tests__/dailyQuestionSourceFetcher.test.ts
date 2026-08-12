@@ -6,6 +6,7 @@ import { fetch as undiciFetch } from "undici";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import {
+  MAX_DAILY_QUESTION_SOURCE_COLLECTION_DURATION_MS,
   collectSavedSourceEvidence as collectSavedSourceEvidenceProduction,
   createPinnedSourceLookup,
   createTestOnlyPinnedDispatcher,
@@ -579,6 +580,10 @@ describe("public source DNS resolution and pinning", () => {
 });
 
 describe("saved source evidence fetching", () => {
+  it("pins the maximum saved-source collection duration", () => {
+    expect(MAX_DAILY_QUESTION_SOURCE_COLLECTION_DURATION_MS).toBe(51_250);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();

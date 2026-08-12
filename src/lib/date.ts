@@ -1,5 +1,5 @@
 const CHALLENGE_TIME_ZONE = "America/Chicago";
-const NIGHTLY_REVIEW_HOUR = 18;
+const NIGHTLY_REVIEW_HOURS = new Set([18, 19]);
 const CHICAGO_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: CHALLENGE_TIME_ZONE,
   year: "numeric",
@@ -75,7 +75,7 @@ export function getNightlyReviewSchedule(now: Date): {
   const chicagoNow = getChicagoDateTimeParts(now);
 
   return {
-    shouldRun: chicagoNow.hour === NIGHTLY_REVIEW_HOUR,
+    shouldRun: NIGHTLY_REVIEW_HOURS.has(chicagoNow.hour),
     challengeDate: formatIsoDateFromParts(offsetCalendarDate(chicagoNow, 1)),
   };
 }

@@ -35,6 +35,7 @@ const UTF8_ENCODER = new TextEncoder();
 const UTF8_DECODER = new TextDecoder();
 
 export const MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE = 10;
+export const MAX_DAILY_QUESTION_VERIFIER_DURATION_MS = DEFAULT_TIMEOUT_MS * 2;
 
 const WEB_SEARCH_DOMAINS = [
   "baseball-reference.com",
