@@ -775,7 +775,10 @@ describe("budget preflight", () => {
   });
 
   it("does not invoke work when atomic acquisition is denied", async () => {
-    const acquireReservation = vi.fn(async () => ({ acquired: false }));
+    const acquireReservation = vi.fn(async () => ({
+      acquired: false,
+      denialCreated: true,
+    }));
     const operation = vi.fn(async () => "called");
 
     const result = await runWithDailyQuestionReviewBudgetPreflight({
@@ -793,6 +796,7 @@ describe("budget preflight", () => {
       value: null,
       budget: {
         allowed: false,
+        denialCreated: true,
         reservedMicrodollars: 5_040_000,
         reason: "atomic_reservation_denied",
       },

@@ -471,6 +471,9 @@ describe("nightly question verification migration", () => {
       "actual_microdollars bigint not null default 0",
     );
     expect(migration).toContain(
+      "run_cost_baseline_microdollars bigint not null default 0",
+    );
+    expect(migration).toContain(
       "check (status in ('active', 'reconciled', 'released', 'denied'))",
     );
     expect(migration).toMatch(
@@ -519,6 +522,8 @@ describe("nightly question verification migration", () => {
     expect(acquire).toContain(
       "on conflict (challenge_date, run_kind) where status = 'denied' do nothing",
     );
+    expect(acquire).toContain("'denial_created', v_denial_created");
+    expect(acquire).toContain("run_cost_baseline_microdollars");
     expect(acquire).toContain("'reserved_microdollars', p_required_reservation_microdollars");
     expect(reconcile).toContain("security definer");
     expect(reconcile).toContain("pg_advisory_xact_lock");
@@ -612,9 +617,11 @@ describe("nightly question verification migration", () => {
     expect(finalize).toContain("claim_token = p_claim_token");
     expect(finalize).toContain("lease_expires_at > p_completed_at");
     expect(finalize).toContain("lease_expires_at > clock_timestamp()");
-    expect(finalize).toContain("actual_microdollars = v_run.estimated_cost_microdollars");
     expect(finalize).toContain(
-      "v_run.estimated_cost_microdollars <= v_reservation.reserved_microdollars",
+      "v_reservation_actual_microdollars := v_run.estimated_cost_microdollars - v_reservation.run_cost_baseline_microdollars",
+    );
+    expect(finalize).toContain(
+      "v_reservation_actual_microdollars between 0 and v_reservation.reserved_microdollars",
     );
 
     for (const signature of [
@@ -638,7 +645,9 @@ describe("nightly question verification migration", () => {
     );
 
     expect(claim).toContain("security definer");
-    expect(claim).toContain("email_status = 'pending'");
+    expect(claim).toContain("email_status in ('pending', 'failed')");
+    expect(claim).toContain("p_attempted_at - interval '15 minutes'");
+    expect(claim).toContain("(email_metadata->>'attempts')::integer + 1");
     expect(claim).toContain("email_status = 'sending'");
     expect(migration).toContain(
       "revoke all on function public.claim_daily_question_review_email(uuid, timestamptz) from public, anon, authenticated",

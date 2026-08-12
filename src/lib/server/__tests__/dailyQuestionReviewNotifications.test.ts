@@ -181,6 +181,9 @@ describe("daily question review notifications", () => {
     expect(body.text.match(/Question \d\?/g)).toHaveLength(5);
     expect(body.text).toContain("Estimated cost: $0.012345");
     expect(body.text).toContain("https://youknoball.com/admin/daily-review/2026-08-13");
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
+      "idempotency-key": `daily-question-review-${run().id}`,
+    });
   });
 
   it("emphasizes risk, unavailable evidence, safe sources, and verified replacements", async () => {

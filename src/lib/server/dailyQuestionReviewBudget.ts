@@ -91,6 +91,7 @@ export interface DailyQuestionReviewBudgetResult {
   remainingMicrodollars: number;
   reservedMicrodollars: number;
   reason: DailyQuestionReviewBudgetReason;
+  denialCreated?: boolean;
 }
 
 export interface ChicagoCalendarMonthRange {
@@ -715,6 +716,7 @@ export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
         ...budget,
         allowed: false,
         reason: "atomic_reservation_denied",
+        denialCreated: acquisition.denialCreated === true,
       },
       value: null,
     };

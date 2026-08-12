@@ -680,6 +680,38 @@ describe("reservation and email state", () => {
     });
   });
 
+  it("propagates whether an atomic budget denial was created", async () => {
+    const client = createClientMock({}, {
+      acquire_daily_question_review_reservation: {
+        data: {
+          acquired: false,
+          reason: "monthly_budget_exceeded",
+          denial_created: true,
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      acquireDailyQuestionReviewReservation(client, {
+        model: "gpt-5.6-terra",
+        modelDerivedReservationMicrodollars: 5_040_000,
+        requiredReservationMicrodollars: 5_040_000,
+        monthRange: {
+          startInclusive: "2026-08-01T05:00:00.000Z",
+          endExclusive: "2026-09-01T05:00:00.000Z",
+        },
+        spentMicrodollars: 0,
+        limitMicrodollars: 10_000_000,
+        remainingMicrodollars: 10_000_000,
+      }, {
+        reviewDate: "2026-08-09",
+        challengeDate: "2026-08-10",
+        now: timestamp,
+      }),
+    ).resolves.toEqual({ acquired: false, denialCreated: true });
+  });
+
   it("persists one reportable budget block and tolerates an idempotent conflict", async () => {
     const insert = createThenableQuery({ data: null, error: null });
     const client = createClientMock({
@@ -774,16 +806,16 @@ describe("reservation and email state", () => {
     ).resolves.toEqual({ outcome: "reconciled", actualMicrodollars: 84_000 });
   });
 
-  it("claims email atomically and persists sent and failed states", async () => {
+  it("claims retryable email atomically and persists sent and failed states", async () => {
     const claimClient = createClientMock({}, {
       claim_daily_question_review_email: {
-        data: { claimed: true, attempts: 1 },
+        data: { claimed: true, attempts: 2 },
         error: null,
       },
     });
     await expect(
       claimDailyQuestionReviewEmail(claimClient, ids.run, timestamp),
-    ).resolves.toEqual({ claimed: true, attempts: 1 });
+    ).resolves.toEqual({ claimed: true, attempts: 2 });
 
     const sentQuery = createThenableQuery({
       data: {

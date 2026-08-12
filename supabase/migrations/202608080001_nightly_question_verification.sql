@@ -655,6 +655,8 @@ create table if not exists public.daily_question_review_reservations (
     check (status in ('active', 'reconciled', 'released', 'denied')),
   reserved_microdollars bigint not null
     check (reserved_microdollars between 0 and 9007199254740991),
+  run_cost_baseline_microdollars bigint not null default 0
+    check (run_cost_baseline_microdollars between 0 and 999999999999),
   actual_microdollars bigint not null default 0
     check (actual_microdollars between 0 and reserved_microdollars),
   month_start timestamptz not null,
@@ -1123,6 +1125,7 @@ as $function$
 declare
   v_run public.daily_question_review_runs%rowtype;
   v_reservation public.daily_question_review_reservations%rowtype;
+  v_reservation_actual_microdollars bigint;
 begin
   select r.* into v_run
   from public.daily_question_review_runs r
@@ -1144,9 +1147,14 @@ begin
   where r.id = p_reservation_id
   for update;
 
+  v_reservation_actual_microdollars :=
+    v_run.estimated_cost_microdollars - v_reservation.run_cost_baseline_microdollars;
+
   if not found
     or v_reservation.status <> 'active'
-    or not (v_run.estimated_cost_microdollars <= v_reservation.reserved_microdollars)
+    or not (
+      v_reservation_actual_microdollars between 0 and v_reservation.reserved_microdollars
+    )
   then
     return jsonb_build_object('outcome', 'reservation_conflict');
   end if;
@@ -1159,14 +1167,14 @@ begin
   returning * into v_run;
 
   update public.daily_question_review_reservations
-  set actual_microdollars = v_run.estimated_cost_microdollars,
-      status = case when v_run.estimated_cost_microdollars = 0 then 'released' else 'reconciled' end,
+  set actual_microdollars = v_reservation_actual_microdollars,
+      status = case when v_reservation_actual_microdollars = 0 then 'released' else 'reconciled' end,
       reconciled_at = p_completed_at
   where id = p_reservation_id;
 
   return jsonb_build_object(
     'outcome', 'completed',
-    'actual_microdollars', v_run.estimated_cost_microdollars,
+    'actual_microdollars', v_reservation_actual_microdollars,
     'run', to_jsonb(v_run)
   );
 end;
@@ -1196,6 +1204,8 @@ declare
   v_existing public.daily_question_review_reservations%rowtype;
   v_reservation_id uuid;
   v_committed_microdollars bigint;
+  v_run_cost_baseline_microdollars bigint;
+  v_denial_created boolean := false;
 begin
   if p_review_date is null
     or p_challenge_date is null
@@ -1293,14 +1303,24 @@ begin
     )
     on conflict (challenge_date, run_kind)
       where status = 'denied'
-    do nothing;
+    do nothing
+    returning true into v_denial_created;
+
+    v_denial_created := coalesce(v_denial_created, false);
 
     return jsonb_build_object(
       'acquired', false,
       'reason', 'monthly_budget_exceeded',
+      'denial_created', v_denial_created,
       'committed_microdollars', v_committed_microdollars
     );
   end if;
+
+  select coalesce(max(r.estimated_cost_microdollars), 0)::bigint
+  into v_run_cost_baseline_microdollars
+  from public.daily_question_review_runs r
+  where r.challenge_date = p_challenge_date
+    and r.run_kind = 'scheduled';
 
   insert into public.daily_question_review_reservations (
     review_date,
@@ -1308,6 +1328,7 @@ begin
     model,
     status,
     reserved_microdollars,
+    run_cost_baseline_microdollars,
     actual_microdollars,
     month_start,
     month_end,
@@ -1318,6 +1339,7 @@ begin
     btrim(p_model),
     'active',
     p_required_reservation_microdollars,
+    v_run_cost_baseline_microdollars,
     0,
     p_month_start,
     p_month_end,
@@ -1562,12 +1584,19 @@ begin
       email_metadata = jsonb_build_object(
         'provider', 'resend',
         'providerMessageId', null,
-        'attempts', 1,
+        'attempts', (email_metadata->>'attempts')::integer + 1,
         'lastAttemptAt', p_attempted_at,
         'failure', null
       )
   where id = p_run_id
-    and email_status = 'pending'
+    and (
+      email_status in ('pending', 'failed')
+      or (
+        email_status = 'sending'
+        and updated_at <= p_attempted_at - interval '15 minutes'
+      )
+    )
+    and (email_metadata->>'attempts')::integer < 10
   returning (email_metadata->>'attempts')::integer into v_attempts;
 
   if not found then

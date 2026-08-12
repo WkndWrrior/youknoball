@@ -17,6 +17,7 @@ import {
   DAILY_REVIEW_PRICING,
   DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
   DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS,
+  checkDailyQuestionReviewBudget,
   estimateDailyQuestionReviewCostMicrodollars,
   getChicagoCalendarMonthRange,
   runWithDailyQuestionReviewBudgetPreflight,
@@ -31,6 +32,7 @@ import {
   claimDailyQuestionReviewEmail,
   completeDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
+  loadDailyQuestionReviewByDate,
   loadDailyQuestionReviewByRunId,
   heartbeatDailyQuestionReviewRun,
   markDailyQuestionReviewEmailFailed,
@@ -115,6 +117,10 @@ export interface DailyQuestionReviewServiceDependencies {
   }) => Promise<boolean>;
   currentTime: () => Date;
   loadReview: (runId: string) => Promise<{
+    run: DailyQuestionReviewRunRecord;
+    items: DailyQuestionReviewItemRecord[];
+  } | null>;
+  loadExisting: (challengeDate: string) => Promise<{
     run: DailyQuestionReviewRunRecord;
     items: DailyQuestionReviewItemRecord[];
   } | null>;
@@ -356,6 +362,7 @@ function createDefaultDependencies(context: {
     heartbeatRun: (input) => heartbeatDailyQuestionReviewRun(client, input),
     currentTime: () => new Date(),
     loadReview: (runId) => loadDailyQuestionReviewByRunId(client, runId),
+    loadExisting: (challengeDate) => loadDailyQuestionReviewByDate(client, challengeDate),
     saveItem: (input) => upsertDailyQuestionReviewItem(client, input),
     completeRun: (input) => completeDailyQuestionReviewRun(client, input),
     collectEvidence: async (question) => {
@@ -413,6 +420,32 @@ async function runWorkers<T>(
   await Promise.all(Array.from({ length: workerCount }, worker));
 }
 
+async function attemptReviewEmail(
+  deps: DailyQuestionReviewServiceDependencies,
+  run: DailyQuestionReviewRunRecord,
+  items: DailyQuestionReviewItemRecord[],
+  attemptedAt: string,
+): Promise<void> {
+  if (!deps.sendReviewEmail || run.email.status === "sent") return;
+  const emailClaim = await deps.claimEmail(run.id, attemptedAt);
+  if (!emailClaim.claimed) return;
+  try {
+    const sent = await deps.sendReviewEmail({ run, items });
+    await deps.markEmailSent(run.id, {
+      sentAt: attemptedAt,
+      providerMessageId: sent.providerMessageId,
+      attempts: emailClaim.attempts,
+    });
+  } catch (error) {
+    await deps.markEmailFailed(run.id, {
+      attemptedAt,
+      attempts: emailClaim.attempts,
+      code: "email_failed",
+      message: errorMessage(error),
+    });
+  }
+}
+
 export async function runNightlyQuestionReview({
   challengeDate,
   now,
@@ -440,6 +473,32 @@ export async function runNightlyQuestionReview({
     });
   const monthRange = getChicagoCalendarMonthRange(now);
   const records = await deps.listMonthlyCosts(monthRange);
+  const existingReview = await deps.loadExisting(challengeDate);
+  if (
+    existingReview &&
+    ["completed", "completed_with_flags", "failed"].includes(existingReview.run.status)
+  ) {
+    await attemptReviewEmail(
+      deps,
+      existingReview.run,
+      existingReview.items,
+      occurredAt,
+    );
+    if (
+      existingReview.run.status === "completed" ||
+      existingReview.run.status === "completed_with_flags"
+    ) {
+      return {
+        kind: "observed",
+        budget: checkDailyQuestionReviewBudget({
+          model: deps.model,
+          records,
+          now,
+        }),
+        run: existingReview.run,
+      };
+    }
+  }
 
   const preflight = await runWithDailyQuestionReviewBudgetPreflight({
     model: deps.model,
@@ -460,13 +519,31 @@ export async function runNightlyQuestionReview({
             claimedAt: initialLease.heartbeatAt,
             leaseExpiresAt: initialLease.leaseExpiresAt,
           });
-          if (!existing.claimed || !existing.claimToken || !existing.run) {
+          if (!existing.run) {
+            draft = await deps.prepareDraft(challengeDate);
+            const started = await deps.startOrObserve({
+              dailyChallengeId: draft.challengeId,
+              reviewDate,
+              challengeDate,
+              model: deps.model,
+              verifierVersion: deps.verifierVersion,
+              startedAt: initialLease.heartbeatAt,
+              leaseExpiresAt: initialLease.leaseExpiresAt,
+            });
+            if (!started.claimed || !started.claimToken) {
+              return { kind: "observed" as const, run: started.run };
+            }
+            claimedRun = started.run;
+            claimToken = started.claimToken;
+            releaseUnboundReservation = false;
+          } else if (!existing.claimed || !existing.claimToken) {
             return { kind: "observed" as const, run: existing.run };
+          } else {
+            claimedRun = existing.run;
+            claimToken = existing.claimToken;
+            releaseUnboundReservation = false;
+            draft = await deps.prepareDraft(challengeDate);
           }
-          claimedRun = existing.run;
-          claimToken = existing.claimToken;
-          releaseUnboundReservation = false;
-          draft = await deps.prepareDraft(challengeDate);
         } else {
           draft = await deps.prepareDraft(challengeDate);
           const started = await deps.startOrObserve({
@@ -801,27 +878,7 @@ export async function runNightlyQuestionReview({
           errors: runErrors.slice(0, 20),
         });
 
-        if (deps.sendReviewEmail) {
-          const emailClaim = await deps.claimEmail(finalRun.id, occurredAt);
-          if (!emailClaim.claimed) {
-            return { kind: "completed" as const, run: finalRun };
-          }
-          try {
-            const sent = await deps.sendReviewEmail({ run: finalRun, items: finalItems });
-            await deps.markEmailSent(finalRun.id, {
-              sentAt: occurredAt,
-              providerMessageId: sent.providerMessageId,
-              attempts: emailClaim.attempts,
-            });
-          } catch (error) {
-            await deps.markEmailFailed(finalRun.id, {
-              attemptedAt: occurredAt,
-              attempts: emailClaim.attempts,
-              code: "email_failed",
-              message: errorMessage(error),
-            });
-          }
-        }
+        await attemptReviewEmail(deps, finalRun, finalItems, occurredAt);
 
         return { kind: "completed" as const, run: finalRun };
       } finally {
@@ -837,16 +894,19 @@ export async function runNightlyQuestionReview({
   });
 
   if (!preflight.budget.allowed || preflight.value === null) {
-    const recorded = await deps.recordBudgetBlock({
-      reviewDate,
-      challengeDate,
-      model: deps.model,
-      reservedMicrodollars: preflight.budget.reservedMicrodollars,
-      monthRange,
-      attemptedAt: occurredAt,
-      reason: preflight.budget.reason,
-    });
-    if (recorded.created && deps.sendBudgetBlockEmail) {
+    const atomicDenial = preflight.budget.reason === "atomic_reservation_denied";
+    const created = atomicDenial
+      ? preflight.budget.denialCreated === true
+      : (await deps.recordBudgetBlock({
+          reviewDate,
+          challengeDate,
+          model: deps.model,
+          reservedMicrodollars: preflight.budget.reservedMicrodollars,
+          monthRange,
+          attemptedAt: occurredAt,
+          reason: preflight.budget.reason,
+        })).created;
+    if (created && deps.sendBudgetBlockEmail) {
       await deps.sendBudgetBlockEmail({
         challengeDate,
         reason: preflight.budget.reason,

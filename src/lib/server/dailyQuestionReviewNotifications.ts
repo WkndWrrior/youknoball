@@ -190,6 +190,7 @@ export async function sendDailyQuestionReviewNotification(
       headers: {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
+        "idempotency-key": `daily-question-review-${input.run.id}`,
       },
       signal: controller.signal,
       body: JSON.stringify({

@@ -741,7 +741,12 @@ export async function acquireDailyQuestionReviewReservation(
   if (!isRecord(data) || typeof data.acquired !== "boolean") {
     throw new Error("Reservation acquisition returned invalid data.");
   }
-  if (!data.acquired) return { acquired: false };
+  if (!data.acquired) {
+    return {
+      acquired: false,
+      denialCreated: data.denial_created === true,
+    };
+  }
   if (
     typeof data.created !== "boolean" ||
     !isUuid(data.reservation_id) ||

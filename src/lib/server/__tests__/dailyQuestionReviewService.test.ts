@@ -198,6 +198,12 @@ function createDependencies(options: {
       run,
       items: Array.from(items.values()).sort((left, right) => left.slot - right.slot),
     })),
+    loadExisting: vi.fn(async () => options.existingRun
+      ? {
+          run,
+          items: Array.from(items.values()).sort((left, right) => left.slot - right.slot),
+        }
+      : null),
     saveItem: vi.fn(async (input) => {
       const stored = {
         ...makeStoredItem(input.slot, input.reviewStatus),
@@ -422,9 +428,12 @@ describe("runNightlyQuestionReview", () => {
     });
   });
 
-  it("persists an atomic budget denial, sends one alert, and makes no draft or verifier calls", async () => {
+  it("uses the atomic budget denial claim to send one alert without a second insert", async () => {
     const { dependencies } = createDependencies();
-    vi.mocked(dependencies.acquireReservation).mockResolvedValue({ acquired: false });
+    vi.mocked(dependencies.acquireReservation).mockResolvedValue({
+      acquired: false,
+      denialCreated: true,
+    });
 
     const result = await runNightlyQuestionReview({
       challengeDate: "2026-08-10",
@@ -437,12 +446,7 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.verifyQuestion).not.toHaveBeenCalled();
     expect(dependencies.sendReviewEmail).not.toHaveBeenCalled();
     expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
-    expect(dependencies.recordBudgetBlock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        challengeDate: "2026-08-10",
-        reservedMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
-      }),
-    );
+    expect(dependencies.recordBudgetBlock).not.toHaveBeenCalled();
     expect(dependencies.sendBudgetBlockEmail).toHaveBeenCalledOnce();
   });
 
@@ -474,12 +478,15 @@ describe("runNightlyQuestionReview", () => {
 
   it("does not resend a budget alert when the denial record already exists", async () => {
     const { dependencies } = createDependencies();
-    vi.mocked(dependencies.acquireReservation).mockResolvedValue({ acquired: false });
-    vi.mocked(dependencies.recordBudgetBlock).mockResolvedValue({ created: false });
+    vi.mocked(dependencies.acquireReservation).mockResolvedValue({
+      acquired: false,
+      denialCreated: false,
+    });
 
     await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
 
     expect(dependencies.sendBudgetBlockEmail).not.toHaveBeenCalled();
+    expect(dependencies.recordBudgetBlock).not.toHaveBeenCalled();
   });
 
   it("fits all five required replacements inside the exact worst-case reservation", async () => {
@@ -594,6 +601,93 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
     expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
+  });
+
+  it("reuses an existing active reservation when no run was created", async () => {
+    const { dependencies } = createDependencies({
+      reservationCreated: false,
+      claimExistingResult: { claimed: false, claimToken: null, run: null },
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).resolves.toMatchObject({ kind: "completed" });
+
+    expect(dependencies.prepareDraft).toHaveBeenCalledOnce();
+    expect(dependencies.startOrObserve).toHaveBeenCalledOnce();
+    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
+  });
+
+  it("observes a completed run and retries its unsent email without reserving budget", async () => {
+    const completedRun = makeRun({
+      status: "completed",
+      completedAt: now.toISOString(),
+      email: {
+        ...makeRun().email,
+        status: "failed",
+        metadata: {
+          ...makeRun().email.metadata,
+          attempts: 1,
+          lastAttemptAt: "2026-08-09T22:00:00.000Z",
+          failure: {
+            code: "email_failed",
+            message: "interrupted",
+            occurredAt: "2026-08-09T22:00:00.000Z",
+          },
+        },
+      },
+    });
+    const completedItems = [1, 2, 3, 4, 5].map((slot) =>
+      makeStoredItem(slot, "completed"),
+    );
+    const { dependencies } = createDependencies();
+    const loadExisting = vi.fn(async () => ({ run: completedRun, items: completedItems }));
+    Object.assign(dependencies, { loadExisting });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).resolves.toMatchObject({ kind: "observed", run: { status: "completed" } });
+
+    expect(loadExisting).toHaveBeenCalledWith("2026-08-10");
+    expect(dependencies.acquireReservation).not.toHaveBeenCalled();
+    expect(dependencies.claimEmail).toHaveBeenCalledWith(completedRun.id, now.toISOString());
+    expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
+  });
+
+  it("attempts a failed run's prior report email before reserving its retry", async () => {
+    const failedRun = makeRun({ status: "failed", completedAt: now.toISOString() });
+    const failedItems = [1, 2, 3, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
+    const { dependencies } = createDependencies({
+      existingRun: failedRun,
+      existingItems: failedItems,
+      claimExistingResult: { claimed: true, claimToken: uuid(601), run: failedRun },
+    });
+    const loadExisting = vi.fn(async () => ({ run: failedRun, items: failedItems }));
+    Object.assign(dependencies, { loadExisting });
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+
+    expect(dependencies.sendReviewEmail).toHaveBeenCalled();
+    expect(vi.mocked(dependencies.sendReviewEmail!).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(dependencies.acquireReservation).mock.invocationCallOrder[0]);
+  });
+
+  it("does not claim report email delivery for an in-progress run", async () => {
+    const runningRun = makeRun();
+    const { dependencies } = createDependencies({
+      reservationCreated: false,
+      existingRun: runningRun,
+      claimExistingResult: { claimed: false, claimToken: null, run: runningRun },
+    });
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+
+    expect(dependencies.claimEmail).not.toHaveBeenCalled();
+    expect(dependencies.sendReviewEmail).not.toHaveBeenCalled();
   });
 
   it("atomically reclaims a stale running run and resumes only unfinished slots", async () => {
