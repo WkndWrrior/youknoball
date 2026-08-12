@@ -654,6 +654,7 @@ describe("budget preflight", () => {
       acquired: true,
       reservationId: "reservation-1",
       reservedMicrodollars: 5_040_000,
+      runCostBaselineMicrodollars: 0,
     }));
     const callback = vi.fn(async () => "verified");
 
@@ -712,6 +713,7 @@ describe("budget preflight", () => {
       acquired: true,
       reservationId: "reservation-higher",
       reservedMicrodollars: 6_000_000,
+      runCostBaselineMicrodollars: 0,
     }));
     const callback = vi.fn(async () => "verified");
 
@@ -903,6 +905,7 @@ describe("budget preflight", () => {
       created: true,
       reservationId: "  reservation-valid  ",
       reservedMicrodollars: 5_040_000,
+      runCostBaselineMicrodollars: 200,
     }));
     const operation = vi.fn(async () => "verified");
 
@@ -934,6 +937,7 @@ describe("budget preflight", () => {
       modelDerivedReservationMicrodollars: 5_040_000,
       requiredReservationMicrodollars: 5_040_000,
       reservedMicrodollars: 5_040_000,
+      runCostBaselineMicrodollars: 200,
       monthRange: {
         startInclusive: "2026-08-01T05:00:00.000Z",
         endExclusive: "2026-09-01T05:00:00.000Z",
@@ -948,6 +952,7 @@ describe("budget preflight", () => {
       created: false,
       reservationId: "reservation-active",
       reservedMicrodollars: 5_040_000,
+      runCostBaselineMicrodollars: 300,
     }));
     const operation = vi.fn(async (reservation) => reservation.acquiredNow);
 

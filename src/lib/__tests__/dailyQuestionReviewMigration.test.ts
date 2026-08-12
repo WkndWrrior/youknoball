@@ -524,6 +524,12 @@ describe("nightly question verification migration", () => {
     );
     expect(acquire).toContain("'denial_created', v_denial_created");
     expect(acquire).toContain("run_cost_baseline_microdollars");
+    expect(acquire).toContain(
+      "'run_cost_baseline_microdollars', v_existing.run_cost_baseline_microdollars",
+    );
+    expect(acquire).toContain(
+      "'run_cost_baseline_microdollars', v_run_cost_baseline_microdollars",
+    );
     expect(acquire).toContain("'reserved_microdollars', p_required_reservation_microdollars");
     expect(reconcile).toContain("security definer");
     expect(reconcile).toContain("pg_advisory_xact_lock");
@@ -646,7 +652,10 @@ describe("nightly question verification migration", () => {
 
     expect(claim).toContain("security definer");
     expect(claim).toContain("email_status in ('pending', 'failed')");
-    expect(claim).toContain("p_attempted_at - interval '15 minutes'");
+    expect(claim).toContain("clock_timestamp() - interval '15 minutes'");
+    expect(claim).not.toContain(
+      "updated_at <= p_attempted_at - interval '15 minutes'",
+    );
     expect(claim).toContain("(email_metadata->>'attempts')::integer + 1");
     expect(claim).toContain("email_status = 'sending'");
     expect(migration).toContain(

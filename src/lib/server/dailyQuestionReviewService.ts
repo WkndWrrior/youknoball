@@ -530,6 +530,7 @@ export async function runNightlyQuestionReview({
               startedAt: initialLease.heartbeatAt,
               leaseExpiresAt: initialLease.leaseExpiresAt,
             });
+            releaseUnboundReservation = false;
             if (!started.claimed || !started.claimToken) {
               return { kind: "observed" as const, run: started.run };
             }
@@ -555,6 +556,7 @@ export async function runNightlyQuestionReview({
             startedAt: initialLease.heartbeatAt,
             leaseExpiresAt: initialLease.leaseExpiresAt,
           });
+          releaseUnboundReservation = false;
           if (!started.claimed || !started.claimToken) {
             return { kind: "observed" as const, run: started.run };
           }
@@ -749,10 +751,13 @@ export async function runNightlyQuestionReview({
             });
             if (!candidate) continue;
 
+            const currentReservationCost =
+              persistedRun.estimatedCostMicrodollars -
+              reservation.runCostBaselineMicrodollars;
             if (
-              persistedRun.estimatedCostMicrodollars +
-                MAX_VERIFICATION_RESERVATION_MICRODOLLARS >
-              reservation.reservedMicrodollars
+              currentReservationCost < 0 ||
+              currentReservationCost + MAX_VERIFICATION_RESERVATION_MICRODOLLARS >
+                reservation.reservedMicrodollars
             ) {
               runErrors.push({
                 phase: "replacement",

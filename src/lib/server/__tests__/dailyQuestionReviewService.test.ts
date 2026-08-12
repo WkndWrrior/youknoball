@@ -150,6 +150,7 @@ function makeStoredItem(
 function createDependencies(options: {
   verifier?: DailyQuestionReviewServiceDependencies["verifyQuestion"];
   reservationCreated?: boolean;
+  reservationRunCostBaselineMicrodollars?: number;
   existingRun?: ReturnType<typeof makeRun>;
   existingItems?: ReturnType<typeof makeStoredItem>[];
   sendEmail?: DailyQuestionReviewServiceDependencies["sendReviewEmail"];
@@ -174,6 +175,8 @@ function createDependencies(options: {
       created: options.reservationCreated ?? true,
       reservationId: uuid(500),
       reservedMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+      runCostBaselineMicrodollars:
+        options.reservationRunCostBaselineMicrodollars ?? 0,
     })),
     reconcileReservation: vi.fn(async (input) => ({
       outcome: input.actualMicrodollars === 0 ? "released" : "reconciled",
@@ -587,6 +590,7 @@ describe("runNightlyQuestionReview", () => {
       created: acquisition++ === 0,
       reservationId: uuid(500),
       reservedMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+      runCostBaselineMicrodollars: 0,
     }));
 
     const [first, second] = await Promise.all([
@@ -600,6 +604,25 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.prepareDraft).toHaveBeenCalledOnce();
     expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(5);
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
+    expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
+  });
+
+  it("does not release a creator reservation when a reuser wins the run start race", async () => {
+    const winner = makeRun();
+    const { dependencies } = createDependencies();
+    vi.mocked(dependencies.startOrObserve).mockResolvedValue({
+      created: false,
+      claimed: false,
+      claimToken: null,
+      run: winner,
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).resolves.toMatchObject({ kind: "observed", run: { id: winner.id } });
+
     expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
   });
 
@@ -804,6 +827,32 @@ describe("runNightlyQuestionReview", () => {
     });
   });
 
+  it("uses current-reservation spend when guarding replacement verification", async () => {
+    const historicalCost = 5_000_000;
+    const flaggedItem = {
+      ...makeStoredItem(3, "completed"),
+      finding: makeFinding(questions[2], "risk"),
+    } as DailyQuestionReviewItemRecord;
+    const existingItems = [1, 2, 4, 5].map((slot) =>
+      makeStoredItem(slot, "completed"),
+    );
+    existingItems.push(flaggedItem);
+    const { dependencies } = createDependencies({
+      existingRun: makeRun({
+        status: "failed",
+        completedAt: now.toISOString(),
+        estimatedCostMicrodollars: historicalCost,
+      }),
+      existingItems,
+      reservationRunCostBaselineMicrodollars: historicalCost,
+    });
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+
+    expect(dependencies.verifyQuestion).toHaveBeenCalledOnce();
+    expect(dependencies.saveItem).toHaveBeenCalledOnce();
+  });
+
   it("resumes after a pre-finalization crash without losing or double-counting persisted usage", async () => {
     const { dependencies } = createDependencies();
     let persistedRun = makeRun();
@@ -815,6 +864,7 @@ describe("runNightlyQuestionReview", () => {
       created: acquisition++ === 0,
       reservationId: uuid(500),
       reservedMicrodollars: DAILY_REVIEW_MAX_RUN_RESERVATION_MICRODOLLARS,
+      runCostBaselineMicrodollars: 0,
     }));
     vi.mocked(dependencies.claimExisting).mockImplementation(async () => ({
       claimed: true,

@@ -116,6 +116,7 @@ export interface DailyQuestionReviewReservationContext {
   modelDerivedReservationMicrodollars: number;
   requiredReservationMicrodollars: number;
   reservedMicrodollars: number;
+  runCostBaselineMicrodollars: number;
   monthRange: ChicagoCalendarMonthRange;
 }
 
@@ -728,7 +729,8 @@ export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
     typeof acquisition.reservationId !== "string" ||
     acquisition.reservationId.trim().length === 0 ||
     !isNonnegativeSafeInteger(acquisition.reservedMicrodollars) ||
-    acquisition.reservedMicrodollars !== requiredReservationMicrodollars
+    acquisition.reservedMicrodollars !== requiredReservationMicrodollars ||
+    !isNonnegativeSafeInteger(acquisition.runCostBaselineMicrodollars)
   ) {
     return {
       budget: {
@@ -747,6 +749,7 @@ export async function runWithDailyQuestionReviewBudgetPreflight<T>(options: {
     modelDerivedReservationMicrodollars: modelReservationMicrodollars,
     requiredReservationMicrodollars,
     reservedMicrodollars: acquisition.reservedMicrodollars,
+    runCostBaselineMicrodollars: acquisition.runCostBaselineMicrodollars,
     monthRange,
   };
 

@@ -638,6 +638,7 @@ describe("reservation and email state", () => {
           created: true,
           reservation_id: ids.reservation,
           reserved_microdollars: 5_040_000,
+          run_cost_baseline_microdollars: 200,
         },
         error: null,
       },
@@ -665,6 +666,7 @@ describe("reservation and email state", () => {
       created: true,
       reservationId: ids.reservation,
       reservedMicrodollars: 5_040_000,
+      runCostBaselineMicrodollars: 200,
     });
 
     expect(client.rpc).toHaveBeenCalledWith("acquire_daily_question_review_reservation", {

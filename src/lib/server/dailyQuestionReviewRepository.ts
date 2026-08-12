@@ -750,7 +750,8 @@ export async function acquireDailyQuestionReviewReservation(
   if (
     typeof data.created !== "boolean" ||
     !isUuid(data.reservation_id) ||
-    !isNonnegativeInteger(data.reserved_microdollars)
+    !isNonnegativeInteger(data.reserved_microdollars) ||
+    !isNonnegativeInteger(data.run_cost_baseline_microdollars)
   ) {
     throw new Error("Reservation acquisition returned invalid data.");
   }
@@ -759,6 +760,7 @@ export async function acquireDailyQuestionReviewReservation(
     created: data.created,
     reservationId: data.reservation_id,
     reservedMicrodollars: data.reserved_microdollars,
+    runCostBaselineMicrodollars: data.run_cost_baseline_microdollars,
   };
 }
 

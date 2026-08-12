@@ -1261,7 +1261,8 @@ begin
       'acquired', true,
       'created', false,
       'reservation_id', v_existing.id,
-      'reserved_microdollars', v_existing.reserved_microdollars
+      'reserved_microdollars', v_existing.reserved_microdollars,
+      'run_cost_baseline_microdollars', v_existing.run_cost_baseline_microdollars
     );
   end if;
 
@@ -1351,7 +1352,8 @@ begin
     'acquired', true,
     'created', true,
     'reservation_id', v_reservation_id,
-    'reserved_microdollars', p_required_reservation_microdollars
+    'reserved_microdollars', p_required_reservation_microdollars,
+    'run_cost_baseline_microdollars', v_run_cost_baseline_microdollars
   );
 end;
 $function$;
@@ -1593,7 +1595,7 @@ begin
       email_status in ('pending', 'failed')
       or (
         email_status = 'sending'
-        and updated_at <= p_attempted_at - interval '15 minutes'
+        and updated_at <= clock_timestamp() - interval '15 minutes'
       )
     )
     and (email_metadata->>'attempts')::integer < 10
