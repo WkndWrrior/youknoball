@@ -9,6 +9,7 @@ import type { ServerSupabaseClient } from "@/lib/server/supabaseServer";
 import {
   acquireDailyQuestionReviewReservation,
   claimDailyQuestionReviewEmail,
+  claimDailyQuestionReviewBudgetEmail,
   completeDailyQuestionReviewRun,
   heartbeatDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
@@ -19,6 +20,8 @@ import {
   loadOldestRecoverableDailyQuestionReview,
   markDailyQuestionReviewEmailFailed,
   markDailyQuestionReviewEmailSent,
+  markDailyQuestionReviewBudgetEmailFailed,
+  markDailyQuestionReviewBudgetEmailSent,
   reconcileDailyQuestionReviewReservation,
   recordDailyQuestionReviewBudgetBlock,
   startOrObserveDailyQuestionReviewRun,
@@ -1043,5 +1046,62 @@ describe("reservation and email state", () => {
         message: "No route",
       }),
     ).resolves.toMatchObject({ email: { status: "failed" } });
+  });
+
+  it("claims and records retryable budget-denial email delivery", async () => {
+    const claimClient = createClientMock({}, {
+      claim_daily_question_review_budget_email: {
+        data: {
+          claimed: true,
+          reservation_id: ids.reservation,
+          attempts: 2,
+        },
+        error: null,
+      },
+    });
+    await expect(
+      claimDailyQuestionReviewBudgetEmail(
+        claimClient,
+        "2026-08-10",
+        timestamp,
+      ),
+    ).resolves.toEqual({
+      claimed: true,
+      reservationId: ids.reservation,
+      attempts: 2,
+    });
+
+    const sent = createThenableQuery({ data: null, error: null });
+    await expect(
+      markDailyQuestionReviewBudgetEmailSent(
+        createClientMock({ daily_question_review_reservations: sent }),
+        ids.reservation,
+        {
+          sentAt: timestamp,
+          providerMessageId: "message-1",
+          attempts: 2,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(sent.update).toHaveBeenCalledWith(expect.objectContaining({
+      budget_email_status: "sent",
+    }));
+
+    const failed = createThenableQuery({ data: null, error: null });
+    await expect(
+      markDailyQuestionReviewBudgetEmailFailed(
+        createClientMock({ daily_question_review_reservations: failed }),
+        ids.reservation,
+        {
+          attemptedAt: timestamp,
+          attempts: 2,
+          code: "email_failed",
+          message: "No route",
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(failed.update).toHaveBeenCalledWith(expect.objectContaining({
+      budget_email_status: "failed",
+    }));
   });
 });

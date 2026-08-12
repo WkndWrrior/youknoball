@@ -861,6 +861,7 @@ export async function recordDailyQuestionReviewBudgetBlock(
       acquired_at: input.attemptedAt,
       reconciled_at: input.attemptedAt,
       denial_reason: input.reason.slice(0, 100),
+      budget_email_status: "pending",
     });
   if (error) {
     if (isUniqueConflict(error)) return { created: false };
@@ -917,6 +918,84 @@ export async function claimDailyQuestionReviewEmail(
     throw new Error("Email claim returned invalid data.");
   }
   return { claimed: data.claimed, attempts: data.attempts };
+}
+
+export async function claimDailyQuestionReviewBudgetEmail(
+  client: ServerSupabaseClient,
+  challengeDate: string,
+  attemptedAt: string,
+) {
+  const { data, error } = await client.rpc(
+    "claim_daily_question_review_budget_email",
+    {
+      p_challenge_date: challengeDate,
+      p_attempted_at: attemptedAt,
+    },
+  );
+  throwIfError(error);
+  if (
+    !isRecord(data) ||
+    typeof data.claimed !== "boolean" ||
+    !isNonnegativeInteger(data.attempts) ||
+    (data.reservation_id !== null && !isUuid(data.reservation_id))
+  ) {
+    throw new Error("Budget email claim returned invalid data.");
+  }
+  return {
+    claimed: data.claimed,
+    reservationId: data.reservation_id as string | null,
+    attempts: data.attempts,
+  };
+}
+
+export async function markDailyQuestionReviewBudgetEmailSent(
+  client: ServerSupabaseClient,
+  reservationId: string,
+  input: { sentAt: string; providerMessageId: string; attempts: number },
+): Promise<void> {
+  const { error } = await client
+    .from("daily_question_review_reservations")
+    .update({
+      budget_email_status: "sent",
+      budget_email_metadata: {
+        provider: "resend",
+        providerMessageId: input.providerMessageId,
+        attempts: input.attempts,
+        lastAttemptAt: input.sentAt,
+        failure: null,
+      },
+    })
+    .eq("id", reservationId)
+    .eq("status", "denied")
+    .eq("budget_email_status", "sending");
+  throwIfError(error);
+}
+
+export async function markDailyQuestionReviewBudgetEmailFailed(
+  client: ServerSupabaseClient,
+  reservationId: string,
+  input: { attemptedAt: string; attempts: number; code: string; message: string },
+): Promise<void> {
+  const { error } = await client
+    .from("daily_question_review_reservations")
+    .update({
+      budget_email_status: "failed",
+      budget_email_metadata: {
+        provider: "resend",
+        providerMessageId: null,
+        attempts: input.attempts,
+        lastAttemptAt: input.attemptedAt,
+        failure: {
+          code: input.code.slice(0, 100),
+          message: input.message.slice(0, 1_000),
+          occurredAt: input.attemptedAt,
+        },
+      },
+    })
+    .eq("id", reservationId)
+    .eq("status", "denied")
+    .eq("budget_email_status", "sending");
+  throwIfError(error);
 }
 
 export async function markDailyQuestionReviewEmailSent(

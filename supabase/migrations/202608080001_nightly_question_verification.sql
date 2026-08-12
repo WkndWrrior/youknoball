@@ -667,6 +667,24 @@ create table if not exists public.daily_question_review_reservations (
     denial_reason is null
     or char_length(btrim(denial_reason)) between 1 and 100
   ),
+  budget_email_status text not null default 'not_applicable'
+    check (budget_email_status in ('not_applicable', 'pending', 'sending', 'sent', 'failed')),
+  budget_email_metadata jsonb not null default
+    '{"provider":"resend","providerMessageId":null,"attempts":0,"lastAttemptAt":null,"failure":null}'::jsonb
+    check (
+      jsonb_typeof(budget_email_metadata) = 'object'
+      and budget_email_metadata ?& array[
+        'provider',
+        'providerMessageId',
+        'attempts',
+        'lastAttemptAt',
+        'failure'
+      ]
+      and budget_email_metadata->>'provider' = 'resend'
+      and jsonb_typeof(budget_email_metadata->'attempts') = 'number'
+      and (budget_email_metadata->>'attempts')::integer between 0 and 10
+      and octet_length(budget_email_metadata::text) <= 4000
+    ),
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
   check (review_date < challenge_date),
@@ -696,6 +714,43 @@ create table if not exists public.daily_question_review_reservations (
       and actual_microdollars = 0
       and reconciled_at is not null
       and denial_reason is not null
+    )
+  ),
+  check (
+    (status <> 'denied' and budget_email_status = 'not_applicable')
+    or (
+      status = 'denied'
+      and budget_email_status in ('pending', 'sending', 'sent', 'failed')
+      and (
+        (
+          budget_email_status = 'pending'
+          and (budget_email_metadata->>'attempts')::integer = 0
+          and jsonb_typeof(budget_email_metadata->'providerMessageId') = 'null'
+          and jsonb_typeof(budget_email_metadata->'lastAttemptAt') = 'null'
+          and jsonb_typeof(budget_email_metadata->'failure') = 'null'
+        )
+        or (
+          budget_email_status = 'sending'
+          and (budget_email_metadata->>'attempts')::integer >= 1
+          and jsonb_typeof(budget_email_metadata->'providerMessageId') = 'null'
+          and jsonb_typeof(budget_email_metadata->'lastAttemptAt') = 'string'
+          and jsonb_typeof(budget_email_metadata->'failure') = 'null'
+        )
+        or (
+          budget_email_status = 'sent'
+          and (budget_email_metadata->>'attempts')::integer >= 1
+          and jsonb_typeof(budget_email_metadata->'providerMessageId') = 'string'
+          and jsonb_typeof(budget_email_metadata->'lastAttemptAt') = 'string'
+          and jsonb_typeof(budget_email_metadata->'failure') = 'null'
+        )
+        or (
+          budget_email_status = 'failed'
+          and (budget_email_metadata->>'attempts')::integer >= 1
+          and jsonb_typeof(budget_email_metadata->'providerMessageId') = 'null'
+          and jsonb_typeof(budget_email_metadata->'lastAttemptAt') = 'string'
+          and jsonb_typeof(budget_email_metadata->'failure') = 'object'
+        )
+      )
     )
   )
 );
@@ -1421,7 +1476,8 @@ begin
       month_end,
       acquired_at,
       reconciled_at,
-      denial_reason
+      denial_reason,
+      budget_email_status
     ) values (
       p_review_date,
       p_challenge_date,
@@ -1433,7 +1489,8 @@ begin
       p_month_end,
       p_now,
       p_now,
-      'monthly_budget_exceeded'
+      'monthly_budget_exceeded',
+      'pending'
     )
     on conflict (challenge_date, run_kind)
       where status = 'denied'
@@ -1775,6 +1832,77 @@ grant execute on function public.claim_daily_question_review_email(uuid, timesta
 
 comment on function public.claim_daily_question_review_email(uuid, timestamptz) is
   'Service-role-only atomic claim for one nightly review email attempt.';
+
+create or replace function public.claim_daily_question_review_budget_email(
+  p_challenge_date date,
+  p_attempted_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_reservation_id uuid;
+  v_attempts integer;
+begin
+  if p_challenge_date is null or p_attempted_at is null then
+    return jsonb_build_object(
+      'claimed', false,
+      'reservation_id', null,
+      'attempts', 0
+    );
+  end if;
+
+  update public.daily_question_review_reservations
+  set budget_email_status = 'sending',
+      budget_email_metadata = jsonb_build_object(
+        'provider', 'resend',
+        'providerMessageId', null,
+        'attempts', (budget_email_metadata->>'attempts')::integer + 1,
+        'lastAttemptAt', p_attempted_at,
+        'failure', null
+      )
+  where challenge_date = p_challenge_date
+    and run_kind = 'scheduled'
+    and status = 'denied'
+    and (
+      budget_email_status in ('pending', 'failed')
+      or (
+        budget_email_status = 'sending'
+        and updated_at <= clock_timestamp() - interval '15 minutes'
+      )
+    )
+    and (budget_email_metadata->>'attempts')::integer < 10
+  returning id, (budget_email_metadata->>'attempts')::integer
+  into v_reservation_id, v_attempts;
+
+  if not found then
+    select id, (budget_email_metadata->>'attempts')::integer
+    into v_reservation_id, v_attempts
+    from public.daily_question_review_reservations
+    where challenge_date = p_challenge_date
+      and run_kind = 'scheduled'
+      and status = 'denied';
+
+    return jsonb_build_object(
+      'claimed', false,
+      'reservation_id', null,
+      'attempts', coalesce(v_attempts, 0)
+    );
+  end if;
+
+  return jsonb_build_object(
+    'claimed', true,
+    'reservation_id', v_reservation_id,
+    'attempts', v_attempts
+  );
+end;
+$function$;
+
+revoke all on function public.claim_daily_question_review_budget_email(date, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.claim_daily_question_review_budget_email(date, timestamptz) to service_role;
 
 drop trigger if exists daily_question_review_runs_set_updated_at
   on public.daily_question_review_runs;

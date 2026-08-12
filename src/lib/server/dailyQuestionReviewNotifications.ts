@@ -220,6 +220,7 @@ export async function sendDailyQuestionReviewNotification(
 
 export async function sendDailyQuestionReviewBudgetBlockNotification(
   input: {
+    notificationId: string;
     challengeDate: string;
     reason: string;
     reservedMicrodollars: number;
@@ -261,6 +262,7 @@ export async function sendDailyQuestionReviewBudgetBlockNotification(
       headers: {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
+        "idempotency-key": `daily-question-review-budget-${input.notificationId}`,
       },
       signal: controller.signal,
       body: JSON.stringify({

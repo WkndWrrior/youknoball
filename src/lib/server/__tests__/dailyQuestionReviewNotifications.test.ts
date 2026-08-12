@@ -267,6 +267,7 @@ describe("daily question review notifications", () => {
   it("sends a budget-blocked alert without requiring a draft", async () => {
     const result = await sendDailyQuestionReviewBudgetBlockNotification(
       {
+        notificationId: "50000000-0000-4000-8000-000000000001",
         challengeDate: "2026-08-13",
         reason: "reservation_exceeds_remaining",
         reservedMicrodollars: 5_040_000,
@@ -279,6 +280,10 @@ describe("daily question review notifications", () => {
     expect(body.subject).toBe("Daily 5 review budget blocked: August 13, 2026");
     expect(body.text).toContain("No OpenAI verification calls were made.");
     expect(body.text).toContain("reservation_exceeds_remaining");
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
+      "idempotency-key":
+        "daily-question-review-budget-50000000-0000-4000-8000-000000000001",
+    });
   });
 
   it("aborts a timed-out Resend request", async () => {

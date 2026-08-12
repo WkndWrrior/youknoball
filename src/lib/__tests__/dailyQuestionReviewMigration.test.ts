@@ -570,6 +570,33 @@ describe("nightly question verification migration", () => {
     );
   });
 
+  it("persists and atomically claims retryable budget-denial email delivery", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const claim = normalizedStatement(
+      migration,
+      "create or replace function public.claim_daily_question_review_budget_email",
+    );
+
+    expect(migration).toContain("budget_email_status text not null");
+    expect(migration).toContain(
+      "budget_email_status in ('not_applicable', 'pending', 'sending', 'sent', 'failed')",
+    );
+    expect(migration).toContain("budget_email_metadata jsonb not null");
+    expect(claim).toContain("status = 'denied'");
+    expect(claim).toContain("budget_email_status in ('pending', 'failed')");
+    expect(claim).toContain("budget_email_status = 'sending'");
+    expect(claim).toContain("clock_timestamp() - interval '15 minutes'");
+    expect(claim).toContain(
+      "(budget_email_metadata->>'attempts')::integer < 10",
+    );
+    expect(migration).toContain(
+      "revoke all on function public.claim_daily_question_review_budget_email(date, timestamptz) from public, anon, authenticated",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.claim_daily_question_review_budget_email(date, timestamptz) to service_role",
+    );
+  });
+
   it("serializes run binding with zero-cost reservation release", async () => {
     const migration = await readFile(migrationPath, "utf8");
     const guard = normalizedStatement(

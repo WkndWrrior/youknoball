@@ -283,7 +283,14 @@ function createDependencies(options: {
     sendReviewEmail:
       options.sendEmail ??
       vi.fn(async () => ({ providerMessageId: "email-1" })),
-    sendBudgetBlockEmail: vi.fn(async () => undefined),
+    sendBudgetBlockEmail: vi.fn(async () => ({ providerMessageId: "budget-email-1" })),
+    claimBudgetBlockEmail: vi.fn(async () => ({
+      claimed: true,
+      reservationId: uuid(501),
+      attempts: 1,
+    })),
+    markBudgetBlockEmailSent: vi.fn(async () => undefined),
+    markBudgetBlockEmailFailed: vi.fn(async () => undefined),
     markEmailSent: vi.fn(async () => undefined),
     markEmailFailed: vi.fn(async () => undefined),
   };
@@ -584,6 +591,58 @@ describe("runNightlyQuestionReview", () => {
     );
   });
 
+  it("persists unknown primary usage as terminal uncertainty and charges conservatively", async () => {
+    const existingItems = [2, 3, 4, 5].map((slot) =>
+      makeStoredItem(slot, "completed"),
+    );
+    const verifier = vi.fn(async () => {
+      throw new OpenAiQuestionVerifierError("timeout", "Timed out", {
+        retryable: true,
+      });
+    });
+    const context = createDependencies({
+      verifier,
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: {
+        claimed: true,
+        claimToken: uuid(601),
+        run: makeRun(),
+      },
+    });
+    enableResumableInvocations(context, true);
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({
+      kind: "completed",
+      run: { status: "failed" },
+    });
+
+    expect(verifier).toHaveBeenCalledOnce();
+    expect(context.items.get(1)).toMatchObject({
+      reviewStatus: "failed",
+      finding: { verdict: "unable_to_verify" },
+    });
+    expect(context.getRun().errors).toEqual([
+      expect.objectContaining({
+        code: "usage_uncertain",
+        questionId: questionIds[0],
+      }),
+    ]);
+    expect(context.dependencies.completeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
+  });
+
   it("persists replacement operational failures as terminal ineligible outcomes", async () => {
     const flaggedItem = {
       ...makeStoredItem(3, "completed"),
@@ -626,6 +685,61 @@ describe("runNightlyQuestionReview", () => {
       dependencies: context.dependencies,
     })).resolves.toMatchObject({ kind: "completed" });
     expect(verifier).toHaveBeenCalledOnce();
+  });
+
+  it("persists unknown replacement usage without retrying the billed candidate", async () => {
+    const flaggedItem = {
+      ...makeStoredItem(3, "completed"),
+      finding: makeFinding(questions[2], "risk"),
+    } as DailyQuestionReviewItemRecord;
+    const existingItems = [1, 2, 4, 5].map((slot) =>
+      makeStoredItem(slot, "completed"),
+    );
+    existingItems.push(flaggedItem);
+    const verifier = vi.fn(async () => {
+      throw new OpenAiQuestionVerifierError("network_error", "Network failed", {
+        retryable: true,
+      });
+    });
+    const context = createDependencies({
+      verifier,
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: {
+        claimed: true,
+        claimToken: uuid(601),
+        run: makeRun(),
+      },
+    });
+    enableResumableInvocations(context, true);
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({
+      kind: "completed",
+      run: { status: "failed" },
+    });
+
+    expect(verifier).toHaveBeenCalledOnce();
+    expect(context.items.get(3)).toMatchObject({
+      reviewStatus: "failed",
+      replacement: {
+        eligible: false,
+        questionId: replacementId,
+        finding: { verdict: "unable_to_verify" },
+      },
+    });
+    expect(context.getRun().errors).toEqual([
+      expect.objectContaining({ code: "usage_uncertain" }),
+    ]);
   });
 
   it("collects replacement evidence before persisting a failed placeholder immediately before verification", async () => {
@@ -1018,17 +1132,59 @@ describe("runNightlyQuestionReview", () => {
     );
   });
 
-  it("does not resend a budget alert when the denial record already exists", async () => {
+  it("retries a failed budget alert and does not duplicate an accepted alert", async () => {
     const { dependencies } = createDependencies();
     vi.mocked(dependencies.acquireReservation).mockResolvedValue({
       acquired: false,
       denialCreated: false,
     });
+    vi.mocked(dependencies.claimBudgetBlockEmail)
+      .mockResolvedValueOnce({
+        claimed: true,
+        reservationId: uuid(501),
+        attempts: 2,
+      })
+      .mockResolvedValueOnce({
+        claimed: false,
+        reservationId: null,
+        attempts: 2,
+      });
+
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+
+    expect(dependencies.sendBudgetBlockEmail).toHaveBeenCalledOnce();
+    expect(dependencies.sendBudgetBlockEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationId: uuid(501) }),
+    );
+    expect(dependencies.markBudgetBlockEmailSent).toHaveBeenCalledOnce();
+    expect(dependencies.recordBudgetBlock).not.toHaveBeenCalled();
+  });
+
+  it("persists budget alert delivery failure for a later retry", async () => {
+    const { dependencies } = createDependencies();
+    const sendBudgetBlockEmail = dependencies.sendBudgetBlockEmail;
+    if (!sendBudgetBlockEmail) {
+      throw new Error("Expected budget email sender dependency");
+    }
+    vi.mocked(dependencies.acquireReservation).mockResolvedValue({
+      acquired: false,
+      denialCreated: false,
+    });
+    vi.mocked(sendBudgetBlockEmail).mockRejectedValue(
+      new Error("email unavailable"),
+    );
 
     await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
 
-    expect(dependencies.sendBudgetBlockEmail).not.toHaveBeenCalled();
-    expect(dependencies.recordBudgetBlock).not.toHaveBeenCalled();
+    expect(dependencies.markBudgetBlockEmailFailed).toHaveBeenCalledWith(
+      uuid(501),
+      expect.objectContaining({
+        attempts: 1,
+        code: "email_failed",
+        message: "email unavailable",
+      }),
+    );
   });
 
   it("fits all five required replacements inside the exact worst-case reservation", async () => {

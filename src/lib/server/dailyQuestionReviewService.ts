@@ -32,6 +32,7 @@ import {
   acquireDailyQuestionReviewReservation,
   claimExistingDailyQuestionReviewRun,
   claimDailyQuestionReviewEmail,
+  claimDailyQuestionReviewBudgetEmail,
   completeDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
   loadActiveDailyQuestionReviewReservation,
@@ -41,6 +42,8 @@ import {
   heartbeatDailyQuestionReviewRun,
   markDailyQuestionReviewEmailFailed,
   markDailyQuestionReviewEmailSent,
+  markDailyQuestionReviewBudgetEmailFailed,
+  markDailyQuestionReviewBudgetEmailSent,
   reconcileDailyQuestionReviewReservation,
   recordDailyQuestionReviewBudgetBlock,
   startOrObserveDailyQuestionReviewRun,
@@ -168,12 +171,34 @@ export interface DailyQuestionReviewServiceDependencies {
     | null;
   sendBudgetBlockEmail:
     | ((input: {
+        notificationId: string;
         challengeDate: string;
         reason: string;
         reservedMicrodollars: number;
         remainingMicrodollars: number;
-      }) => Promise<void>)
+      }) => Promise<{ providerMessageId: string }>)
     | null;
+  claimBudgetBlockEmail: (
+    challengeDate: string,
+    attemptedAt: string,
+  ) => Promise<{
+    claimed: boolean;
+    reservationId: string | null;
+    attempts: number;
+  }>;
+  markBudgetBlockEmailSent: (
+    reservationId: string,
+    input: { sentAt: string; providerMessageId: string; attempts: number },
+  ) => Promise<unknown>;
+  markBudgetBlockEmailFailed: (
+    reservationId: string,
+    input: {
+      attemptedAt: string;
+      attempts: number;
+      code: string;
+      message: string;
+    },
+  ) => Promise<unknown>;
   markEmailSent: (
     runId: string,
     input: { sentAt: string; providerMessageId: string; attempts: number },
@@ -238,6 +263,15 @@ function errorUsage(error: unknown): UsageTotals {
     ...error.accounting.usage,
     webSearchCalls: error.accounting.webSearchCalls,
   };
+}
+
+function usageIsUncertain(error: unknown): boolean {
+  if (!(error instanceof OpenAiQuestionVerifierError)) return true;
+  if (["invalid_input", "missing_api_key", "unsupported_model"].includes(error.code)) {
+    return false;
+  }
+  const usage = errorUsage(error);
+  return Object.values(usage).every((value) => value === 0);
 }
 
 function costUsage(model: string, usage: UsageTotals): number {
@@ -470,16 +504,62 @@ function createDefaultDependencies(context: {
       return { providerMessageId: result.providerMessageId };
     },
     sendBudgetBlockEmail: async (input) => {
-      await sendDailyQuestionReviewBudgetBlockNotification({
+      const result = await sendDailyQuestionReviewBudgetBlockNotification({
         ...input,
         siteUrlFallback: context.siteUrlFallback,
       });
+      if (!result.sent) {
+        throw new Error("Budget-block email is not configured.");
+      }
+      return { providerMessageId: result.providerMessageId };
     },
+    claimBudgetBlockEmail: (challengeDate, attemptedAt) =>
+      claimDailyQuestionReviewBudgetEmail(client, challengeDate, attemptedAt),
+    markBudgetBlockEmailSent: (reservationId, input) =>
+      markDailyQuestionReviewBudgetEmailSent(client, reservationId, input),
+    markBudgetBlockEmailFailed: (reservationId, input) =>
+      markDailyQuestionReviewBudgetEmailFailed(client, reservationId, input),
     markEmailSent: (runId, input) =>
       markDailyQuestionReviewEmailSent(client, runId, input),
     markEmailFailed: (runId, input) =>
       markDailyQuestionReviewEmailFailed(client, runId, input),
   };
+}
+
+async function attemptBudgetBlockEmail(
+  deps: DailyQuestionReviewServiceDependencies,
+  input: {
+    challengeDate: string;
+    reason: string;
+    reservedMicrodollars: number;
+    remainingMicrodollars: number;
+  },
+  attemptedAt: string,
+): Promise<void> {
+  if (!deps.sendBudgetBlockEmail) return;
+  const claim = await deps.claimBudgetBlockEmail(
+    input.challengeDate,
+    attemptedAt,
+  );
+  if (!claim.claimed || !claim.reservationId) return;
+  try {
+    const sent = await deps.sendBudgetBlockEmail({
+      ...input,
+      notificationId: claim.reservationId,
+    });
+    await deps.markBudgetBlockEmailSent(claim.reservationId, {
+      sentAt: attemptedAt,
+      providerMessageId: sent.providerMessageId,
+      attempts: claim.attempts,
+    });
+  } catch (error) {
+    await deps.markBudgetBlockEmailFailed(claim.reservationId, {
+      attemptedAt,
+      attempts: claim.attempts,
+      code: "email_failed",
+      message: errorMessage(error),
+    });
+  }
 }
 
 async function attemptReviewEmail(
@@ -773,10 +853,13 @@ export async function runNightlyQuestionReview({
           } catch (error) {
             clearPendingPersistence();
             const chargedUsage = errorUsage(error);
+            const uncertainUsage = usageIsUncertain(error);
             runErrors.push(
               makeRunError(
                 "verification",
-                error instanceof OpenAiQuestionVerifierError
+                uncertainUsage
+                  ? "usage_uncertain"
+                  : error instanceof OpenAiQuestionVerifierError
                   ? error.code
                   : "verification_failed",
                 error,
@@ -789,11 +872,13 @@ export async function runNightlyQuestionReview({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
                 question,
-                reviewStatus: "completed",
+                reviewStatus: uncertainUsage ? "failed" : "completed",
                 sourceFetchResults: evidence.sourceFetchResults,
                 finding: terminalUnableFinding(question, error, occurredAt),
                 replacement: null,
-                usageEvent: makeUsageEvent("primary", deps.model, chargedUsage),
+                usageEvent: uncertainUsage
+                  ? null
+                  : makeUsageEvent("primary", deps.model, chargedUsage),
               });
             } catch (persistError) {
               runErrors.push(
@@ -1006,10 +1091,13 @@ export async function runNightlyQuestionReview({
               });
             } catch (error) {
               clearPendingPersistence();
+              const uncertainUsage = usageIsUncertain(error);
               runErrors.push(
                 makeRunError(
                   "replacement",
-                  error instanceof OpenAiQuestionVerifierError
+                  uncertainUsage
+                    ? "usage_uncertain"
+                    : error instanceof OpenAiQuestionVerifierError
                     ? error.code
                     : "replacement_verification_failed",
                   error,
@@ -1021,15 +1109,17 @@ export async function runNightlyQuestionReview({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
                 question: primaryItem.question,
-                reviewStatus: "completed",
+                reviewStatus: uncertainUsage ? "failed" : "completed",
                 sourceFetchResults: primaryItem.sourceFetchResults,
                 finding: primaryItem.finding,
                 replacement: terminalReplacement(candidate, error, occurredAt),
-                usageEvent: makeUsageEvent(
-                  "replacement",
-                  deps.model,
-                  errorUsage(error),
-                ),
+                usageEvent: uncertainUsage
+                  ? null
+                  : makeUsageEvent(
+                      "replacement",
+                      deps.model,
+                      errorUsage(error),
+                    ),
               });
               continue;
             }
@@ -1161,25 +1251,27 @@ export async function runNightlyQuestionReview({
     preflight.value === null
   ) {
     const atomicDenial = preflight.budget.reason === "atomic_reservation_denied";
-    const created = atomicDenial
-      ? preflight.budget.denialCreated === true
-      : (await deps.recordBudgetBlock({
-          reviewDate,
-          challengeDate: targetChallengeDate,
-          model: deps.model,
-          reservedMicrodollars: preflight.budget.reservedMicrodollars,
-          monthRange,
-          attemptedAt: occurredAt,
-          reason: preflight.budget.reason,
-        })).created;
-    if (created && deps.sendBudgetBlockEmail) {
-      await deps.sendBudgetBlockEmail({
+    if (!atomicDenial) {
+      await deps.recordBudgetBlock({
+        reviewDate,
+        challengeDate: targetChallengeDate,
+        model: deps.model,
+        reservedMicrodollars: preflight.budget.reservedMicrodollars,
+        monthRange,
+        attemptedAt: occurredAt,
+        reason: preflight.budget.reason,
+      });
+    }
+    await attemptBudgetBlockEmail(
+      deps,
+      {
         challengeDate: targetChallengeDate,
         reason: preflight.budget.reason,
         reservedMicrodollars: preflight.budget.reservedMicrodollars,
         remainingMicrodollars: preflight.budget.remainingMicrodollars,
-      });
-    }
+      },
+      occurredAt,
+    );
     return { kind: "budget_blocked", budget: preflight.budget };
   }
   return { ...preflight.value, budget: preflight.budget };
