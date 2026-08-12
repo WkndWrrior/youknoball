@@ -82,12 +82,14 @@ export default async function DailyReviewPage({
                 {!item.replacement.eligible ? <p>Replacement unavailable.</p> : null}
               </section>
             ) : null}
-            {item.finding?.verdict !== "passed" ? (
+            {item.reviewStatus === "completed" &&
+            item.resolution === "pending" &&
+            item.finding &&
+            item.finding.verdict !== "passed" ? (
               <DailyReviewActions
                 date={date}
                 reviewItemId={item.id}
                 replacementQuestionId={item.replacement?.eligible ? item.replacement.questionId : null}
-                disabled={item.resolution !== "pending"}
               />
             ) : null}
             {item.resolution !== "pending" ? <p>Resolution: {item.resolution}</p> : null}

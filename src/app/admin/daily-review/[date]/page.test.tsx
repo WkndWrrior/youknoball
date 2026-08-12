@@ -26,4 +26,14 @@ describe("daily review admin page", () => {
     expect(actions).toContain('method: "POST"');
     expect(actions).not.toContain('method: "GET"');
   });
+
+  it("only renders actions for unresolved completed risk findings", () => {
+    const source = readFileSync("src/app/admin/daily-review/[date]/page.tsx", "utf8");
+
+    expect(source).toContain('item.reviewStatus === "completed"');
+    expect(source).toContain('item.resolution === "pending"');
+    expect(source).toContain("item.finding &&");
+    expect(source).toContain('item.finding.verdict !== "passed"');
+    expect(source).not.toContain('disabled={item.resolution !== "pending"}');
+  });
 });
