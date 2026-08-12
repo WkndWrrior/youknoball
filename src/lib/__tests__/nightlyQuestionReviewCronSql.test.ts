@@ -35,7 +35,7 @@ describe("nightly question verification Supabase Cron deployment", () => {
     const sql = await readFile(cronPath, "utf8");
 
     expect(sql).toContain("daily_review_site_url must be a valid HTTPS origin");
-    expect(sql).toMatch(/v_site_url\s*!~\*\s*'.*\^https:\/\//s);
+    expect(sql).toMatch(/v_site_url\s*!~\*\s*'[\s\S]*\^https:\/\//);
     expect(sql).toMatch(/v_site_url\s*<>\s*btrim\(v_site_url\)/);
     expect(sql).toMatch(/\|\|\s*'\/api\/cron\/daily-question-review'/);
   });
