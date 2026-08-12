@@ -1445,7 +1445,7 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
   });
 
-  it("recovers one oldest prior budget alert before run recovery or current-date work", async () => {
+  it("recovers one oldest prior budget alert as side work and still processes the review unit", async () => {
     const { dependencies } = createDependencies();
     vi.mocked(dependencies.claimOldestBudgetBlockEmail).mockResolvedValue({
       claimed: true,
@@ -1461,7 +1461,7 @@ describe("runNightlyQuestionReview", () => {
       challengeDate: "2026-08-10",
       now,
       dependencies,
-    })).resolves.toMatchObject({ kind: "observed", run: null });
+    })).resolves.toMatchObject({ kind: "in_progress" });
 
     expect(dependencies.sendBudgetBlockEmail).toHaveBeenCalledOnce();
     expect(dependencies.sendBudgetBlockEmail).toHaveBeenCalledWith({
@@ -1475,10 +1475,42 @@ describe("runNightlyQuestionReview", () => {
       uuid(502),
       expect.objectContaining({ attempts: 3 }),
     );
-    expect(dependencies.loadOldestRecoverable).not.toHaveBeenCalled();
-    expect(dependencies.loadExisting).not.toHaveBeenCalled();
-    expect(dependencies.acquireReservation).not.toHaveBeenCalled();
-    expect(dependencies.verifyQuestion).not.toHaveBeenCalled();
+    expect(dependencies.loadOldestRecoverable).toHaveBeenCalledWith("2026-08-10");
+    expect(dependencies.acquireReservation).toHaveBeenCalledOnce();
+    expect(dependencies.verifyQuestion).toHaveBeenCalledOnce();
+  });
+
+  it("records a prior budget alert failure and still processes the review unit", async () => {
+    const { dependencies } = createDependencies();
+    const sendBudgetBlockEmail = dependencies.sendBudgetBlockEmail;
+    if (!sendBudgetBlockEmail) {
+      throw new Error("Expected budget email sender dependency");
+    }
+    vi.mocked(dependencies.claimOldestBudgetBlockEmail).mockResolvedValue({
+      claimed: true,
+      reservationId: uuid(502),
+      challengeDate: "2026-08-08",
+      reason: "monthly_budget_exceeded",
+      reservedMicrodollars: 5_040_000,
+      remainingMicrodollars: 2_000_000,
+      attempts: 3,
+    });
+    vi.mocked(sendBudgetBlockEmail).mockRejectedValue(
+      new Error("email unavailable"),
+    );
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+
+    expect(dependencies.markBudgetBlockEmailFailed).toHaveBeenCalledWith(
+      uuid(502),
+      expect.objectContaining({ attempts: 3, message: "email unavailable" }),
+    );
+    expect(dependencies.acquireReservation).toHaveBeenCalledOnce();
+    expect(dependencies.verifyQuestion).toHaveBeenCalledOnce();
   });
 
   it("processes one unit from the oldest prior unfinished run before current-date work", async () => {

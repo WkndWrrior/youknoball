@@ -771,15 +771,15 @@ function parseCompletedResponse(
   apiKey: string,
   webSearchEnabled: boolean,
 ): ParsedResponse {
+  const extracted = extractResponseAccounting(value);
+  const { accounting } = extracted;
   if (!isRecord(value)) {
     throw new OpenAiQuestionVerifierError(
       "non_json_response",
       "OpenAI returned an invalid response object",
-      { retryable: true },
+      { retryable: true, accounting },
     );
   }
-  const extracted = extractResponseAccounting(value);
-  const { accounting } = extracted;
   if (!extracted.usageValid) {
     throw new OpenAiQuestionVerifierError(
       "invalid_usage",

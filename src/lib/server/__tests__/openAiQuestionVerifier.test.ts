@@ -882,6 +882,21 @@ describe("OpenAI question verifier", () => {
     });
   });
 
+  it("marks a valid non-object JSON response with missing usage as uncertain", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse([]));
+
+    await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({
+      code: "non_json_response",
+      accounting: {
+        usageUncertain: true,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      },
+    });
+  });
+
   it("normalizes invalid findings including non-HTTPS evidence", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const invalid = finding();

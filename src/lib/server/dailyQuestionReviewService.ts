@@ -676,18 +676,6 @@ export async function runNightlyQuestionReview({
       },
       occurredAt,
     );
-    const records = await bootstrapDeps.listMonthlyCosts(
-      getChicagoCalendarMonthRange(now),
-    );
-    return {
-      kind: "observed",
-      budget: checkDailyQuestionReviewBudget({
-        model: bootstrapDeps.model,
-        records,
-        now,
-      }),
-      run: null,
-    };
   }
   const priorReview = await bootstrapDeps.loadOldestRecoverable(challengeDate);
   const reviewDate = priorReview?.run.reviewDate ?? currentReviewDate;
