@@ -235,6 +235,7 @@ interface ModelFinding {
 
 interface ParsedResponse {
   finding: ModelFinding;
+  searchFallbackEligible: boolean;
   usage: OpenAiQuestionVerifierUsage;
   webSearchCalls: number;
   sources: OpenAiQuestionVerifierSource[];
@@ -825,10 +826,9 @@ function parseCompletedResponse(
     );
   }
   if (!outputText.text) {
-    throw new OpenAiQuestionVerifierError(
-      "missing_output_text",
-      "OpenAI response did not include output text",
-      { retryable: true, accounting },
+    return invalidOutputResponse(
+      "The completed verification response did not include output text.",
+      accounting,
     );
   }
 
@@ -836,25 +836,43 @@ function parseCompletedResponse(
   try {
     rawFinding = JSON.parse(outputText.text) as unknown;
   } catch {
-    throw new OpenAiQuestionVerifierError(
-      "malformed_output",
-      "OpenAI output was not valid JSON",
-      { retryable: true, accounting },
+    return invalidOutputResponse(
+      "The completed verification response was not valid JSON.",
+      accounting,
     );
   }
   const finding = parseModelFinding(rawFinding, allowedEvidenceUrls);
   if (!finding) {
-    throw new OpenAiQuestionVerifierError(
-      "invalid_finding",
-      "OpenAI output did not match the verification finding contract",
-      { retryable: true, accounting },
+    return invalidOutputResponse(
+      "The completed verification response did not match the required finding format.",
+      accounting,
     );
   }
   return {
     finding,
+    searchFallbackEligible: finding.verdict === "unable_to_verify",
     usage: accounting.usage,
     webSearchCalls: search.calls,
     sources: search.sources,
+  };
+}
+
+function invalidOutputResponse(
+  explanation: string,
+  accounting: OpenAiQuestionVerifierAccounting,
+): ParsedResponse {
+  return {
+    finding: {
+      verdict: "unable_to_verify",
+      confidence: 0,
+      explanation,
+      conflicts: [],
+      evidence: [],
+    },
+    searchFallbackEligible: false,
+    usage: accounting.usage,
+    webSearchCalls: accounting.webSearchCalls,
+    sources: accounting.sources,
   };
 }
 
@@ -1212,7 +1230,7 @@ function createVerifier(
       const first = await performRequest(safeInput, dependencies, false);
       let final = first;
       let accounting = responseAccounting(first);
-      if (first.finding.verdict === "unable_to_verify") {
+      if (first.searchFallbackEligible) {
         try {
           final = await performRequest(safeInput, dependencies, true);
         } catch (error) {

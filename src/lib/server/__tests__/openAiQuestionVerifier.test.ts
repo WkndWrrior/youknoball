@@ -288,7 +288,7 @@ describe("OpenAI question verifier", () => {
     expect(result.webSearchCalls).toBe(0);
   });
 
-  it("rejects fabricated and unapproved evidence URLs on the saved-evidence pass", async () => {
+  it("normalizes fabricated and unapproved saved-evidence URLs without retrying", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     for (const url of [
       "https://www.nba.com/news/fabricated",
@@ -303,8 +303,15 @@ describe("OpenAI question verifier", () => {
         .fn<typeof fetch>()
         .mockResolvedValue(jsonResponse(responseBody(invalid)));
 
-      await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({
-        code: "invalid_finding",
+      const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+      expect(result.finding).toMatchObject({
+        questionId: QUESTION_ID,
+        verdict: "unable_to_verify",
+        confidence: 0,
+        conflicts: [],
+        evidence: [],
+        verifiedAt: VERIFIED_AT.toISOString(),
       });
       expect(fetchMock).toHaveBeenCalledTimes(1);
     }
@@ -468,7 +475,7 @@ describe("OpenAI question verifier", () => {
     );
   });
 
-  it("rejects fallback citations that were fabricated or came from an unapproved source", async () => {
+  it("normalizes fallback citations that were fabricated or unapproved", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     for (const testCase of [
       {
@@ -494,9 +501,10 @@ describe("OpenAI question verifier", () => {
           })),
         );
 
-      await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({
-        code: "invalid_finding",
-      });
+      const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+      expect(result.finding.verdict).toBe("unable_to_verify");
+      expect(result.finding.evidence).toEqual([]);
       expect(fetchMock).toHaveBeenCalledTimes(2);
     }
   });
@@ -515,10 +523,9 @@ describe("OpenAI question verifier", () => {
     },
   );
 
-  it("does not retry malformed, refused, incomplete, or API-error responses", async () => {
+  it("does not retry refused, incomplete, or API-error responses", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const cases: Array<{ body: unknown; code: string; status?: number }> = [
-      { body: responseBody({ nope: true }), code: "invalid_finding" },
       {
         body: {
           status: "completed",
@@ -616,7 +623,7 @@ describe("OpenAI question verifier", () => {
     });
   });
 
-  it("preserves charged accounting for every parsed-response rejection path", async () => {
+  it("preserves charged accounting for every parsed-response operational error", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const options = {
       inputTokens: 40,
@@ -644,27 +651,6 @@ describe("OpenAI question verifier", () => {
     };
     cases.push({ code: "refused", body: refused });
 
-    const missing = responseBody(finding(), options) as Record<string, unknown>;
-    const missingOutput = missing.output as Array<Record<string, unknown>>;
-    missingOutput[missingOutput.length - 1] = {
-      type: "message",
-      content: [],
-    };
-    cases.push({ code: "missing_output_text", body: missing });
-
-    const malformed = responseBody(finding(), options) as Record<string, unknown>;
-    const malformedOutput = malformed.output as Array<Record<string, unknown>>;
-    malformedOutput[malformedOutput.length - 1] = {
-      type: "message",
-      content: [{ type: "output_text", text: "{" }],
-    };
-    cases.push({ code: "malformed_output", body: malformed });
-
-    cases.push({
-      code: "invalid_finding",
-      body: responseBody({ nope: true }, options) as Record<string, unknown>,
-    });
-
     for (const testCase of cases) {
       const fetchMock = vi
         .fn<typeof fetch>()
@@ -689,7 +675,7 @@ describe("OpenAI question verifier", () => {
     }
   });
 
-  it("aggregates first-pass accounting into a failed fallback exactly once", async () => {
+  it("normalizes a malformed fallback and aggregates both responses exactly once", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const malformedFallback = responseBody(finding(), {
       inputTokens: 30,
@@ -713,18 +699,26 @@ describe("OpenAI question verifier", () => {
       })))
       .mockResolvedValueOnce(jsonResponse(malformedFallback));
 
-    const error = await captureVerifierError(
-      createVerifier(fetchMock).verifyQuestion(input),
-    );
+    const result = await createVerifier(fetchMock).verifyQuestion(input);
 
-    expect(error.code).toBe("malformed_output");
-    expect(error.accounting).toEqual({
-      usage: {
-        inputTokens: 100,
-        outputTokens: 15,
-        cachedInputTokens: 7,
-        cacheWriteTokens: 4,
-      },
+    expect(result.finding).toMatchObject({
+      questionId: QUESTION_ID,
+      verdict: "unable_to_verify",
+      confidence: 0,
+      conflicts: [],
+      evidence: [],
+      verifiedAt: VERIFIED_AT.toISOString(),
+    });
+    expect(result.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 15,
+      cachedInputTokens: 7,
+      cacheWriteTokens: 4,
+    });
+    expect({
+      webSearchCalls: result.webSearchCalls,
+      sources: result.sources,
+    }).toEqual({
       webSearchCalls: 1,
       sources: [{
         url: "https://www.espn.com/nba/story/example",
@@ -732,6 +726,65 @@ describe("OpenAI question verifier", () => {
       }],
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["missing output text", (body: Record<string, unknown>) => {
+      const output = body.output as Array<Record<string, unknown>>;
+      output[output.length - 1] = { type: "message", content: [] };
+    }],
+    ["malformed JSON", (body: Record<string, unknown>) => {
+      const output = body.output as Array<Record<string, unknown>>;
+      output[output.length - 1] = {
+        type: "message",
+        content: [{ type: "output_text", text: "{" }],
+      };
+    }],
+    ["schema-invalid output", (body: Record<string, unknown>) => {
+      const output = body.output as Array<Record<string, unknown>>;
+      output[output.length - 1] = {
+        type: "message",
+        content: [{ type: "output_text", text: JSON.stringify({ nope: true }) }],
+      };
+    }],
+  ])("normalizes completed %s with exact accounting and no fallback", async (_case, mutate) => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const body = responseBody(finding(), {
+      inputTokens: 40,
+      outputTokens: 6,
+      cachedTokens: 4,
+      cacheWriteTokens: 2,
+      searchCalls: 2,
+    }) as Record<string, unknown>;
+    mutate(body);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+
+    const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+    expect(result.finding).toEqual({
+      questionId: QUESTION_ID,
+      verdict: "unable_to_verify",
+      confidence: 0,
+      explanation: expect.any(String),
+      conflicts: [],
+      evidence: [],
+      verifiedAt: VERIFIED_AT.toISOString(),
+    });
+    expect(result.finding.explanation.length).toBeLessThanOrEqual(600);
+    expect(result).toMatchObject({
+      usage: {
+        inputTokens: 40,
+        outputTokens: 6,
+        cachedInputTokens: 4,
+        cacheWriteTokens: 2,
+      },
+      webSearchCalls: 2,
+      sources: [{
+        url: "https://www.espn.com/nba/story/example",
+        title: "ESPN recap",
+      }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("parses cache writes and rejects inconsistent or unsafe usage", async () => {
@@ -813,17 +866,17 @@ describe("OpenAI question verifier", () => {
     expect(error.accounting.webSearchCalls).toBe(1);
   });
 
-  it.each([
-    ["non_json_response", new Response("not json", { status: 200 })],
-    ["missing_output_text", jsonResponse({ status: "completed", output: [], usage: {} })],
-    ["malformed_output", jsonResponse({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "{" }] }], usage: {} })],
-  ])("reports %s defensively", async (code, response) => {
+  it("reports a non-JSON HTTP response defensively", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response);
-    await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({ code });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("not json", { status: 200 }));
+    await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({
+      code: "non_json_response",
+    });
   });
 
-  it("rejects invalid findings including non-HTTPS evidence", async () => {
+  it("normalizes invalid findings including non-HTTPS evidence", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const invalid = finding();
     invalid.evidence[0]!.url = "http://www.nba.com/news/example";
@@ -831,9 +884,10 @@ describe("OpenAI question verifier", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(jsonResponse(responseBody(invalid)));
 
-    await expect(createVerifier(fetchMock).verifyQuestion(input)).rejects.toMatchObject({
-      code: "invalid_finding",
-    });
+    const result = await createVerifier(fetchMock).verifyQuestion(input);
+    expect(result.finding.verdict).toBe("unable_to_verify");
+    expect(result.finding.evidence).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("times out with AbortSignal and never includes the API key in the error", async () => {
