@@ -212,6 +212,15 @@ function createDependencies(options: {
         }
       : null),
     loadOldestRecoverable: vi.fn(async () => null),
+    claimOldestBudgetBlockEmail: vi.fn(async () => ({
+      claimed: false as const,
+      reservationId: null,
+      challengeDate: null,
+      reason: null,
+      reservedMicrodollars: 0,
+      remainingMicrodollars: 0,
+      attempts: 0,
+    })),
     loadActiveReservation: vi.fn(async () => null),
     saveItem: vi.fn(async (input) => {
       const stored = {
@@ -598,6 +607,17 @@ describe("runNightlyQuestionReview", () => {
     const verifier = vi.fn(async () => {
       throw new OpenAiQuestionVerifierError("timeout", "Timed out", {
         retryable: true,
+        accounting: {
+          usageUncertain: true,
+          usage: {
+            inputTokens: 40,
+            cachedInputTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 6,
+          },
+          webSearchCalls: 0,
+          sources: [],
+        },
       });
     });
     const context = createDependencies({
@@ -699,6 +719,17 @@ describe("runNightlyQuestionReview", () => {
     const verifier = vi.fn(async () => {
       throw new OpenAiQuestionVerifierError("network_error", "Network failed", {
         retryable: true,
+        accounting: {
+          usageUncertain: true,
+          usage: {
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            cacheWriteTokens: 0,
+            outputTokens: 0,
+          },
+          webSearchCalls: 0,
+          sources: [],
+        },
       });
     });
     const context = createDependencies({
@@ -1412,6 +1443,42 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.loadExisting).not.toHaveBeenCalled();
     expect(dependencies.acquireReservation).not.toHaveBeenCalled();
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
+  });
+
+  it("recovers one oldest prior budget alert before run recovery or current-date work", async () => {
+    const { dependencies } = createDependencies();
+    vi.mocked(dependencies.claimOldestBudgetBlockEmail).mockResolvedValue({
+      claimed: true,
+      reservationId: uuid(502),
+      challengeDate: "2026-08-08",
+      reason: "monthly_budget_exceeded",
+      reservedMicrodollars: 5_040_000,
+      remainingMicrodollars: 2_000_000,
+      attempts: 3,
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).resolves.toMatchObject({ kind: "observed", run: null });
+
+    expect(dependencies.sendBudgetBlockEmail).toHaveBeenCalledOnce();
+    expect(dependencies.sendBudgetBlockEmail).toHaveBeenCalledWith({
+      notificationId: uuid(502),
+      challengeDate: "2026-08-08",
+      reason: "monthly_budget_exceeded",
+      reservedMicrodollars: 5_040_000,
+      remainingMicrodollars: 2_000_000,
+    });
+    expect(dependencies.markBudgetBlockEmailSent).toHaveBeenCalledWith(
+      uuid(502),
+      expect.objectContaining({ attempts: 3 }),
+    );
+    expect(dependencies.loadOldestRecoverable).not.toHaveBeenCalled();
+    expect(dependencies.loadExisting).not.toHaveBeenCalled();
+    expect(dependencies.acquireReservation).not.toHaveBeenCalled();
+    expect(dependencies.verifyQuestion).not.toHaveBeenCalled();
   });
 
   it("processes one unit from the oldest prior unfinished run before current-date work", async () => {

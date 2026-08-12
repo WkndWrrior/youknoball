@@ -10,6 +10,7 @@ import {
   acquireDailyQuestionReviewReservation,
   claimDailyQuestionReviewEmail,
   claimDailyQuestionReviewBudgetEmail,
+  claimOldestDailyQuestionReviewBudgetEmail,
   completeDailyQuestionReviewRun,
   heartbeatDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
@@ -889,6 +890,7 @@ describe("reservation and email state", () => {
         challengeDate: "2026-08-10",
         model: "gpt-5.6-terra",
         reservedMicrodollars: 5_040_000,
+        remainingMicrodollars: 2_000_000,
         monthRange: {
           startInclusive: "2026-08-01T05:00:00.000Z",
           endExclusive: "2026-09-01T05:00:00.000Z",
@@ -917,6 +919,7 @@ describe("reservation and email state", () => {
         challengeDate: "2026-08-10",
         model: "gpt-5.6-terra",
         reservedMicrodollars: 5_040_000,
+        remainingMicrodollars: 2_000_000,
         monthRange: {
           startInclusive: "2026-08-01T05:00:00.000Z",
           endExclusive: "2026-09-01T05:00:00.000Z",
@@ -938,6 +941,7 @@ describe("reservation and email state", () => {
       challengeDate: "2026-08-10",
       model: "unsupported-model",
       reservedMicrodollars: 0,
+      remainingMicrodollars: 10_000_000,
       monthRange: {
         startInclusive: "2026-08-01T05:00:00.000Z",
         endExclusive: "2026-09-01T05:00:00.000Z",
@@ -1103,5 +1107,45 @@ describe("reservation and email state", () => {
     expect(failed.update).toHaveBeenCalledWith(expect.objectContaining({
       budget_email_status: "failed",
     }));
+  });
+
+  it("atomically claims the oldest retryable prior budget-denial email", async () => {
+    const client = createClientMock({}, {
+      claim_oldest_daily_question_review_budget_email: {
+        data: {
+          claimed: true,
+          reservation_id: ids.reservation,
+          challenge_date: "2026-08-08",
+          reason: "monthly_budget_exceeded",
+          reserved_microdollars: 5_040_000,
+          remaining_microdollars: 2_000_000,
+          attempts: 3,
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      claimOldestDailyQuestionReviewBudgetEmail(
+        client,
+        "2026-08-10",
+        timestamp,
+      ),
+    ).resolves.toEqual({
+      claimed: true,
+      reservationId: ids.reservation,
+      challengeDate: "2026-08-08",
+      reason: "monthly_budget_exceeded",
+      reservedMicrodollars: 5_040_000,
+      remainingMicrodollars: 2_000_000,
+      attempts: 3,
+    });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "claim_oldest_daily_question_review_budget_email",
+      {
+        p_before_challenge_date: "2026-08-10",
+        p_attempted_at: timestamp,
+      },
+    );
   });
 });

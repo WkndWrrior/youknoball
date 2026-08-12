@@ -119,6 +119,10 @@ function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
+function isDate(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 function isNullableTimestamp(value: unknown): value is string | null {
   return value === null || isTimestamp(value);
 }
@@ -841,6 +845,7 @@ export async function recordDailyQuestionReviewBudgetBlock(
     challengeDate: string;
     model: string;
     reservedMicrodollars: number;
+    remainingMicrodollars: number;
     monthRange: ChicagoCalendarMonthRange;
     attemptedAt: string;
     reason: string;
@@ -855,6 +860,7 @@ export async function recordDailyQuestionReviewBudgetBlock(
       model: input.model,
       status: "denied",
       reserved_microdollars: input.reservedMicrodollars,
+      remaining_microdollars: input.remainingMicrodollars,
       actual_microdollars: 0,
       month_start: input.monthRange.startInclusive,
       month_end: input.monthRange.endExclusive,
@@ -944,6 +950,56 @@ export async function claimDailyQuestionReviewBudgetEmail(
   return {
     claimed: data.claimed,
     reservationId: data.reservation_id as string | null,
+    attempts: data.attempts,
+  };
+}
+
+export async function claimOldestDailyQuestionReviewBudgetEmail(
+  client: ServerSupabaseClient,
+  beforeChallengeDate: string,
+  attemptedAt: string,
+) {
+  const { data, error } = await client.rpc(
+    "claim_oldest_daily_question_review_budget_email",
+    {
+      p_before_challenge_date: beforeChallengeDate,
+      p_attempted_at: attemptedAt,
+    },
+  );
+  throwIfError(error);
+  if (!isRecord(data) || typeof data.claimed !== "boolean") {
+    throw new Error("Oldest budget email claim returned invalid data.");
+  }
+  if (!data.claimed) {
+    return {
+      claimed: false as const,
+      reservationId: null,
+      challengeDate: null,
+      reason: null,
+      reservedMicrodollars: 0,
+      remainingMicrodollars: 0,
+      attempts: isNonnegativeInteger(data.attempts) ? data.attempts : 0,
+    };
+  }
+  if (
+    !isUuid(data.reservation_id) ||
+    !isDate(data.challenge_date) ||
+    typeof data.reason !== "string" ||
+    !data.reason.trim() ||
+    !isNonnegativeInteger(data.reserved_microdollars) ||
+    !isNonnegativeInteger(data.remaining_microdollars) ||
+    !isNonnegativeInteger(data.attempts) ||
+    data.attempts === 0
+  ) {
+    throw new Error("Oldest budget email claim returned invalid data.");
+  }
+  return {
+    claimed: true as const,
+    reservationId: data.reservation_id,
+    challengeDate: data.challenge_date,
+    reason: data.reason,
+    reservedMicrodollars: data.reserved_microdollars,
+    remainingMicrodollars: data.remaining_microdollars,
     attempts: data.attempts,
   };
 }

@@ -665,6 +665,7 @@ describe("OpenAI question verifier", () => {
       );
       expect(error.code).toBe(testCase.code);
       expect(error.accounting).toEqual({
+        usageUncertain: false,
         usage: {
           inputTokens: 40,
           outputTokens: 6,
@@ -912,6 +913,65 @@ describe("OpenAI question verifier", () => {
     expect(String(error)).not.toContain("super-secret-value");
   });
 
+  it("preserves uncertainty when a billed fallback attempt times out after known first-call usage", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(finding("unable_to_verify"), {
+          inputTokens: 40,
+          outputTokens: 6,
+        })),
+      )
+      .mockImplementationOnce((_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        }),
+      );
+
+    const error = await captureVerifierError(
+      createVerifier(fetchMock, 5).verifyQuestion(input),
+    );
+
+    expect(error).toMatchObject({
+      code: "timeout",
+      accounting: {
+        usageUncertain: true,
+        usage: { inputTokens: 40, outputTokens: 6 },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps combined fallback accounting exact when every attempt reports usage", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const incomplete = responseBody(finding(), {
+      inputTokens: 30,
+      outputTokens: 5,
+    }) as Record<string, unknown>;
+    incomplete.status = "incomplete";
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(responseBody(finding("unable_to_verify"), {
+          inputTokens: 40,
+          outputTokens: 6,
+        })),
+      )
+      .mockResolvedValueOnce(jsonResponse(incomplete));
+
+    const error = await captureVerifierError(
+      createVerifier(fetchMock).verifyQuestion(input),
+    );
+
+    expect(error.accounting).toMatchObject({
+      usageUncertain: false,
+      usage: { inputTokens: 70, outputTokens: 11 },
+    });
+  });
+
   it("bounds API error details without exposing an unbounded body", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const fetchMock = vi
@@ -1055,6 +1115,7 @@ describe("OpenAI question verifier", () => {
       createVerifier(plainFetch).verifyQuestion(input),
     );
     expect(plainError.accounting).toEqual({
+      usageUncertain: true,
       usage: {
         inputTokens: 0,
         outputTokens: 0,

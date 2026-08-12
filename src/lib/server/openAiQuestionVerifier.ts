@@ -164,10 +164,16 @@ export interface OpenAiQuestionVerifierResult {
 }
 
 export interface OpenAiQuestionVerifierAccounting {
+  usageUncertain: boolean;
   usage: OpenAiQuestionVerifierUsage;
   webSearchCalls: number;
   sources: OpenAiQuestionVerifierSource[];
 }
+
+type OpenAiQuestionVerifierAccountingInput =
+  Omit<OpenAiQuestionVerifierAccounting, "usageUncertain"> & {
+    usageUncertain?: boolean;
+  };
 
 export interface OpenAiQuestionVerifier {
   verifyQuestion: (
@@ -208,7 +214,7 @@ export class OpenAiQuestionVerifierError extends Error {
     options: {
       retryable?: boolean;
       httpStatus?: number | null;
-      accounting?: OpenAiQuestionVerifierAccounting;
+      accounting?: OpenAiQuestionVerifierAccountingInput;
     } = {},
   ) {
     super(message);
@@ -216,7 +222,12 @@ export class OpenAiQuestionVerifierError extends Error {
     this.code = code;
     this.retryable = options.retryable ?? false;
     this.httpStatus = options.httpStatus ?? null;
-    this.accounting = options.accounting ?? emptyAccounting();
+    this.accounting = options.accounting
+      ? {
+          ...options.accounting,
+          usageUncertain: options.accounting.usageUncertain ?? false,
+        }
+      : emptyAccounting();
   }
 }
 
@@ -240,11 +251,13 @@ interface ParsedResponse {
   usage: OpenAiQuestionVerifierUsage;
   webSearchCalls: number;
   sources: OpenAiQuestionVerifierSource[];
+  usageUncertain: boolean;
 }
 
 interface ParsedUsage {
   usage: OpenAiQuestionVerifierUsage;
   valid: boolean;
+  reported: boolean;
 }
 
 function emptyUsage(): OpenAiQuestionVerifierUsage {
@@ -256,8 +269,8 @@ function emptyUsage(): OpenAiQuestionVerifierUsage {
   };
 }
 
-function emptyAccounting(): OpenAiQuestionVerifierAccounting {
-  return { usage: emptyUsage(), webSearchCalls: 0, sources: [] };
+function emptyAccounting(usageUncertain = false): OpenAiQuestionVerifierAccounting {
+  return { usageUncertain, usage: emptyUsage(), webSearchCalls: 0, sources: [] };
 }
 
 function byteLength(value: string): number {
@@ -547,7 +560,11 @@ function parseTokenCount(value: unknown): { value: number; valid: boolean } {
 
 function parseUsage(value: unknown): ParsedUsage {
   if (!isRecord(value)) {
-    return { usage: emptyUsage(), valid: value === undefined || value === null };
+    return {
+      usage: emptyUsage(),
+      valid: value === undefined || value === null,
+      reported: false,
+    };
   }
   const details = isRecord(value.input_tokens_details)
     ? value.input_tokens_details
@@ -575,6 +592,9 @@ function parseUsage(value: unknown): ParsedUsage {
       cached.valid &&
       cacheWrite.valid &&
       cacheDetailsValid,
+    reported:
+      value.input_tokens !== undefined &&
+      value.output_tokens !== undefined,
   };
 }
 
@@ -684,7 +704,11 @@ async function readBoundedBody(response: Response): Promise<string> {
         throw new OpenAiQuestionVerifierError(
           "response_too_large",
           "OpenAI response exceeded the configured size limit",
-          { retryable: true, httpStatus: response.status },
+          {
+            retryable: true,
+            httpStatus: response.status,
+            accounting: emptyAccounting(true),
+          },
         );
       }
       chunks.push(value);
@@ -716,7 +740,7 @@ function parseJsonBody(text: string): unknown {
     throw new OpenAiQuestionVerifierError(
       "non_json_response",
       "OpenAI returned a non-JSON response",
-      { retryable: true },
+      { retryable: true, accounting: emptyAccounting(true) },
     );
   }
 }
@@ -726,12 +750,13 @@ function extractResponseAccounting(value: unknown): {
   usageValid: boolean;
 } {
   if (!isRecord(value)) {
-    return { accounting: emptyAccounting(), usageValid: true };
+    return { accounting: emptyAccounting(true), usageValid: true };
   }
   const usage = parseUsage(value.usage);
   const search = collectSearchMetadata(value.output);
   return {
     accounting: {
+      usageUncertain: !usage.reported,
       usage: usage.usage,
       webSearchCalls: search.calls,
       sources: search.sources,
@@ -855,6 +880,7 @@ function parseCompletedResponse(
     usage: accounting.usage,
     webSearchCalls: search.calls,
     sources: search.sources,
+    usageUncertain: accounting.usageUncertain,
   };
 }
 
@@ -874,6 +900,7 @@ function invalidOutputResponse(
     usage: accounting.usage,
     webSearchCalls: accounting.webSearchCalls,
     sources: accounting.sources,
+    usageUncertain: accounting.usageUncertain,
   };
 }
 
@@ -944,6 +971,7 @@ function responseAccounting(
   response: ParsedResponse,
 ): OpenAiQuestionVerifierAccounting {
   return {
+    usageUncertain: response.usageUncertain,
     usage: response.usage,
     webSearchCalls: response.webSearchCalls,
     sources: response.sources,
@@ -992,6 +1020,7 @@ function combineAccounting(
   );
   return {
     accounting: {
+      usageUncertain: first.usageUncertain || second.usageUncertain,
       usage: {
         inputTokens: input.value,
         outputTokens: output.value,
@@ -1016,6 +1045,16 @@ function accountingOverflowError(
   return new OpenAiQuestionVerifierError(
     "accounting_overflow",
     "OpenAI response accounting exceeded safe integer limits",
+    { accounting },
+  );
+}
+
+function uncertainAccountingError(
+  accounting: OpenAiQuestionVerifierAccounting,
+): OpenAiQuestionVerifierError {
+  return new OpenAiQuestionVerifierError(
+    "invalid_usage",
+    "OpenAI response usage accounting was unavailable",
     { accounting },
   );
 }
@@ -1179,7 +1218,7 @@ async function performRequest(
         new OpenAiQuestionVerifierError(
           "timeout",
           "OpenAI verification request timed out",
-          { retryable: true },
+          { retryable: true, accounting: emptyAccounting(true) },
         ),
       );
     }, dependencies.timeoutMs);
@@ -1196,7 +1235,7 @@ async function performRequest(
       throw new OpenAiQuestionVerifierError(
         "timeout",
         "OpenAI verification request timed out",
-        { retryable: true },
+        { retryable: true, accounting: emptyAccounting(true) },
       );
     }
     if (error instanceof OpenAiQuestionVerifierError) {
@@ -1205,7 +1244,7 @@ async function performRequest(
     throw new OpenAiQuestionVerifierError(
       "network_error",
       "OpenAI verification request failed",
-      { retryable: true },
+      { retryable: true, accounting: emptyAccounting(true) },
     );
   } finally {
     if (timer) {
@@ -1231,6 +1270,9 @@ function createVerifier(
       const first = await performRequest(safeInput, dependencies, false);
       let final = first;
       let accounting = responseAccounting(first);
+      if (accounting.usageUncertain) {
+        throw uncertainAccountingError(accounting);
+      }
       if (first.searchFallbackEligible) {
         try {
           final = await performRequest(safeInput, dependencies, true);
@@ -1251,6 +1293,9 @@ function createVerifier(
         accounting = combined.accounting;
         if (combined.overflow) {
           throw accountingOverflowError(accounting);
+        }
+        if (accounting.usageUncertain) {
+          throw uncertainAccountingError(accounting);
         }
       }
       const verifiedAtDate = dependencies.now();

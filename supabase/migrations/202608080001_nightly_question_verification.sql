@@ -655,6 +655,8 @@ create table if not exists public.daily_question_review_reservations (
     check (status in ('active', 'reconciled', 'released', 'denied')),
   reserved_microdollars bigint not null
     check (reserved_microdollars between 0 and 9007199254740991),
+  remaining_microdollars bigint not null default 0
+    check (remaining_microdollars between 0 and 9007199254740991),
   run_cost_baseline_microdollars bigint not null default 0
     check (run_cost_baseline_microdollars between 0 and 999999999999),
   actual_microdollars bigint not null default 0
@@ -1477,7 +1479,8 @@ begin
       acquired_at,
       reconciled_at,
       denial_reason,
-      budget_email_status
+      budget_email_status,
+      remaining_microdollars
     ) values (
       p_review_date,
       p_challenge_date,
@@ -1490,7 +1493,8 @@ begin
       p_now,
       p_now,
       'monthly_budget_exceeded',
-      'pending'
+      'pending',
+      greatest(p_limit_microdollars - v_committed_microdollars, 0)
     )
     on conflict (challenge_date, run_kind)
       where status = 'denied'
@@ -1903,6 +1907,91 @@ $function$;
 revoke all on function public.claim_daily_question_review_budget_email(date, timestamptz) from public, anon, authenticated;
 
 grant execute on function public.claim_daily_question_review_budget_email(date, timestamptz) to service_role;
+
+create or replace function public.claim_oldest_daily_question_review_budget_email(
+  p_before_challenge_date date,
+  p_attempted_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_reservation_id uuid;
+  v_challenge_date date;
+  v_reason text;
+  v_reserved_microdollars bigint;
+  v_remaining_microdollars bigint;
+  v_attempts integer;
+begin
+  if p_before_challenge_date is null or p_attempted_at is null then
+    return jsonb_build_object('claimed', false, 'attempts', 0);
+  end if;
+
+  with candidate as (
+    select r.id
+    from public.daily_question_review_reservations r
+    where r.challenge_date < p_before_challenge_date
+      and r.run_kind = 'scheduled'
+      and r.status = 'denied'
+      and (
+        r.budget_email_status in ('pending', 'failed')
+        or (
+          r.budget_email_status = 'sending'
+          and r.updated_at <= clock_timestamp() - interval '15 minutes'
+        )
+      )
+      and (r.budget_email_metadata->>'attempts')::integer < 10
+    order by r.challenge_date, r.created_at
+    limit 1
+    for update skip locked
+  )
+  update public.daily_question_review_reservations r
+  set budget_email_status = 'sending',
+      budget_email_metadata = jsonb_build_object(
+        'provider', 'resend',
+        'providerMessageId', null,
+        'attempts', (r.budget_email_metadata->>'attempts')::integer + 1,
+        'lastAttemptAt', p_attempted_at,
+        'failure', null
+      )
+  from candidate c
+  where r.id = c.id
+  returning
+    r.id,
+    r.challenge_date,
+    r.denial_reason,
+    r.reserved_microdollars,
+    r.remaining_microdollars,
+    (r.budget_email_metadata->>'attempts')::integer
+  into
+    v_reservation_id,
+    v_challenge_date,
+    v_reason,
+    v_reserved_microdollars,
+    v_remaining_microdollars,
+    v_attempts;
+
+  if not found then
+    return jsonb_build_object('claimed', false, 'attempts', 0);
+  end if;
+
+  return jsonb_build_object(
+    'claimed', true,
+    'reservation_id', v_reservation_id,
+    'challenge_date', v_challenge_date,
+    'reason', v_reason,
+    'reserved_microdollars', v_reserved_microdollars,
+    'remaining_microdollars', v_remaining_microdollars,
+    'attempts', v_attempts
+  );
+end;
+$function$;
+
+revoke all on function public.claim_oldest_daily_question_review_budget_email(date, timestamptz) from public, anon, authenticated;
+
+grant execute on function public.claim_oldest_daily_question_review_budget_email(date, timestamptz) to service_role;
 
 drop trigger if exists daily_question_review_runs_set_updated_at
   on public.daily_question_review_runs;

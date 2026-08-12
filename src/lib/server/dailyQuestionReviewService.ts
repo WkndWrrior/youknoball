@@ -33,6 +33,7 @@ import {
   claimExistingDailyQuestionReviewRun,
   claimDailyQuestionReviewEmail,
   claimDailyQuestionReviewBudgetEmail,
+  claimOldestDailyQuestionReviewBudgetEmail,
   completeDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
   loadActiveDailyQuestionReviewReservation,
@@ -109,6 +110,7 @@ export interface DailyQuestionReviewServiceDependencies {
     challengeDate: string;
     model: string;
     reservedMicrodollars: number;
+    remainingMicrodollars: number;
     monthRange: ChicagoCalendarMonthRange;
     attemptedAt: string;
     reason: string;
@@ -142,6 +144,10 @@ export interface DailyQuestionReviewServiceDependencies {
     run: DailyQuestionReviewRunRecord;
     items: DailyQuestionReviewItemRecord[];
   } | null>;
+  claimOldestBudgetBlockEmail: (
+    beforeChallengeDate: string,
+    attemptedAt: string,
+  ) => ReturnType<typeof claimOldestDailyQuestionReviewBudgetEmail>;
   loadActiveReservation: (
     challengeDate: string,
   ) => Promise<DailyQuestionReviewReservationContext | null>;
@@ -267,11 +273,7 @@ function errorUsage(error: unknown): UsageTotals {
 
 function usageIsUncertain(error: unknown): boolean {
   if (!(error instanceof OpenAiQuestionVerifierError)) return true;
-  if (["invalid_input", "missing_api_key", "unsupported_model"].includes(error.code)) {
-    return false;
-  }
-  const usage = errorUsage(error);
-  return Object.values(usage).every((value) => value === 0);
+  return error.accounting.usageUncertain;
 }
 
 function costUsage(model: string, usage: UsageTotals): number {
@@ -473,6 +475,12 @@ function createDefaultDependencies(context: {
     loadExisting: (challengeDate) => loadDailyQuestionReviewByDate(client, challengeDate),
     loadOldestRecoverable: (beforeChallengeDate) =>
       loadOldestRecoverableDailyQuestionReview(client, beforeChallengeDate),
+    claimOldestBudgetBlockEmail: (beforeChallengeDate, attemptedAt) =>
+      claimOldestDailyQuestionReviewBudgetEmail(
+        client,
+        beforeChallengeDate,
+        attemptedAt,
+      ),
     loadActiveReservation: (challengeDate) =>
       loadActiveDailyQuestionReviewReservation(client, challengeDate),
     saveItem: (input) => upsertDailyQuestionReviewItem(client, input),
@@ -542,20 +550,47 @@ async function attemptBudgetBlockEmail(
     attemptedAt,
   );
   if (!claim.claimed || !claim.reservationId) return;
+  await deliverBudgetBlockEmail(
+    deps,
+    {
+      ...input,
+      reservationId: claim.reservationId,
+      attempts: claim.attempts,
+    },
+    attemptedAt,
+  );
+}
+
+async function deliverBudgetBlockEmail(
+  deps: DailyQuestionReviewServiceDependencies,
+  input: {
+    reservationId: string;
+    challengeDate: string;
+    reason: string;
+    reservedMicrodollars: number;
+    remainingMicrodollars: number;
+    attempts: number;
+  },
+  attemptedAt: string,
+): Promise<void> {
+  if (!deps.sendBudgetBlockEmail) return;
   try {
     const sent = await deps.sendBudgetBlockEmail({
-      ...input,
-      notificationId: claim.reservationId,
+      challengeDate: input.challengeDate,
+      reason: input.reason,
+      reservedMicrodollars: input.reservedMicrodollars,
+      remainingMicrodollars: input.remainingMicrodollars,
+      notificationId: input.reservationId,
     });
-    await deps.markBudgetBlockEmailSent(claim.reservationId, {
+    await deps.markBudgetBlockEmailSent(input.reservationId, {
       sentAt: attemptedAt,
       providerMessageId: sent.providerMessageId,
-      attempts: claim.attempts,
+      attempts: input.attempts,
     });
   } catch (error) {
-    await deps.markBudgetBlockEmailFailed(claim.reservationId, {
+    await deps.markBudgetBlockEmailFailed(input.reservationId, {
       attemptedAt,
-      attempts: claim.attempts,
+      attempts: input.attempts,
       code: "email_failed",
       message: errorMessage(error),
     });
@@ -617,22 +652,55 @@ export async function runNightlyQuestionReview({
   if (currentReviewDate >= challengeDate) {
     throw new RangeError("Nightly review date must precede the challenge date.");
   }
-  const priorReview = dependencies
-    ? await dependencies.loadOldestRecoverable(challengeDate)
-    : await loadOldestRecoverableDailyQuestionReview(
-        supabaseAdmin(),
-        challengeDate,
-      );
-  const reviewDate = priorReview?.run.reviewDate ?? currentReviewDate;
-  const targetChallengeDate = priorReview?.run.challengeDate ?? challengeDate;
-  const deps =
+  const bootstrapDeps =
     dependencies ??
     createDefaultDependencies({
-      reviewDate,
-      challengeDate: targetChallengeDate,
+      reviewDate: currentReviewDate,
+      challengeDate,
       now: occurredAt,
       siteUrlFallback,
     });
+  const priorBudgetEmail = bootstrapDeps.sendBudgetBlockEmail
+    ? await bootstrapDeps.claimOldestBudgetBlockEmail(challengeDate, occurredAt)
+    : { claimed: false as const };
+  if (priorBudgetEmail.claimed) {
+    await deliverBudgetBlockEmail(
+      bootstrapDeps,
+      {
+        reservationId: priorBudgetEmail.reservationId,
+        challengeDate: priorBudgetEmail.challengeDate,
+        reason: priorBudgetEmail.reason,
+        reservedMicrodollars: priorBudgetEmail.reservedMicrodollars,
+        remainingMicrodollars: priorBudgetEmail.remainingMicrodollars,
+        attempts: priorBudgetEmail.attempts,
+      },
+      occurredAt,
+    );
+    const records = await bootstrapDeps.listMonthlyCosts(
+      getChicagoCalendarMonthRange(now),
+    );
+    return {
+      kind: "observed",
+      budget: checkDailyQuestionReviewBudget({
+        model: bootstrapDeps.model,
+        records,
+        now,
+      }),
+      run: null,
+    };
+  }
+  const priorReview = await bootstrapDeps.loadOldestRecoverable(challengeDate);
+  const reviewDate = priorReview?.run.reviewDate ?? currentReviewDate;
+  const targetChallengeDate = priorReview?.run.challengeDate ?? challengeDate;
+  const deps =
+    dependencies ?? (priorReview
+      ? createDefaultDependencies({
+          reviewDate,
+          challengeDate: targetChallengeDate,
+          now: occurredAt,
+          siteUrlFallback,
+        })
+      : bootstrapDeps);
   const monthRange = getChicagoCalendarMonthRange(now);
   const records = await deps.listMonthlyCosts(monthRange);
   const existingReview =
@@ -1257,6 +1325,7 @@ export async function runNightlyQuestionReview({
         challengeDate: targetChallengeDate,
         model: deps.model,
         reservedMicrodollars: preflight.budget.reservedMicrodollars,
+        remainingMicrodollars: preflight.budget.remainingMicrodollars,
         monthRange,
         attemptedAt: occurredAt,
         reason: preflight.budget.reason,

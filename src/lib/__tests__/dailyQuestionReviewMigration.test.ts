@@ -597,6 +597,29 @@ describe("nightly question verification migration", () => {
     );
   });
 
+  it("atomically claims the oldest retryable prior budget-denial email", async () => {
+    const migration = await readFile(migrationPath, "utf8");
+    const claim = normalizedStatement(
+      migration,
+      "create or replace function public.claim_oldest_daily_question_review_budget_email",
+    );
+
+    expect(migration).toContain("remaining_microdollars bigint");
+    expect(claim).toContain("r.challenge_date < p_before_challenge_date");
+    expect(claim).toContain("r.budget_email_status in ('pending', 'failed')");
+    expect(claim).toContain("r.budget_email_status = 'sending'");
+    expect(claim).toContain("clock_timestamp() - interval '15 minutes'");
+    expect(claim).toContain("(r.budget_email_metadata->>'attempts')::integer < 10");
+    expect(claim).toContain("order by r.challenge_date, r.created_at");
+    expect(claim).toContain("for update skip locked");
+    expect(migration).toContain(
+      "revoke all on function public.claim_oldest_daily_question_review_budget_email(date, timestamptz) from public, anon, authenticated",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.claim_oldest_daily_question_review_budget_email(date, timestamptz) to service_role",
+    );
+  });
+
   it("serializes run binding with zero-cost reservation release", async () => {
     const migration = await readFile(migrationPath, "utf8");
     const guard = normalizedStatement(
