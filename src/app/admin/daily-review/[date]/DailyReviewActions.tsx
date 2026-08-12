@@ -7,12 +7,10 @@ export default function DailyReviewActions({
   date,
   reviewItemId,
   replacementQuestionId,
-  disabled,
 }: {
   date: string;
   reviewItemId: string;
   replacementQuestionId: string | null;
-  disabled: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -47,12 +45,12 @@ export default function DailyReviewActions({
 
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-      <button type="button" disabled={disabled || pending} onClick={() => resolve("keep")}>
+      <button type="button" disabled={pending} onClick={() => resolve("keep")}>
         Keep
       </button>
       <button
         type="button"
-        disabled={disabled || pending || !replacementQuestionId}
+        disabled={pending || !replacementQuestionId}
         onClick={() => resolve("replace")}
       >
         Replace
