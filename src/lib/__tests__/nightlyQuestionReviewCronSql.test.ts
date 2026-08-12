@@ -30,4 +30,13 @@ describe("nightly question verification Supabase Cron deployment", () => {
     expect(sql).toContain("daily_review_site_url is missing or blank");
     expect(sql).toContain("daily_review_cron_secret is missing or blank");
   });
+
+  it("requires the review site secret to be a bare HTTPS origin before scheduling", async () => {
+    const sql = await readFile(cronPath, "utf8");
+
+    expect(sql).toContain("daily_review_site_url must be a valid HTTPS origin");
+    expect(sql).toMatch(/v_site_url\s*!~\*\s*'.*\^https:\/\//s);
+    expect(sql).toMatch(/v_site_url\s*<>\s*btrim\(v_site_url\)/);
+    expect(sql).toMatch(/\|\|\s*'\/api\/cron\/daily-question-review'/);
+  });
 });

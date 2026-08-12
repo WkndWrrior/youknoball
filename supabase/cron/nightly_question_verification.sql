@@ -16,6 +16,11 @@ begin
     raise exception 'daily_review_site_url is missing or blank';
   end if;
 
+  if v_site_url <> btrim(v_site_url)
+     or v_site_url !~* '^https://([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(:[1-9][0-9]{0,4})?$' then
+    raise exception 'daily_review_site_url must be a valid HTTPS origin';
+  end if;
+
   select decrypted_secret
   into v_cron_secret
   from vault.decrypted_secrets
@@ -40,7 +45,7 @@ begin
     $command$
       select net.http_post(
         url => (
-          select rtrim(decrypted_secret, '/')
+          select decrypted_secret
           from vault.decrypted_secrets
           where name = 'daily_review_site_url'
         ) || '/api/cron/daily-question-review',
