@@ -1,5 +1,5 @@
 const CHALLENGE_TIME_ZONE = "America/Chicago";
-const NIGHTLY_REVIEW_HOURS = new Set([18, 19]);
+const NIGHTLY_REVIEW_HOURS = new Set([18, 19, 20]);
 const CHICAGO_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: CHALLENGE_TIME_ZONE,
   year: "numeric",

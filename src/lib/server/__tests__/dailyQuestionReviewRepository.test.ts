@@ -308,6 +308,16 @@ describe("startOrObserveDailyQuestionReviewRun", () => {
 
 describe("review item persistence", () => {
   it("atomically fences an item upsert, usage increment, and lease renewal", async () => {
+    const runErrors: DailyQuestionReviewRunError[] = [
+      {
+        phase: "verification",
+        code: "timeout",
+        message: "Verifier timed out",
+        retryable: true,
+        occurredAt: timestamp,
+        questionId: ids.question,
+      },
+    ];
     const progressedRun = {
       ...runRow,
       input_tokens: 120,
@@ -342,6 +352,7 @@ describe("review item persistence", () => {
         sourceFetchResults: [],
         finding,
         replacement: null,
+        runErrors,
         usageEvent: {
           id: ids.usageEvent,
           phase: "primary",
@@ -368,8 +379,45 @@ describe("review item persistence", () => {
         p_usage_event_id: ids.usageEvent,
         p_input_tokens: 120,
         p_estimated_cost_microdollars: 42_000,
+        p_run_errors: runErrors,
       }),
     );
+  });
+
+  it("retains a primary finding on a failed replacement placeholder", async () => {
+    const failedRow = {
+      ...itemRow,
+      review_status: "failed",
+    };
+    const client = createClientMock({}, {
+      persist_daily_question_review_progress: {
+        data: {
+          outcome: "persisted",
+          usage_applied: false,
+          item: failedRow,
+          run: runRow,
+        },
+        error: null,
+      },
+    });
+
+    await expect(upsertDailyQuestionReviewItem(client, {
+      runId: ids.run,
+      claimToken: ids.claim,
+      heartbeatAt: timestamp,
+      leaseExpiresAt: "2026-08-09T23:15:00.000Z",
+      dailyChallengeId: ids.challenge,
+      slot: 1,
+      question: snapshot,
+      reviewStatus: "failed",
+      sourceFetchResults: [],
+      finding,
+      replacement: null,
+      runErrors: [],
+      usageEvent: null,
+    })).resolves.toMatchObject({
+      item: { reviewStatus: "failed", finding },
+    });
   });
 
   it("persists a failed item without erasing source progress", async () => {
@@ -418,6 +466,7 @@ describe("review item persistence", () => {
         sourceFetchResults: failedRow.source_fetch_results,
         finding: null,
         replacement: null,
+        runErrors: [],
         usageEvent: null,
       }),
     ).resolves.toMatchObject({ item: { reviewStatus: "failed", finding: null } });
@@ -443,6 +492,7 @@ describe("review item persistence", () => {
       sourceFetchResults: [],
       finding,
       replacement: null,
+      runErrors: [],
       usageEvent: null,
     })).rejects.toThrow("Daily review lease ownership was lost");
   });
@@ -490,7 +540,6 @@ describe("run accounting and reads", () => {
         reservationId: ids.reservation,
         status: "failed",
         completedAt: timestamp,
-        errors: completedRow.errors,
       }),
     ).resolves.toMatchObject({ status: "failed", estimatedCostMicrodollars: 42_000 });
 
@@ -501,7 +550,12 @@ describe("run accounting and reads", () => {
         p_claim_token: ids.claim,
         p_reservation_id: ids.reservation,
         p_status: "failed",
+        p_completed_at: timestamp,
       }),
+    );
+    expect(client.rpc).not.toHaveBeenCalledWith(
+      "finalize_daily_question_review_run",
+      expect.objectContaining({ p_errors: expect.anything() }),
     );
   });
 
@@ -519,7 +573,6 @@ describe("run accounting and reads", () => {
       reservationId: ids.reservation,
       status: "failed",
       completedAt: timestamp,
-      errors: [],
     })).rejects.toThrow("Daily review lease ownership was lost");
   });
 

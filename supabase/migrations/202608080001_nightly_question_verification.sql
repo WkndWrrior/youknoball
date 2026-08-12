@@ -865,13 +865,32 @@ create table if not exists public.daily_question_review_items (
     on delete cascade,
   check (
     (
-      review_status in ('pending', 'reviewing', 'failed')
+      review_status in ('pending', 'reviewing')
       and verdict is null
       and confidence is null
       and explanation is null
       and jsonb_array_length(conflicts) = 0
       and jsonb_array_length(evidence) = 0
       and verified_at is null
+    )
+    or (
+      review_status = 'failed'
+      and (
+        (
+          verdict is null
+          and confidence is null
+          and explanation is null
+          and jsonb_array_length(conflicts) = 0
+          and jsonb_array_length(evidence) = 0
+          and verified_at is null
+        )
+        or (
+          verdict is not null
+          and confidence is not null
+          and explanation is not null
+          and verified_at is not null
+        )
+      )
     )
     or (
       review_status = 'completed'
@@ -985,6 +1004,7 @@ create or replace function public.persist_daily_question_review_progress(
   p_replacement_eligible boolean,
   p_replacement_question_snapshot jsonb,
   p_replacement_finding jsonb,
+  p_run_errors jsonb,
   p_usage_event_id uuid,
   p_usage_phase text,
   p_input_tokens integer,
@@ -1019,6 +1039,14 @@ begin
     or p_lease_expires_at <= clock_timestamp()
   then
     return jsonb_build_object('outcome', 'lost_lease');
+  end if;
+
+  if p_run_errors is null
+    or jsonb_typeof(p_run_errors) <> 'array'
+    or jsonb_array_length(p_run_errors) > 20
+    or octet_length(p_run_errors::text) > 20000
+  then
+    return jsonb_build_object('outcome', 'invalid_errors');
   end if;
 
   if p_usage_event_id is not null then
@@ -1062,6 +1090,7 @@ begin
       search_count = search_count + case when v_usage_applied then p_search_count else 0 end,
       estimated_cost_microdollars = estimated_cost_microdollars + case when v_usage_applied then p_estimated_cost_microdollars else 0 end,
       estimated_cost_usd = (estimated_cost_microdollars + case when v_usage_applied then p_estimated_cost_microdollars else 0 end)::numeric / 1000000,
+      errors = p_run_errors,
       heartbeat_at = p_heartbeat_at,
       lease_expires_at = p_lease_expires_at
   where id = p_run_id
@@ -1105,17 +1134,16 @@ begin
 end;
 $function$;
 
-revoke all on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) from public, anon, authenticated;
+revoke all on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) from public, anon, authenticated;
 
-grant execute on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) to service_role;
+grant execute on function public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint) to service_role;
 
 create or replace function public.finalize_daily_question_review_run(
   p_run_id uuid,
   p_claim_token uuid,
   p_reservation_id uuid,
   p_status text,
-  p_completed_at timestamptz,
-  p_errors jsonb
+  p_completed_at timestamptz
 )
 returns jsonb
 language plpgsql
@@ -1126,6 +1154,8 @@ declare
   v_run public.daily_question_review_runs%rowtype;
   v_reservation public.daily_question_review_reservations%rowtype;
   v_reservation_actual_microdollars bigint;
+  v_final_status text;
+  v_has_failed_item boolean;
 begin
   select r.* into v_run
   from public.daily_question_review_runs r
@@ -1147,22 +1177,37 @@ begin
   where r.id = p_reservation_id
   for update;
 
-  v_reservation_actual_microdollars :=
-    v_run.estimated_cost_microdollars - v_reservation.run_cost_baseline_microdollars;
-
   if not found
     or v_reservation.status <> 'active'
-    or not (
-      v_reservation_actual_microdollars between 0 and v_reservation.reserved_microdollars
-    )
   then
     return jsonb_build_object('outcome', 'reservation_conflict');
   end if;
 
+  select exists (
+    select 1
+    from public.daily_question_review_items i
+    where i.run_id = p_run_id
+      and i.review_status = 'failed'
+  ) into v_has_failed_item;
+
+  if p_status = 'failed' or v_has_failed_item then
+    v_final_status := 'failed';
+    v_reservation_actual_microdollars := v_reservation.reserved_microdollars;
+  else
+    v_final_status := p_status;
+    v_reservation_actual_microdollars :=
+      v_run.estimated_cost_microdollars - v_reservation.run_cost_baseline_microdollars;
+  end if;
+
+  if not (
+    v_reservation_actual_microdollars between 0 and v_reservation.reserved_microdollars
+  ) then
+    return jsonb_build_object('outcome', 'reservation_conflict');
+  end if;
+
   update public.daily_question_review_runs
-  set status = p_status,
-      completed_at = p_completed_at,
-      errors = p_errors
+  set status = v_final_status,
+      completed_at = p_completed_at
   where id = p_run_id
   returning * into v_run;
 
@@ -1180,9 +1225,9 @@ begin
 end;
 $function$;
 
-revoke all on function public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz, jsonb) from public, anon, authenticated;
+revoke all on function public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz) from public, anon, authenticated;
 
-grant execute on function public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz, jsonb) to service_role;
+grant execute on function public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz) to service_role;
 
 create or replace function public.acquire_daily_question_review_reservation(
   p_review_date date,

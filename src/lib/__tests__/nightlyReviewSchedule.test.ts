@@ -32,16 +32,26 @@ describe("getNightlyReviewSchedule", () => {
   });
 
   it.each([
+    ["summer", "2026-08-13T01:20:00.000Z", "2026-08-13"],
+    ["winter", "2026-12-08T02:20:00.000Z", "2026-12-08"],
+  ])("accepts the %s UTC window during the 8 PM Central hour", (_label, timestamp, challengeDate) => {
+    expect(getNightlyReviewSchedule(new Date(timestamp))).toEqual({
+      shouldRun: true,
+      challengeDate,
+    });
+  });
+
+  it.each([
     ["5 PM in summer", "2026-08-08T22:20:00.000Z"],
-    ["8 PM in summer", "2026-08-09T01:20:00.000Z"],
+    ["9 PM in summer", "2026-08-09T02:20:00.000Z"],
     ["5 PM in winter", "2026-12-07T23:20:00.000Z"],
-    ["8 PM in winter", "2026-12-08T02:20:00.000Z"],
+    ["9 PM in winter", "2026-12-08T03:20:00.000Z"],
   ])("rejects %s", (_label, timestamp) => {
     expect(getNightlyReviewSchedule(new Date(timestamp)).shouldRun).toBe(false);
   });
 
   it.each([
-    ["summer 8 PM window", "2026-08-09T01:20:00.000Z"],
+    ["summer 9 PM window", "2026-08-09T02:20:00.000Z"],
     ["winter 5 PM window", "2026-12-07T23:20:00.000Z"],
   ])("rejects the non-matching %s", (_label, timestamp) => {
     expect(getNightlyReviewSchedule(new Date(timestamp)).shouldRun).toBe(false);

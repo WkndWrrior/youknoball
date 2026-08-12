@@ -219,6 +219,10 @@ function createDependencies(options: {
         replacement: input.replacement,
       } as DailyQuestionReviewItemRecord;
       items.set(input.slot, stored);
+      run = {
+        ...run,
+        errors: input.runErrors,
+      } as DailyQuestionReviewRunRecord;
       const usageApplied = Boolean(
         input.usageEvent && !appliedUsageEvents.has(input.usageEvent.id),
       );
@@ -247,7 +251,6 @@ function createDependencies(options: {
         ...run,
         status: input.status,
         completedAt: input.completedAt,
-        errors: input.errors,
       } as DailyQuestionReviewRunRecord;
       return run;
     }),
@@ -382,6 +385,70 @@ describe("runNightlyQuestionReview", () => {
     expect(context.dependencies.completeRun).toHaveBeenCalledOnce();
   });
 
+  it("persists a failed primary placeholder before starting external work", async () => {
+    const context = createDependencies();
+
+    await runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    });
+
+    expect(context.dependencies.saveItem).toHaveBeenCalledTimes(2);
+    expect(context.dependencies.saveItem).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        slot: 1,
+        reviewStatus: "failed",
+        finding: null,
+        replacement: null,
+        usageEvent: null,
+        runErrors: [],
+      }),
+    );
+    expect(context.dependencies.saveItem).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ slot: 1, reviewStatus: "completed" }),
+    );
+    expect(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(context.dependencies.collectEvidence).mock.invocationCallOrder[0]);
+  });
+
+  it("does not repeat billed primary work after its final progress save fails", async () => {
+    const existingItems = [2, 3, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
+    const context = createDependencies({
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: { claimed: true, claimToken: uuid(601), run: makeRun() },
+    });
+    enableResumableInvocations(context, true);
+    const persist = context.dependencies.saveItem;
+    context.dependencies.saveItem = vi.fn(async (input) => {
+      if (input.reviewStatus === "completed" && input.slot === 1) {
+        throw new Error("progress write failed after API success");
+      }
+      return persist(input);
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "completed", run: { status: "failed" } });
+
+    expect(context.dependencies.verifyQuestion).toHaveBeenCalledOnce();
+    expect(context.items.get(1)).toMatchObject({ reviewStatus: "failed" });
+    expect(context.dependencies.completeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
+  });
+
   it("processes five primaries and five replacements without repeats, then finalizes", async () => {
     const verifier = vi.fn(async ({ question }: { question: QuestionSnapshot }) => ({
       finding: makeFinding(
@@ -444,6 +511,15 @@ describe("runNightlyQuestionReview", () => {
       questionIds[1],
     ]);
     expect(context.getRun().usage).toMatchObject({ inputTokens: 20, outputTokens: 10 });
+    expect(context.getRun().errors).toEqual([
+      expect.objectContaining({ code: "timeout", questionId: questionIds[0] }),
+    ]);
+    expect(context.dependencies.saveItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewStatus: "completed",
+        runErrors: [expect.objectContaining({ code: "timeout" })],
+      }),
+    );
   });
 
   it("persists replacement operational failures as terminal ineligible outcomes", async () => {
@@ -488,6 +564,121 @@ describe("runNightlyQuestionReview", () => {
       dependencies: context.dependencies,
     })).resolves.toMatchObject({ kind: "completed" });
     expect(verifier).toHaveBeenCalledOnce();
+  });
+
+  it("persists a failed replacement placeholder before replacement external work", async () => {
+    const flaggedItem = {
+      ...makeStoredItem(3, "completed"),
+      finding: makeFinding(questions[2], "risk"),
+    } as DailyQuestionReviewItemRecord;
+    const existingItems = [1, 2, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
+    existingItems.push(flaggedItem);
+    const context = createDependencies({
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: { claimed: true, claimToken: uuid(601), run: makeRun() },
+    });
+
+    await runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    });
+
+    expect(context.dependencies.saveItem).toHaveBeenCalledTimes(2);
+    expect(context.dependencies.saveItem).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        slot: 3,
+        reviewStatus: "failed",
+        finding: flaggedItem.finding,
+        replacement: null,
+        usageEvent: null,
+      }),
+    );
+    expect(vi.mocked(context.dependencies.saveItem).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(context.dependencies.collectEvidence).mock.invocationCallOrder[0]);
+  });
+
+  it("does not repeat billed replacement work after its final progress save fails", async () => {
+    const flaggedItem = {
+      ...makeStoredItem(3, "completed"),
+      finding: makeFinding(questions[2], "risk"),
+    } as DailyQuestionReviewItemRecord;
+    const existingItems = [1, 2, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
+    existingItems.push(flaggedItem);
+    const context = createDependencies({
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: { claimed: true, claimToken: uuid(601), run: makeRun() },
+    });
+    enableResumableInvocations(context, true);
+    const persist = context.dependencies.saveItem;
+    context.dependencies.saveItem = vi.fn(async (input) => {
+      if (input.reviewStatus === "completed" && input.replacement !== null) {
+        throw new Error("replacement progress write failed after API success");
+      }
+      return persist(input);
+    });
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "completed", run: { status: "failed" } });
+
+    expect(context.dependencies.verifyQuestion).toHaveBeenCalledOnce();
+    expect(context.items.get(3)).toMatchObject({
+      reviewStatus: "failed",
+      finding: { verdict: "risk" },
+      replacement: null,
+    });
+  });
+
+  it("persists unavailable replacement selection as a failed terminal state without retry", async () => {
+    const flaggedItem = {
+      ...makeStoredItem(3, "completed"),
+      finding: makeFinding(questions[2], "risk"),
+    } as DailyQuestionReviewItemRecord;
+    const existingItems = [1, 2, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
+    existingItems.push(flaggedItem);
+    const context = createDependencies({
+      existingRun: makeRun(),
+      existingItems,
+      reservationCreated: false,
+      claimExistingResult: { claimed: true, claimToken: uuid(601), run: makeRun() },
+    });
+    enableResumableInvocations(context, true);
+    context.dependencies.selectReplacement = vi.fn(async () => null);
+
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "in_progress" });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies: context.dependencies,
+    })).resolves.toMatchObject({ kind: "completed", run: { status: "failed" } });
+
+    expect(context.dependencies.selectReplacement).toHaveBeenCalledOnce();
+    expect(context.dependencies.verifyQuestion).not.toHaveBeenCalled();
+    expect(context.items.get(3)).toMatchObject({
+      reviewStatus: "failed",
+      finding: { verdict: "risk" },
+      replacement: null,
+    });
+    expect(context.getRun().errors).toEqual([
+      expect.objectContaining({ code: "replacement_unavailable" }),
+    ]);
   });
 
   it("does no external work when fewer than 125 seconds remain", async () => {
@@ -546,7 +737,7 @@ describe("runNightlyQuestionReview", () => {
       selection: draft.questions,
       excludedQuestionIds: [],
     });
-    expect(dependencies.saveItem).toHaveBeenCalledTimes(6);
+    expect(dependencies.saveItem).toHaveBeenCalledTimes(12);
     expect(dependencies.saveItem).toHaveBeenCalledBefore(
       dependencies.selectReplacement as ReturnType<typeof vi.fn>,
     );
@@ -913,8 +1104,20 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.sendReviewEmail).toHaveBeenCalledOnce();
   });
 
-  it("attempts a failed run's prior report email before reserving its retry", async () => {
-    const failedRun = makeRun({ status: "failed", completedAt: now.toISOString() });
+  it("observes a failed terminal run and retries stale-sending mail without reserving budget", async () => {
+    const failedRun = makeRun({
+      status: "failed",
+      completedAt: now.toISOString(),
+      email: {
+        ...makeRun().email,
+        status: "sending",
+        metadata: {
+          ...makeRun().email.metadata,
+          attempts: 1,
+          lastAttemptAt: "2026-08-09T22:00:00.000Z",
+        },
+      },
+    });
     const failedItems = [1, 2, 3, 4, 5].map((slot) => makeStoredItem(slot, "completed"));
     const { dependencies } = createDependencies({
       existingRun: failedRun,
@@ -924,11 +1127,15 @@ describe("runNightlyQuestionReview", () => {
     const loadExisting = vi.fn(async () => ({ run: failedRun, items: failedItems }));
     Object.assign(dependencies, { loadExisting });
 
-    await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
+    await expect(runNightlyQuestionReview({
+      challengeDate: "2026-08-10",
+      now,
+      dependencies,
+    })).resolves.toMatchObject({ kind: "observed", run: { status: "failed" } });
 
     expect(dependencies.sendReviewEmail).toHaveBeenCalled();
-    expect(vi.mocked(dependencies.sendReviewEmail!).mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(dependencies.acquireReservation).mock.invocationCallOrder[0]);
+    expect(dependencies.claimEmail).toHaveBeenCalledWith(failedRun.id, now.toISOString());
+    expect(dependencies.acquireReservation).not.toHaveBeenCalled();
   });
 
   it("does not claim report email delivery for an in-progress run", async () => {
@@ -945,7 +1152,7 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.sendReviewEmail).not.toHaveBeenCalled();
   });
 
-  it("atomically reclaims a stale running run and resumes only unfinished slots", async () => {
+  it("atomically reclaims a stale running run, skips failed slots, and resumes pending slots", async () => {
     const staleRun = makeRun({
       status: "running",
       heartbeatAt: "2026-08-09T22:30:00.000Z",
@@ -972,13 +1179,13 @@ describe("runNightlyQuestionReview", () => {
 
     await runUntilTerminal(context, true);
 
-    expect(dependencies.claimExisting).toHaveBeenCalledTimes(4);
+    expect(dependencies.claimExisting).toHaveBeenCalledTimes(3);
     expect(dependencies.startOrObserve).not.toHaveBeenCalled();
-    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(3);
+    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(2);
     expect(vi.mocked(dependencies.verifyQuestion).mock.calls.map(([input]) => input.question.id))
-      .toEqual(questionIds.slice(2));
+      .toEqual(questionIds.slice(3));
     expect(dependencies.heartbeatRun).toHaveBeenCalled();
-    expect(getRun()).toMatchObject({ status: "completed" });
+    expect(getRun()).toMatchObject({ status: "failed" });
   });
 
   it("does not reconcile when token-fenced finalization reports lost ownership", async () => {
@@ -1012,10 +1219,8 @@ describe("runNightlyQuestionReview", () => {
     expect(dependencies.completeRun).toHaveBeenCalledOnce();
   });
 
-  it("resumes a failed partial run, skips completed slots, and retries failed or pending slots once", async () => {
+  it("resumes a running partial run, skips completed and failed slots, and processes pending slots once", async () => {
     const existingRun = makeRun({
-      status: "failed",
-      completedAt: now.toISOString(),
       usage: {
         model: "gpt-5.6-terra",
         inputTokens: 20,
@@ -1038,14 +1243,14 @@ describe("runNightlyQuestionReview", () => {
 
     await runUntilTerminal(context, true);
 
-    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(3);
-    expect(dependencies.saveItem).toHaveBeenCalledTimes(3);
+    expect(dependencies.verifyQuestion).toHaveBeenCalledTimes(2);
+    expect(dependencies.saveItem).toHaveBeenCalledTimes(4);
     expect(vi.mocked(dependencies.verifyQuestion).mock.calls.map(([input]) => input.question.id))
-      .toEqual(questionIds.slice(2));
+      .toEqual(questionIds.slice(3));
     expect(getRun()).toMatchObject({
-      status: "completed",
-      usage: { inputTokens: 50, outputTokens: 25 },
-      estimatedCostMicrodollars: 500,
+      status: "failed",
+      usage: { inputTokens: 40, outputTokens: 20 },
+      estimatedCostMicrodollars: 400,
     });
     expect(dependencies.reconcileReservation).not.toHaveBeenCalled();
   });
@@ -1060,7 +1265,7 @@ describe("runNightlyQuestionReview", () => {
     );
     existingItems.push(flaggedItem);
     const { dependencies, items } = createDependencies({
-      existingRun: makeRun({ status: "failed", completedAt: now.toISOString() }),
+      existingRun: makeRun(),
       existingItems,
     });
 
@@ -1073,7 +1278,7 @@ describe("runNightlyQuestionReview", () => {
       selection: draft.questions,
       excludedQuestionIds: [],
     });
-    expect(dependencies.saveItem).toHaveBeenCalledOnce();
+    expect(dependencies.saveItem).toHaveBeenCalledTimes(2);
     expect(items.get(3)).toMatchObject({
       finding: { verdict: "risk" },
       replacement: { eligible: true, questionId: replacementId },
@@ -1092,8 +1297,6 @@ describe("runNightlyQuestionReview", () => {
     existingItems.push(flaggedItem);
     const { dependencies } = createDependencies({
       existingRun: makeRun({
-        status: "failed",
-        completedAt: now.toISOString(),
         estimatedCostMicrodollars: historicalCost,
       }),
       existingItems,
@@ -1103,7 +1306,7 @@ describe("runNightlyQuestionReview", () => {
     await runNightlyQuestionReview({ challengeDate: "2026-08-10", now, dependencies });
 
     expect(dependencies.verifyQuestion).toHaveBeenCalledOnce();
-    expect(dependencies.saveItem).toHaveBeenCalledOnce();
+    expect(dependencies.saveItem).toHaveBeenCalledTimes(2);
   });
 
   it("resumes after a pre-finalization crash without losing or double-counting persisted usage", async () => {

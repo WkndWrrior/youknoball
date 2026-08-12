@@ -94,3 +94,4 @@ export function createDailyQuestionReviewCronHandler(options: {
 }
 
 export const GET = createDailyQuestionReviewCronHandler();
+export const POST = GET;

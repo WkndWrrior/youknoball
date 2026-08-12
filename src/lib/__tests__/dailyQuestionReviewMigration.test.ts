@@ -342,7 +342,10 @@ describe("nightly question verification migration", () => {
       "jsonb_array_length(replacement_finding->'evidence') > 0",
     );
     expect(itemsTable).toContain(
-      "review_status in ('pending', 'reviewing', 'failed') and verdict is null",
+      "review_status in ('pending', 'reviewing') and verdict is null",
+    );
+    expect(itemsTable).toContain(
+      "review_status = 'failed' and (",
     );
     expect(itemsTable).toContain(
       "review_status = 'completed' and verdict is not null",
@@ -619,6 +622,10 @@ describe("nightly question verification migration", () => {
     expect(progress).toContain("usage_applied");
     expect(progress).toContain("insert into public.daily_question_review_items");
     expect(progress).toContain("heartbeat_at = p_heartbeat_at");
+    expect(progress).toContain("p_run_errors jsonb");
+    expect(progress).toContain("jsonb_array_length(p_run_errors) > 20");
+    expect(progress).toContain("octet_length(p_run_errors::text) > 20000");
+    expect(progress).toContain("errors = p_run_errors");
     expect(finalize).toContain("security definer");
     expect(finalize).toContain("claim_token = p_claim_token");
     expect(finalize).toContain("lease_expires_at > p_completed_at");
@@ -627,12 +634,19 @@ describe("nightly question verification migration", () => {
       "v_reservation_actual_microdollars := v_run.estimated_cost_microdollars - v_reservation.run_cost_baseline_microdollars",
     );
     expect(finalize).toContain(
+      "v_reservation_actual_microdollars := v_reservation.reserved_microdollars",
+    );
+    expect(finalize).toContain("review_status = 'failed'");
+    expect(finalize).toContain("v_final_status := 'failed'");
+    expect(finalize).not.toContain("p_errors jsonb");
+    expect(finalize).not.toContain("errors = p_errors");
+    expect(finalize).toContain(
       "v_reservation_actual_microdollars between 0 and v_reservation.reserved_microdollars",
     );
 
     for (const signature of [
-      "public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint)",
-      "public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz, jsonb)",
+      "public.persist_daily_question_review_progress(uuid, uuid, timestamptz, timestamptz, uuid, smallint, uuid, jsonb, text, jsonb, text, numeric, text, jsonb, jsonb, timestamptz, uuid, boolean, jsonb, jsonb, jsonb, uuid, text, integer, integer, integer, integer, integer, bigint)",
+      "public.finalize_daily_question_review_run(uuid, uuid, uuid, text, timestamptz)",
     ]) {
       expect(migration).toContain(
         `revoke all on function ${signature} from public, anon, authenticated`,

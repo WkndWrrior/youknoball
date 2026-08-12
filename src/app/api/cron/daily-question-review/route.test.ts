@@ -1,16 +1,20 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createDailyQuestionReviewCronHandler } from "@/app/api/cron/daily-question-review/route";
+import {
+  createDailyQuestionReviewCronHandler,
+  GET,
+  POST,
+} from "@/app/api/cron/daily-question-review/route";
 
 const summerNow = new Date("2026-08-12T23:10:00.000Z");
 
-function request(authorization?: string) {
+function request(authorization?: string, method = "GET") {
   const headers = new Headers();
   if (authorization !== undefined) headers.set("authorization", authorization);
   return new Request("https://youknoball.com/api/cron/daily-question-review", {
-    method: "GET",
+    method,
     headers,
   });
 }
@@ -50,15 +54,19 @@ describe("GET /api/cron/daily-question-review", () => {
     },
   );
 
-  it("returns 204 outside the 6-7 PM Central window", async () => {
+  it("returns 204 outside the 6-8 PM Central window", async () => {
     const runReview = vi.fn();
     const response = await createDailyQuestionReviewCronHandler({
-      now: () => new Date("2026-08-13T01:10:00.000Z"),
+      now: () => new Date("2026-08-13T02:10:00.000Z"),
       runReview,
     })(request("Bearer a-long-random-cron-secret"));
 
     expect(response.status).toBe(204);
     expect(runReview).not.toHaveBeenCalled();
+  });
+
+  it("accepts the same protected handler over POST", async () => {
+    expect(POST).toBe(GET);
   });
 
   it("runs tomorrow's review during the Central window", async () => {
@@ -109,19 +117,10 @@ describe("GET /api/cron/daily-question-review", () => {
     expect(await response.json()).toEqual({ message: "Nightly review failed." });
   });
 
-  it("configures 36 distinct once-daily Hobby schedules at five-minute offsets", () => {
+  it("uses Fluid Compute without any Vercel cron entries", () => {
+    expect(existsSync("vercel.json")).toBe(true);
     const config = JSON.parse(readFileSync("vercel.json", "utf8"));
-    const expected = [23, 0, 1].flatMap((hour) =>
-      Array.from({ length: 12 }, (_, index) => ({
-        path: "/api/cron/daily-question-review",
-        schedule: `${index * 5} ${hour} * * *`,
-      })),
-    );
-    expect(config.crons).toEqual(expected);
-    expect(new Set(config.crons.map((cron: { schedule: string }) => cron.schedule)).size)
-      .toBe(36);
-    expect(config.crons.every((cron: { schedule: string }) =>
-      /^\d{1,2} (?:23|0|1) \* \* \*$/.test(cron.schedule),
-    )).toBe(true);
+    expect(config).toMatchObject({ fluid: true });
+    expect(config).not.toHaveProperty("crons");
   });
 });

@@ -522,20 +522,15 @@ export async function runNightlyQuestionReview({
       existingReview.items,
       occurredAt,
     );
-    if (
-      existingReview.run.status === "completed" ||
-      existingReview.run.status === "completed_with_flags"
-    ) {
-      return {
-        kind: "observed",
-        budget: checkDailyQuestionReviewBudget({
-          model: deps.model,
-          records,
-          now,
-        }),
-        run: existingReview.run,
-      };
-    }
+    return {
+      kind: "observed",
+      budget: checkDailyQuestionReviewBudget({
+        model: deps.model,
+        records,
+        now,
+      }),
+      run: existingReview.run,
+    };
   }
 
   const preflight = await runWithDailyQuestionReviewBudgetPreflight({
@@ -622,8 +617,12 @@ export async function runNightlyQuestionReview({
         const itemsBySlot = new Map(
           loaded.items.map((item) => [item.slot, item]),
         );
+        const runErrors = [...loaded.run.errors];
         const saveProgress = async (
-          input: Omit<ItemSaveInput, "runId" | "claimToken" | "heartbeatAt" | "leaseExpiresAt">,
+          input: Omit<
+            ItemSaveInput,
+            "runId" | "claimToken" | "heartbeatAt" | "leaseExpiresAt" | "runErrors"
+          >,
         ) => {
           const lease = getLeaseWindow(deps.currentTime());
           const saved = await deps.saveItem({
@@ -632,6 +631,7 @@ export async function runNightlyQuestionReview({
             claimToken,
             heartbeatAt: lease.heartbeatAt,
             leaseExpiresAt: lease.leaseExpiresAt,
+            runErrors: runErrors.slice(0, 20),
           });
           itemsBySlot.set(saved.item.slot, saved.item);
           if (
@@ -642,9 +642,9 @@ export async function runNightlyQuestionReview({
           }
           return saved.item;
         };
-        const runErrors = [...loaded.run.errors];
         const pendingQuestions = draft.questions.filter((question) => {
-          return itemsBySlot.get(question.slot)?.reviewStatus !== "completed";
+          const status = itemsBySlot.get(question.slot)?.reviewStatus;
+          return status === undefined || status === "pending" || status === "reviewing";
         });
 
         if (
@@ -659,6 +659,16 @@ export async function runNightlyQuestionReview({
         if (pendingQuestions.length > 0) {
           const question = pendingQuestions[0];
           await assertLease();
+          await saveProgress({
+            dailyChallengeId: draft.challengeId,
+            slot: question.slot,
+            question,
+            reviewStatus: "failed",
+            sourceFetchResults: [],
+            finding: null,
+            replacement: null,
+            usageEvent: null,
+          });
           let evidence: DailyQuestionReviewEvidenceCollection;
           try {
             evidence = await deps.collectEvidence(question);
@@ -799,6 +809,7 @@ export async function runNightlyQuestionReview({
         }
 
         for (const question of flaggedQuestions.slice(0, unitLimit)) {
+          let placeholderPersisted = false;
           try {
             await assertLease();
             const candidate = await deps.selectReplacement({
@@ -812,18 +823,26 @@ export async function runNightlyQuestionReview({
               throw new Error("Persisted primary finding is unavailable.");
             }
             if (!candidate) {
+              const unavailableError = new Error(
+                "No compliant replacement candidate was available.",
+              );
+              runErrors.push(
+                makeRunError(
+                  "replacement",
+                  "replacement_unavailable",
+                  unavailableError,
+                  occurredAt,
+                  question.id,
+                ),
+              );
               await saveProgress({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
                 question: primaryItem.question,
-                reviewStatus: "completed",
+                reviewStatus: "failed",
                 sourceFetchResults: primaryItem.sourceFetchResults,
                 finding: primaryItem.finding,
-                replacement: terminalReplacement(
-                  primaryItem.question,
-                  new Error("No compliant replacement candidate was available."),
-                  occurredAt,
-                ),
+                replacement: null,
                 usageEvent: null,
               });
               continue;
@@ -870,10 +889,31 @@ export async function runNightlyQuestionReview({
             }
             attemptedReplacementIds.add(candidate.id);
 
+            await saveProgress({
+              dailyChallengeId: draft.challengeId,
+              slot: question.slot,
+              question: primaryItem.question,
+              reviewStatus: "failed",
+              sourceFetchResults: primaryItem.sourceFetchResults,
+              finding: primaryItem.finding,
+              replacement: null,
+              usageEvent: null,
+            });
+            placeholderPersisted = true;
+
             let candidateEvidence: DailyQuestionReviewEvidenceCollection;
             try {
               candidateEvidence = await deps.collectEvidence(candidate);
             } catch (error) {
+              runErrors.push(
+                makeRunError(
+                  "source_fetch",
+                  "replacement_source_fetch_failed",
+                  error,
+                  occurredAt,
+                  candidate.id,
+                ),
+              );
               await saveProgress({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
@@ -893,6 +933,17 @@ export async function runNightlyQuestionReview({
                 savedEvidence: candidateEvidence.savedEvidence,
               });
             } catch (error) {
+              runErrors.push(
+                makeRunError(
+                  "replacement",
+                  error instanceof OpenAiQuestionVerifierError
+                    ? error.code
+                    : "replacement_verification_failed",
+                  error,
+                  occurredAt,
+                  candidate.id,
+                ),
+              );
               await saveProgress({
                 dailyChallengeId: draft.challengeId,
                 slot: question.slot,
@@ -939,19 +990,6 @@ export async function runNightlyQuestionReview({
               ) as PreparedDailyChallengeDraft["questions"];
             }
           } catch (error) {
-            const currentItem = itemsBySlot.get(question.slot);
-            if (currentItem?.finding && currentItem.replacement === null) {
-              await saveProgress({
-                dailyChallengeId: draft.challengeId,
-                slot: question.slot,
-                question: currentItem.question,
-                reviewStatus: "completed",
-                sourceFetchResults: currentItem.sourceFetchResults,
-                finding: currentItem.finding,
-                replacement: terminalReplacement(question, error, occurredAt),
-                usageEvent: null,
-              });
-            }
             runErrors.push(
               makeRunError(
                 "replacement",
@@ -963,6 +1001,23 @@ export async function runNightlyQuestionReview({
                 question.id,
               ),
             );
+            const currentItem = itemsBySlot.get(question.slot);
+            if (
+              !placeholderPersisted &&
+              currentItem?.finding &&
+              currentItem.replacement === null
+            ) {
+              await saveProgress({
+                dailyChallengeId: draft.challengeId,
+                slot: question.slot,
+                question: currentItem.question,
+                reviewStatus: "failed",
+                sourceFetchResults: currentItem.sourceFetchResults,
+                finding: currentItem.finding,
+                replacement: null,
+                usageEvent: null,
+              });
+            }
           }
         }
 
@@ -976,20 +1031,17 @@ export async function runNightlyQuestionReview({
         const allCompleted =
           finalItems.length === 5 &&
           finalItems.every((item) => item.reviewStatus === "completed");
+        const hasFailedItem = finalItems.some(
+          (item) => item.reviewStatus === "failed",
+        );
         const hasFlags = finalItems.some(
           (item) => item.finding?.verdict !== "passed",
         );
-        const status = !allCompleted
+        const status = hasFailedItem || !allCompleted
           ? "failed"
           : hasFlags
             ? "completed_with_flags"
             : "completed";
-        runErrors.sort((left, right) => {
-          const questionOrder = (left.questionId ?? "").localeCompare(
-            right.questionId ?? "",
-          );
-          return questionOrder || left.phase.localeCompare(right.phase);
-        });
         await assertLease();
         const finalRun = await deps.completeRun({
           runId: loaded.run.id,
@@ -997,7 +1049,6 @@ export async function runNightlyQuestionReview({
           reservationId: reservation.reservationId,
           status,
           completedAt: occurredAt,
-          errors: runErrors.slice(0, 20),
         });
 
         await attemptReviewEmail(deps, finalRun, finalItems, occurredAt);

@@ -271,7 +271,10 @@ function parseItem(value: unknown): DailyQuestionReviewItemRecord | null {
   if (!question || !sourceFetchResults) return null;
 
   let finding: DailyQuestionVerificationFinding | null = null;
-  if (value.review_status === "completed") {
+  if (
+    value.review_status === "completed" ||
+    (value.review_status === "failed" && value.verdict !== null)
+  ) {
     finding = parseDailyQuestionVerificationFinding({
       questionId: value.question_id,
       verdict: value.verdict,
@@ -468,6 +471,7 @@ export async function upsertDailyQuestionReviewItem(
     sourceFetchResults: DailyQuestionSourceFetchResult[];
     finding: DailyQuestionVerificationFinding | null;
     replacement: DailyQuestionReplacementCandidate | null;
+    runErrors: DailyQuestionReviewRunError[];
     usageEvent: null | {
       id: string;
       phase: "primary" | "replacement";
@@ -510,6 +514,7 @@ export async function upsertDailyQuestionReviewItem(
       p_replacement_eligible: replacement?.eligible ?? false,
       p_replacement_question_snapshot: replacement?.snapshot ?? null,
       p_replacement_finding: replacement?.finding ?? null,
+      p_run_errors: input.runErrors,
       p_usage_event_id: usage?.id ?? null,
       p_usage_phase: usage?.phase ?? null,
       p_input_tokens: usage?.inputTokens ?? 0,
@@ -546,7 +551,6 @@ export async function completeDailyQuestionReviewRun(
     reservationId: string;
     status: Extract<DailyQuestionReviewRunStatus, "completed" | "completed_with_flags" | "failed">;
     completedAt: string;
-    errors: DailyQuestionReviewRunError[];
   },
 ): Promise<DailyQuestionReviewRunRecord> {
   const { data, error } = await client.rpc("finalize_daily_question_review_run", {
@@ -555,7 +559,6 @@ export async function completeDailyQuestionReviewRun(
     p_reservation_id: input.reservationId,
     p_status: input.status,
     p_completed_at: input.completedAt,
-    p_errors: input.errors,
   });
   throwIfError(error);
   if (isRecord(data) && data.outcome === "lost_lease") {

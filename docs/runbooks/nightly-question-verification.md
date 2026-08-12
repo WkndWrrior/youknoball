@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Starting at 6 PM America/Chicago, Vercel invokes a private route that drafts
+Starting at 6 PM America/Chicago, Supabase Cron invokes a private route that drafts
 tomorrow's Daily 5, checks authoritative sources, stores findings, and emails
 the owner after all work completes.
 Findings are advisory; automation never rewrites, retires, or reclassifies a
@@ -11,13 +11,17 @@ reusable question.
 ## Production Setup
 
 1. Apply `supabase/migrations/202608080001_nightly_question_verification.sql`.
-2. Deploy to Vercel production. Cron does not run on preview deployments.
+2. Deploy to Vercel production with Fluid Compute enabled. The current
+   deployment requires the Hobby default and maximum duration of 300 seconds.
 3. Verify the Resend domain used by `QUESTION_REPORT_EMAIL_FROM`.
 4. Create a dedicated OpenAI API project, add $10 prepaid credit, disable Auto
    Recharge, and create a project-scoped API key. API billing is separate from
    a ChatGPT subscription.
 5. Generate a long random `CRON_SECRET` and identify the Supabase Auth UUIDs
    allowed to review questions.
+6. Store the production origin and the same bearer secret in Supabase Vault.
+7. Manually run `supabase/cron/nightly_question_verification.sql` in the
+   Supabase SQL Editor after the production route is deployed.
 
 Use the OpenAI usage dashboard to monitor that dedicated project's spend. Rotate
 its project key immediately if it may have been exposed, then update Vercel
@@ -36,7 +40,7 @@ Set these for Production:
 | `DAILY_REVIEW_MONTHLY_BUDGET_CENTS` | No | Defaults to `1000` ($10) |
 | `DAILY_REVIEW_APPROVED_SOURCE_DOMAINS` | No | Comma-separated allowlist additions |
 | `DAILY_REVIEW_ADMIN_USER_IDS` | Yes | Comma-separated Supabase Auth UUIDs |
-| `CRON_SECRET` | Yes | Vercel Cron bearer secret |
+| `CRON_SECRET` | Yes | Supabase Cron bearer secret |
 | `RESEND_API_KEY` | Yes | Resend server API key |
 | `QUESTION_REPORT_EMAIL_FROM` | Yes | Verified Resend sender |
 | `QUESTION_REPORT_EMAIL_TO` | Yes | Comma-separated owner recipients |
@@ -47,22 +51,53 @@ The existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
 
 ## Schedule And Manual Run
 
-`vercel.json` contains 36 distinct once-daily entries at five-minute offsets
-across UTC hours 23, 00, and 01. Each expression satisfies Vercel Hobby's
-once-per-day restriction. The route accepts only the 6 PM and 7 PM Central
-hours, so the extra UTC hour covers daylight-saving changes and irrelevant
-invocations return `204`. Hobby delivery can drift within an hour.
+Create the two named Vault secrets once, replacing the placeholders locally:
+
+```sql
+select vault.create_secret(
+  'https://YOUR_PRODUCTION_DOMAIN',
+  'daily_review_site_url',
+  'Nightly question review production origin'
+);
+
+select vault.create_secret(
+  'PASTE_THE_SAME_VALUE_AS_VERCEL_CRON_SECRET',
+  'daily_review_cron_secret',
+  'Nightly question review bearer token'
+);
+```
+
+Then open `supabase/cron/nightly_question_verification.sql` and run its complete
+contents manually in the Supabase SQL Editor. Do not put either value in that
+file. The script validates both secrets, enables `pg_cron` and `pg_net`, safely
+replaces the named `nightly-question-verification` job, and schedules one POST
+every five minutes during UTC hours 23, 00, 01, and 02.
+
+The route accepts only the 6 PM, 7 PM, and 8 PM Central hours. The wider UTC
+range covers daylight-saving changes; irrelevant invocations return `204`.
+Inspect the installed job without revealing secrets:
+
+```sql
+select jobid, jobname, schedule, active
+from cron.job
+where jobname = 'nightly-question-verification';
+```
 
 Each accepted invocation verifies at most one primary or replacement question.
 The run keeps its active reservation and resumes deterministically on later
 invocations. Leases, unique run keys, usage-event IDs, and email claims make
-duplicate or imprecise delivery safe. The email can arrive after 6 PM as the
-units complete; this design does not require a Pro plan.
+duplicate or imprecise delivery safe. The 8 PM window also retries failed or
+stale-sending email claims for terminal runs. The email can arrive after 6 PM
+as units complete. This design does not require a Pro plan, but the current
+Vercel deployment must retain Fluid Compute and the 300-second route duration.
+It cannot guarantee recovery after a scheduler outage that spans every accepted
+Central-time window.
 
-During the 6 PM or 7 PM Central hour:
+During the 6 PM, 7 PM, or 8 PM Central hour:
 
 ```bash
 curl --fail-with-body \
+  -X POST \
   -H "Authorization: Bearer $CRON_SECRET" \
   "https://youknoball.com/api/cron/daily-question-review"
 ```
@@ -100,7 +135,7 @@ These objects are service-role-only and are not player-visible.
 1. Confirm the migration appears in `npx supabase migration list`.
 2. Confirm Auto Recharge is off and the OpenAI project has no unrelated keys.
 3. Confirm Vercel Production variables exist without printing their values.
-4. During the 6 PM or 7 PM Central hour, invoke the cron repeatedly until its
+4. During the 6 PM, 7 PM, or 8 PM Central hour, invoke the route repeatedly until its
    response is `completed`; each `in_progress` response represents at most one
    persisted verification unit.
 5. Confirm one draft, one scheduled run, five review items, and one reconciled
@@ -117,7 +152,7 @@ explicit owner authorization. Automated tests use mocks and spend no credit.
 
 - `401`: the bearer value does not match `CRON_SECRET`.
 - `503`: `CRON_SECRET` is absent or malformed.
-- `204`: the request is outside the 6 PM and 7 PM Central hours.
+- `204`: the request is outside the 6 PM, 7 PM, and 8 PM Central hours.
 - Budget blocked: inspect `daily_question_review_reservations`; no OpenAI call
   should have occurred.
 - Source failure: inspect `source_fetch_results` for blocked domains, redirects,
@@ -133,8 +168,9 @@ Vercel Production, and redeploy. Never print the old or new value.
 
 ## Rollback
 
-1. Remove `vercel.json` cron entries and deploy, or rotate `CRON_SECRET` first
-   to stop authorized invocations immediately.
+1. Stop scheduling with
+   `select cron.unschedule('nightly-question-verification');`, or rotate
+   `CRON_SECRET` first to stop authorized invocations immediately.
 2. Deploy the previous application commit.
 3. Revoke the dedicated OpenAI key if verification is being retired.
 4. Leave additive review tables and audit rows in place while any prior deploy
