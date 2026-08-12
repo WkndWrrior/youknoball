@@ -19,16 +19,19 @@ function safeEvidenceUrl(value: string) {
   }
 }
 
+function validDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 export default async function DailyReviewPage({
   params,
 }: {
   params: Promise<{ date: string }>;
 }) {
   const { date } = await params;
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-    new Date(`${date}T00:00:00.000Z`).toISOString().slice(0, 10) !== date
-  ) notFound();
+  if (!validDate(date)) notFound();
   const cookieStore = await cookies();
   const session = getSupabaseSessionFromCookieValue(
     cookieStore.get(supabaseAuthStorageKey)?.value,

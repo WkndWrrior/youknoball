@@ -75,6 +75,12 @@ describe("POST /api/admin/daily-review/[date]/resolve", () => {
     expect(badDate.status).toBe(400);
     expect(badAction.status).toBe(400);
     expect(deps.loadReview).not.toHaveBeenCalled();
+
+    const impossibleMonth = await handler(
+      request({ action: "keep", reviewItemId: itemId }),
+      { params: Promise.resolve({ date: "2026-99-99" }) },
+    );
+    expect(impossibleMonth.status).toBe(400);
   });
 
   it("rejects cross-origin mutation requests", async () => {
