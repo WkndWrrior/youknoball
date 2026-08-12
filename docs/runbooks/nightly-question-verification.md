@@ -18,6 +18,10 @@ reusable question.
 5. Generate a long random `CRON_SECRET` and identify the Supabase Auth UUIDs
    allowed to review questions.
 
+Use the OpenAI usage dashboard to monitor that dedicated project's spend. Rotate
+its project key immediately if it may have been exposed, then update Vercel
+Production and redeploy.
+
 Do not put secret values in source control, logs, tickets, or this runbook.
 
 ## Vercel Variables
