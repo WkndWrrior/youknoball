@@ -1,4 +1,5 @@
 const CHALLENGE_TIME_ZONE = "America/Chicago";
+const NIGHTLY_REVIEW_HOURS = new Set([18, 19, 20]);
 const CHICAGO_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: CHALLENGE_TIME_ZONE,
   year: "numeric",
@@ -36,18 +37,20 @@ function formatIsoDateFromParts(parts: {
   ].join("-");
 }
 
-function getPreviousChicagoDate(parts: {
+function offsetCalendarDate(parts: {
   year: number;
   month: number;
   day: number;
-}) {
+}, dayOffset: number) {
   const chicagoMiddayUtc = Date.UTC(parts.year, parts.month - 1, parts.day, 12);
-  const previousDay = new Date(chicagoMiddayUtc - 24 * 60 * 60 * 1000);
+  const offsetDate = new Date(
+    chicagoMiddayUtc + dayOffset * 24 * 60 * 60 * 1000,
+  );
 
   return {
-    year: previousDay.getUTCFullYear(),
-    month: previousDay.getUTCMonth() + 1,
-    day: previousDay.getUTCDate(),
+    year: offsetDate.getUTCFullYear(),
+    month: offsetDate.getUTCMonth() + 1,
+    day: offsetDate.getUTCDate(),
   };
 }
 
@@ -55,10 +58,26 @@ export function getTodayIsoDate() {
   const chicagoNow = getChicagoDateTimeParts(new Date());
 
   if (chicagoNow.hour === 0 && chicagoNow.minute === 0) {
-    return formatIsoDateFromParts(getPreviousChicagoDate(chicagoNow));
+    return formatIsoDateFromParts(offsetCalendarDate(chicagoNow, -1));
   }
 
   return formatIsoDateFromParts(chicagoNow);
+}
+
+export function getNightlyReviewSchedule(now: Date): {
+  shouldRun: boolean;
+  challengeDate: string;
+} {
+  if (Number.isNaN(now.getTime())) {
+    throw new RangeError("Nightly review schedule requires a valid Date.");
+  }
+
+  const chicagoNow = getChicagoDateTimeParts(now);
+
+  return {
+    shouldRun: NIGHTLY_REVIEW_HOURS.has(chicagoNow.hour),
+    challengeDate: formatIsoDateFromParts(offsetCalendarDate(chicagoNow, 1)),
+  };
 }
 
 export function formatChallengeDate(date: string) {

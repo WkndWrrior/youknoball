@@ -1,4 +1,5 @@
 import type { QuestionSnapshot } from "@/lib/dailyChallenge";
+import { parseQuestionSnapshot } from "@/lib/dailyQuestionReview";
 
 export const FIVE_QUESTION_DIFFICULTY_MIX = [
   "easy",
@@ -19,6 +20,13 @@ export type GeneratedDailyChallengeQuestion = QuestionSnapshot & {
 export type DailyChallengeGenerationInput = {
   candidates: DailyChallengeGeneratorCandidate[];
   recentQuestionIds?: string[];
+};
+
+export type DailyChallengeReplacementInput = {
+  selection: readonly GeneratedDailyChallengeQuestion[];
+  flaggedSlot: number;
+  candidates: readonly DailyChallengeGeneratorCandidate[];
+  recentQuestionIds?: readonly string[] | ReadonlySet<string>;
 };
 
 type PartialSelection = {
@@ -50,7 +58,7 @@ function getFreshnessScore(
     return 1_000;
   }
 
-  return Math.max(0, 100 - rank);
+  return Math.min(999, rank);
 }
 
 function getSelectionScore(
@@ -311,4 +319,149 @@ export function scoreDailyChallengeSelection(
   });
 
   return getSelectionScore(selection, recentQuestionIdRanks);
+}
+
+export function isValidDailyChallengeSelection(
+  selection: readonly GeneratedDailyChallengeQuestion[],
+) {
+  if (selection.length !== DAILY_CHALLENGE_SLOT_DIFFICULTIES.length) {
+    return false;
+  }
+
+  const questionIds = new Set<string>();
+
+  return selection.every((question, index) => {
+    if (
+      question.slot !== index + 1 ||
+      question.difficulty !== DAILY_CHALLENGE_SLOT_DIFFICULTIES[index] ||
+      question.id.trim().length === 0 ||
+      questionIds.has(question.id)
+    ) {
+      return false;
+    }
+
+    questionIds.add(question.id);
+    return true;
+  });
+}
+
+export function isDailyChallengeReplacementValid({
+  selection,
+  flaggedSlot,
+  replacement,
+  recentQuestionIds = [],
+}: {
+  selection: readonly GeneratedDailyChallengeQuestion[];
+  flaggedSlot: number;
+  replacement: GeneratedDailyChallengeQuestion;
+  recentQuestionIds?: readonly string[];
+}) {
+  if (
+    !isValidDailyChallengeSelection(selection) ||
+    !Number.isInteger(flaggedSlot) ||
+    flaggedSlot < 1 ||
+    flaggedSlot > selection.length ||
+    selection.some((question) => question.id === replacement.id) ||
+    recentQuestionIds.includes(replacement.id) ||
+    replacement.difficulty !== selection[flaggedSlot - 1]?.difficulty
+  ) {
+    return false;
+  }
+  const resultingSelection = selection.map((question, index) =>
+    index === flaggedSlot - 1
+      ? { ...replacement, slot: flaggedSlot }
+      : { ...question },
+  );
+  return (
+    isValidDailyChallengeSelection(resultingSelection) &&
+    preservesSelectionComposition(
+      scoreDailyChallengeSelection(resultingSelection, [...recentQuestionIds]),
+      scoreDailyChallengeSelection(
+        selection.map((question) => ({ ...question })),
+        [...recentQuestionIds],
+      ),
+    )
+  );
+}
+
+function preservesSelectionComposition(
+  candidateScore: SelectionScore,
+  baselineScore: SelectionScore,
+) {
+  return (
+    candidateScore.targetSportCoverage >= baselineScore.targetSportCoverage &&
+    candidateScore.uniqueSportCount >= baselineScore.uniqueSportCount &&
+    candidateScore.overLimitCount <= baselineScore.overLimitCount
+  );
+}
+
+export function selectDailyChallengeReplacement({
+  selection,
+  flaggedSlot,
+  candidates,
+  recentQuestionIds = [],
+}: DailyChallengeReplacementInput): DailyChallengeGeneratorCandidate | null {
+  if (
+    !Number.isInteger(flaggedSlot) ||
+    flaggedSlot < 1 ||
+    flaggedSlot > DAILY_CHALLENGE_SLOT_DIFFICULTIES.length ||
+    !isValidDailyChallengeSelection(selection)
+  ) {
+    return null;
+  }
+
+  const flaggedQuestion = selection[flaggedSlot - 1];
+  const selectedQuestionIds = new Set(selection.map((question) => question.id));
+  const recentIds = Array.from(recentQuestionIds);
+  const recentIdSet = new Set(recentIds);
+  const candidateIdCounts = new Map<string, number>();
+  candidates.forEach((candidate) => {
+    candidateIdCounts.set(
+      candidate.id,
+      (candidateIdCounts.get(candidate.id) ?? 0) + 1,
+    );
+  });
+  const eligibleCandidates = candidates
+    .filter(
+      (candidate) =>
+        candidateIdCounts.get(candidate.id) === 1 &&
+        candidate.difficulty === flaggedQuestion.difficulty &&
+        candidate.status === "ready" &&
+        candidate.eligible_for_daily &&
+        parseQuestionSnapshot(candidate, candidate.id) !== null &&
+        !selectedQuestionIds.has(candidate.id) &&
+        !recentIdSet.has(candidate.id),
+    )
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  if (eligibleCandidates.length === 0) {
+    return null;
+  }
+
+  const baselineScore = scoreDailyChallengeSelection(
+    selection.map((question) => ({ ...question })),
+    recentIds,
+  );
+  const scoredCandidates = eligibleCandidates.map((candidate) => {
+    const resultingSelection = selection.map((question, index) =>
+      index === flaggedSlot - 1
+        ? { ...candidate, slot: flaggedSlot }
+        : { ...question },
+    );
+
+    return {
+      candidate,
+      score: scoreDailyChallengeSelection(resultingSelection, recentIds),
+    };
+  });
+  const preservingCandidates = scoredCandidates.filter(({ score }) =>
+    preservesSelectionComposition(score, baselineScore),
+  );
+  if (preservingCandidates.length === 0) {
+    return null;
+  }
+
+  return preservingCandidates.reduce((best, current) =>
+    compareSelectionScore(current.score, best.score) > 0 ? current : best,
+  ).candidate;
 }
