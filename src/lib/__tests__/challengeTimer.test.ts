@@ -62,8 +62,10 @@ describe("challenge timer", () => {
   it("formats elapsed time as MM:SS", () => {
     expect(formatTimer(90_000)).toBe("01:30");
     expect(formatTimer(61_000)).toBe("01:01");
-    expect(formatTimer(60_001)).toBe("01:01");
+    expect(formatTimer(60_999)).toBe("01:00");
     expect(formatTimer(60_000)).toBe("01:00");
+    expect(formatTimer(89_999)).toBe("01:29");
+    expect(formatTimer(999)).toBe("00:00");
     expect(formatTimer(0)).toBe("00:00");
   });
 });

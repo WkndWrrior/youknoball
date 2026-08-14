@@ -37,7 +37,7 @@ export function isLeaderboardEligibleDuration(durationMs: number | null) {
 }
 
 export function formatTimer(durationMs: number) {
-  const totalSeconds = Math.max(0, Math.ceil(durationMs / 1000));
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
