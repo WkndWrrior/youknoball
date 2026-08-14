@@ -280,8 +280,8 @@ describe("GET /api/challenge/today", () => {
       status: "ready",
       timer: {
         startedAt: "2026-04-01T11:59:30.000Z",
-        durationLimitMs: 120_000,
-        remainingMs: 90_000,
+        durationLimitMs: 90_000,
+        remainingMs: 60_000,
       },
     });
   });
