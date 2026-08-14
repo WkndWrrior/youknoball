@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import {
-  getAttemptDurationMs,
+  getCappedElapsedTimerMs,
   isLeaderboardEligibleDuration,
 } from "@/lib/challengeTimer";
 import {
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
         challengeDate: date,
       });
       durationMs = attemptStart
-        ? getAttemptDurationMs(attemptStart.started_at, new Date())
+        ? getCappedElapsedTimerMs(attemptStart.started_at, new Date())
         : null;
     } catch {
       durationMs = null;

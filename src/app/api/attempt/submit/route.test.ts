@@ -248,20 +248,21 @@ describe("POST /api/attempt/submit", () => {
     });
   });
 
-  it("saves signed-in attempts after the timer expires but excludes them from the leaderboard", async () => {
+  it("caps signed-in attempts after ninety seconds and keeps them leaderboard-eligible", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-01T14:03:01.000Z"));
     getDailyAttemptStart.mockResolvedValue({
       started_at: "2026-04-01T14:00:00.000Z",
     });
+    getPlayerProfile.mockResolvedValue({ display_name: "Player" });
     createDailyAttempt.mockResolvedValue({
       id: "attempt-1",
       challenge_date: "2026-04-01",
       created_at: "2026-04-01T14:03:01.000Z",
       score: 4,
       total_questions: 5,
-      duration_ms: 181_000,
-      leaderboard_eligible: false,
+      duration_ms: 90_000,
+      leaderboard_eligible: true,
       answers: {
         q1: "A",
         q2: "B",
@@ -286,17 +287,17 @@ describe("POST /api/attempt/submit", () => {
     expect(createDailyAttempt).toHaveBeenCalledWith(
       { tag: "session" },
       expect.objectContaining({
-        durationMs: 181_000,
-        leaderboardEligible: false,
+        durationMs: 90_000,
+        leaderboardEligible: true,
       }),
     );
     await expect(response.json()).resolves.toMatchObject({
       saved: true,
-      leaderboardEligible: false,
-      leaderboardStatus: "timed_out",
+      leaderboardEligible: true,
+      leaderboardStatus: "eligible",
       attempt: {
-        durationMs: 181_000,
-        leaderboardEligible: false,
+        durationMs: 90_000,
+        leaderboardEligible: true,
       },
     });
   });
