@@ -995,6 +995,68 @@ describe("nightly question verification migration", () => {
 });
 
 describe("daily review answer correction migration", () => {
+  it("safely replaces the unnamed resolution-state check with a named compatible constraint", async () => {
+    const migration = await readFile(answerCorrectionMigrationPath, "utf8");
+    const resolutionState = migration.replace(/\s+/g, " ");
+
+    expect(migration).toContain("from pg_catalog.pg_constraint c");
+    expect(migration).toContain("c.contype = 'c'");
+    for (const governedColumn of [
+      "resolution",
+      "resolved_by",
+      "resolved_at",
+      "applied_at",
+      "application_metadata",
+    ]) {
+      expect(migration).toContain(
+        `position('${governedColumn}' in pg_catalog.pg_get_constraintdef(c.oid)) > 0`,
+      );
+    }
+    expect(migration).toContain(
+      "coalesce(cardinality(v_resolution_constraint_names), 0) <> 1",
+    );
+    expect(migration).toContain(
+      "raise exception 'Expected exactly one existing daily question review resolution-state check constraint.'",
+    );
+    expect(migration).toContain(
+      "drop constraint %I",
+    );
+
+    expect(resolutionState).toContain(
+      "alter table public.daily_question_review_items add constraint daily_question_review_items_resolution_state_check",
+    );
+    expect(resolutionState).toContain(
+      "resolution = 'pending' and resolved_by is null and resolved_at is null and applied_at is null and application_metadata = '{}'::jsonb",
+    );
+    expect(resolutionState).toContain(
+      "resolution = 'kept' and review_status = 'completed' and resolved_by is not null and resolved_at is not null and applied_at is null",
+    );
+    expect(resolutionState).toContain(
+      "application_metadata = '{}'::jsonb",
+    );
+    expect(resolutionState).toMatch(
+      /application_metadata \?& array\[\s*'action',\s*'previousCorrectOption',\s*'newCorrectOption'\s*\]/,
+    );
+    expect(resolutionState).toContain(
+      "application_metadata - array['action', 'previousCorrectOption', 'newCorrectOption'] = '{}'::jsonb",
+    );
+    expect(resolutionState).toContain(
+      "application_metadata->>'action' = 'correct_answer'",
+    );
+    expect(resolutionState).toContain(
+      "application_metadata->>'previousCorrectOption' in ('A', 'B', 'C', 'D')",
+    );
+    expect(resolutionState).toContain(
+      "application_metadata->>'newCorrectOption' in ('A', 'B', 'C', 'D')",
+    );
+    expect(resolutionState).toContain(
+      "application_metadata->>'previousCorrectOption' <> application_metadata->>'newCorrectOption'",
+    );
+    expect(resolutionState).toContain(
+      "resolution = 'replaced' and review_status = 'completed' and resolved_by is not null and resolved_at is not null and applied_at is not null and resolved_at >= created_at and applied_at >= resolved_at",
+    );
+  });
+
   it("creates a private service-role-only correction RPC", async () => {
     const migration = await readFile(answerCorrectionMigrationPath, "utf8");
     const correction = normalizedStatement(

@@ -1,3 +1,83 @@
+do $migration$
+declare
+  v_resolution_constraint_names text[];
+begin
+  select pg_catalog.array_agg(c.conname order by c.conname)
+  into v_resolution_constraint_names
+  from pg_catalog.pg_constraint c
+  join pg_catalog.pg_class t
+    on t.oid = c.conrelid
+  join pg_catalog.pg_namespace n
+    on n.oid = t.relnamespace
+  where n.nspname = 'public'
+    and t.relname = 'daily_question_review_items'
+    and c.contype = 'c'
+    and position('resolution' in pg_catalog.pg_get_constraintdef(c.oid)) > 0
+    and position('resolved_by' in pg_catalog.pg_get_constraintdef(c.oid)) > 0
+    and position('resolved_at' in pg_catalog.pg_get_constraintdef(c.oid)) > 0
+    and position('applied_at' in pg_catalog.pg_get_constraintdef(c.oid)) > 0
+    and position('application_metadata' in pg_catalog.pg_get_constraintdef(c.oid)) > 0;
+
+  if coalesce(cardinality(v_resolution_constraint_names), 0) <> 1 then
+    raise exception 'Expected exactly one existing daily question review resolution-state check constraint.';
+  end if;
+
+  execute pg_catalog.format(
+    'alter table public.daily_question_review_items drop constraint %I',
+    v_resolution_constraint_names[1]
+  );
+end;
+$migration$;
+
+alter table public.daily_question_review_items
+  add constraint daily_question_review_items_resolution_state_check
+  check (
+    (
+      resolution = 'pending'
+      and resolved_by is null
+      and resolved_at is null
+      and applied_at is null
+      and application_metadata = '{}'::jsonb
+    )
+    or (
+      resolution = 'kept'
+      and review_status = 'completed'
+      and resolved_by is not null
+      and resolved_at is not null
+      and applied_at is null
+      and resolved_at >= created_at
+      and (
+        application_metadata = '{}'::jsonb
+        or (
+          jsonb_typeof(application_metadata) = 'object'
+          and application_metadata ?& array[
+            'action',
+            'previousCorrectOption',
+            'newCorrectOption'
+          ]
+          and application_metadata - array['action', 'previousCorrectOption', 'newCorrectOption'] = '{}'::jsonb
+          and jsonb_typeof(application_metadata->'action') = 'string'
+          and application_metadata->>'action' = 'correct_answer'
+          and jsonb_typeof(application_metadata->'previousCorrectOption') = 'string'
+          and application_metadata->>'previousCorrectOption' in ('A', 'B', 'C', 'D')
+          and jsonb_typeof(application_metadata->'newCorrectOption') = 'string'
+          and application_metadata->>'newCorrectOption' in ('A', 'B', 'C', 'D')
+          and application_metadata->>'previousCorrectOption'
+            <> application_metadata->>'newCorrectOption'
+        )
+      )
+    )
+    or (
+      resolution = 'replaced'
+      and review_status = 'completed'
+      and resolved_by is not null
+      and resolved_at is not null
+      and applied_at is not null
+      and resolved_at >= created_at
+      and applied_at >= resolved_at
+    )
+  );
+
 create or replace function public.correct_daily_question_review_answer(
   p_review_item_id uuid,
   p_challenge_date date,
