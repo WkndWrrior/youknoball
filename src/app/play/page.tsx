@@ -7,7 +7,7 @@ import type { User } from "@supabase/supabase-js";
 import { QuestionReportButton } from "@/components/QuestionReportButton";
 import {
   formatTimer,
-  getRemainingTimerMs,
+  getCappedElapsedTimerMs,
 } from "@/lib/challengeTimer";
 import {
   clearPendingGuestAttemptClaim,
@@ -344,15 +344,14 @@ export default function PlayPage() {
     return buildXShareUrl(result.shareText, shareUrl);
   }, [result?.shareText, shareUrl]);
   const facebookShareUrl = useMemo(() => buildFacebookShareUrl(shareUrl), [shareUrl]);
-  const timerRemainingMs = readyChallenge?.timer
-    ? getRemainingTimerMs(
+  const timerElapsedMs = readyChallenge?.timer
+    ? getCappedElapsedTimerMs(
         readyChallenge.timer.startedAt,
         new Date(timerNowMs),
         readyChallenge.timer.durationLimitMs,
       )
     : null;
-  const timerDisplay = timerRemainingMs === null ? null : formatTimer(timerRemainingMs);
-  const timerExpired = timerRemainingMs === 0;
+  const timerDisplay = timerElapsedMs === null ? null : formatTimer(timerElapsedMs);
 
   function selectAnswer(questionId: string, option: AnswerOption) {
     setAnswers((current) => ({
@@ -634,9 +633,7 @@ export default function PlayPage() {
                 </p>
                 <p className="mt-3 text-sm text-white/65">
                   {readyChallenge.timer
-                    ? timerExpired
-                      ? "Timed leaderboard window closed."
-                      : "Finish before zero to rank."
+                    ? "Speed breaks the tie."
                     : "Guest runs are casual. Sign in before playing to rank."}
                 </p>
               </div>

@@ -248,19 +248,19 @@ describe("POST /api/attempt/submit", () => {
     });
   });
 
-  it("saves signed-in attempts after the timer expires but excludes them from the leaderboard", async () => {
+  it("keeps signed-in attempts under five seconds off the leaderboard", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-01T14:03:01.000Z"));
+    vi.setSystemTime(new Date("2026-04-01T14:00:03.000Z"));
     getDailyAttemptStart.mockResolvedValue({
       started_at: "2026-04-01T14:00:00.000Z",
     });
     createDailyAttempt.mockResolvedValue({
       id: "attempt-1",
       challenge_date: "2026-04-01",
-      created_at: "2026-04-01T14:03:01.000Z",
+      created_at: "2026-04-01T14:00:03.000Z",
       score: 4,
       total_questions: 5,
-      duration_ms: 181_000,
+      duration_ms: 3_000,
       leaderboard_eligible: false,
       answers: {
         q1: "A",
@@ -286,17 +286,70 @@ describe("POST /api/attempt/submit", () => {
     expect(createDailyAttempt).toHaveBeenCalledWith(
       { tag: "session" },
       expect.objectContaining({
-        durationMs: 181_000,
+        durationMs: 3_000,
         leaderboardEligible: false,
       }),
     );
     await expect(response.json()).resolves.toMatchObject({
       saved: true,
       leaderboardEligible: false,
-      leaderboardStatus: "timed_out",
       attempt: {
-        durationMs: 181_000,
+        durationMs: 3_000,
         leaderboardEligible: false,
+      },
+    });
+  });
+
+  it("caps signed-in attempts after ninety seconds and keeps them leaderboard-eligible", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-01T14:03:01.000Z"));
+    getDailyAttemptStart.mockResolvedValue({
+      started_at: "2026-04-01T14:00:00.000Z",
+    });
+    getPlayerProfile.mockResolvedValue({ display_name: "Player" });
+    createDailyAttempt.mockResolvedValue({
+      id: "attempt-1",
+      challenge_date: "2026-04-01",
+      created_at: "2026-04-01T14:03:01.000Z",
+      score: 4,
+      total_questions: 5,
+      duration_ms: 90_000,
+      leaderboard_eligible: true,
+      answers: {
+        q1: "A",
+        q2: "B",
+        q3: "D",
+        q4: "D",
+        q5: "A",
+      },
+    });
+
+    const sessionCookie = JSON.stringify({
+      access_token: "access-token",
+      user: {
+        id: "user-123",
+        email: "player@example.com",
+      },
+    });
+
+    const { POST } = await import("@/app/api/attempt/submit/route");
+    const response = await POST(buildRequest(sessionCookie));
+
+    expect(response.status).toBe(200);
+    expect(createDailyAttempt).toHaveBeenCalledWith(
+      { tag: "session" },
+      expect.objectContaining({
+        durationMs: 90_000,
+        leaderboardEligible: true,
+      }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      saved: true,
+      leaderboardEligible: true,
+      leaderboardStatus: "eligible",
+      attempt: {
+        durationMs: 90_000,
+        leaderboardEligible: true,
       },
     });
   });

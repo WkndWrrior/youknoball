@@ -13,8 +13,12 @@ describe("/play share controls", () => {
     expect(source).toContain("buildXShareUrl");
     expect(source).toContain("buildFacebookShareUrl");
     expect(source).toContain("formatTimer");
+    expect(source).toContain("getCappedElapsedTimerMs");
+    expect(source).not.toContain("getRemainingTimerMs");
     expect(source).toContain("Timed leaderboard");
-    expect(source).toContain("Timed leaderboard window closed.");
+    expect(source).toContain("Speed breaks the tie.");
+    expect(source).not.toContain("Timed leaderboard window closed.");
+    expect(source).not.toContain("Finish before zero to rank.");
     expect(source).toContain('result.leaderboardStatus === "needs_display_name"');
     expect(source).toContain('result.leaderboardStatus === "timed_out"');
     expect(source).toContain('result.leaderboardStatus === "timer_unavailable"');

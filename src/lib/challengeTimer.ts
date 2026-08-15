@@ -1,4 +1,4 @@
-export const leaderboardTimerLimitMs = 2 * 60 * 1000;
+export const leaderboardTimerLimitMs = 90 * 1000;
 export const leaderboardTimerMinimumMs = 5 * 1000;
 
 export function getAttemptDurationMs(startedAt: string, now = new Date()) {
@@ -20,6 +20,14 @@ export function getRemainingTimerMs(
   return Math.max(0, limitMs - getAttemptDurationMs(startedAt, now));
 }
 
+export function getCappedElapsedTimerMs(
+  startedAt: string,
+  now = new Date(),
+  limitMs = leaderboardTimerLimitMs,
+) {
+  return Math.min(limitMs, getAttemptDurationMs(startedAt, now));
+}
+
 export function isLeaderboardEligibleDuration(durationMs: number | null) {
   return (
     durationMs !== null &&
@@ -29,7 +37,7 @@ export function isLeaderboardEligibleDuration(durationMs: number | null) {
 }
 
 export function formatTimer(durationMs: number) {
-  const totalSeconds = Math.max(0, Math.ceil(durationMs / 1000));
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
