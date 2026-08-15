@@ -556,9 +556,13 @@ function collectSearchMetadata(output: unknown): {
     }
     if (item.type === "web_search_call") {
       const action = isRecord(item.action) ? item.action : null;
-      if (action && Array.isArray(action.sources)) {
+      if (
+        item.status === "completed" &&
+        action?.type === "search" &&
+        Array.isArray(action.sources)
+      ) {
         for (const source of action.sources) {
-          if (isRecord(source)) {
+          if (isRecord(source) && source.type === "url") {
             addSource(source.url, source.title);
           }
         }
@@ -1013,6 +1017,7 @@ function buildRequestBody(
   };
   if (webSearchEnabled) {
     body.max_tool_calls = MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE;
+    body.tool_choice = "required";
     body.tools = [
       {
         type: "web_search",

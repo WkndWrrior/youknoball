@@ -186,6 +186,7 @@ describe("OpenAI question verifier", () => {
         },
       },
       max_tool_calls: MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE,
+      tool_choice: "required",
       tools: [
         {
           type: "web_search",
@@ -429,6 +430,77 @@ describe("OpenAI question verifier", () => {
     );
   });
 
+  it("trusts the documented completed search URL source shape", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(responseBody(finding("passed"), {
+        searchCalls: 1,
+        searchSources: [{
+          url: "https://www.nfl.com/news/documented-source",
+          title: "NFL documented source",
+        }],
+      })),
+    );
+
+    const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+    expect(result.finding.verdict).toBe("passed");
+    expect(result.finding.evidence[0]?.url).toBe(
+      "https://www.nfl.com/news/documented-source",
+    );
+    expect(result.sources).toEqual([{
+      url: "https://www.nfl.com/news/documented-source",
+      title: "NFL documented source",
+    }]);
+    expect(result.webSearchCalls).toBe(1);
+  });
+
+  it.each([
+    ["failed call", (call: Record<string, unknown>) => {
+      call.status = "failed";
+    }],
+    ["incomplete call", (call: Record<string, unknown>) => {
+      call.status = "incomplete";
+    }],
+    ["wrong action type", (call: Record<string, unknown>) => {
+      (call.action as Record<string, unknown>).type = "open_page";
+    }],
+    ["wrong source type", (call: Record<string, unknown>) => {
+      const action = call.action as { sources: Array<Record<string, unknown>> };
+      action.sources[0]!.type = "citation";
+    }],
+    ["missing source type", (call: Record<string, unknown>) => {
+      const action = call.action as { sources: Array<Record<string, unknown>> };
+      delete action.sources[0]!.type;
+    }],
+  ])("does not trust action sources from a %s", async (_case, mutate) => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    const body = responseBody(finding("passed"), {
+      inputTokens: 40,
+      outputTokens: 6,
+      searchCalls: 1,
+      searchSources: [{
+        url: "https://www.nba.com/news/untrusted-shape",
+        title: "Untrusted shape",
+      }],
+    }) as Record<string, unknown>;
+    const output = body.output as Array<Record<string, unknown>>;
+    mutate(output[0]!);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+
+    const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+    expect(result.finding).toMatchObject({
+      verdict: "unable_to_verify",
+      confidence: 0,
+      evidence: [],
+    });
+    expect(result.sources).toEqual([]);
+    expect(result.webSearchCalls).toBe(1);
+    expect(result.usage).toMatchObject({ inputTokens: 40, outputTokens: 6 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does not retry refused or API-error responses", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const cases: Array<{ body: unknown; code: string; status?: number }> = [
@@ -631,8 +703,15 @@ describe("OpenAI question verifier", () => {
       }],
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(getRequestBody(fetchMock, 0)).toHaveProperty("tools");
-    expect(getRequestBody(fetchMock, 1)).toHaveProperty("tools");
+    const initialRequest = getRequestBody(fetchMock, 0);
+    const retryRequest = getRequestBody(fetchMock, 1);
+    for (const request of [initialRequest, retryRequest]) {
+      expect(request.tool_choice).toBe("required");
+      expect(request.max_tool_calls).toBe(
+        MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE,
+      );
+    }
+    expect(retryRequest.tools).toEqual(initialRequest.tools);
   });
 
   it.each([
