@@ -51,7 +51,7 @@ const RESERVED_EXAMPLE_DOMAINS = [
   "example.org",
 ] as const;
 
-const DEFAULT_APPROVED_SOURCE_DOMAINS = [
+export const DEFAULT_APPROVED_SOURCE_DOMAINS = [
   "baseball-reference.com",
   "baseballhall.org",
   "basketball-reference.com",
@@ -74,6 +74,9 @@ const DEFAULT_APPROVED_SOURCE_DOMAINS = [
   "uconnhuskies.com",
   "uhcougars.com",
 ] as const;
+const BUILT_IN_APPROVED_SOURCE_DOMAINS: Set<string> = new Set(
+  DEFAULT_APPROVED_SOURCE_DOMAINS,
+);
 
 const SPECIAL_USE_SUFFIXES = [
   ".arpa",
@@ -666,9 +669,9 @@ function isApprovedHostname(
 // The default fetch path supplements this URL policy with public-address DNS
 // validation and a pinned connector. Network egress controls remain useful
 // defense in depth against resolver or runtime failures.
-export function validateSourceUrl(
+function validateSourceUrlAgainstDomains(
   input: string,
-  options: SourceUrlOptions = {},
+  approvedDomains: Set<string>,
 ): SourceUrlValidation {
   if (input.length > MAX_SOURCE_URL_LENGTH) {
     return { ok: false, reason: "invalid_url" };
@@ -711,7 +714,7 @@ export function validateSourceUrl(
   if (!isSafeHostname(hostname)) {
     return { ok: false, reason: "invalid_host" };
   }
-  if (!isApprovedHostname(hostname, getApprovedDomains(options))) {
+  if (!isApprovedHostname(hostname, approvedDomains)) {
     return { ok: false, reason: "host_not_allowed" };
   }
 
@@ -720,6 +723,22 @@ export function validateSourceUrl(
   }
 
   return { ok: true, url: url.toString() };
+}
+
+export function validateBuiltInSourceUrl(
+  input: string,
+): SourceUrlValidation {
+  return validateSourceUrlAgainstDomains(
+    input,
+    BUILT_IN_APPROVED_SOURCE_DOMAINS,
+  );
+}
+
+export function validateSourceUrl(
+  input: string,
+  options: SourceUrlOptions = {},
+): SourceUrlValidation {
+  return validateSourceUrlAgainstDomains(input, getApprovedDomains(options));
 }
 
 function trimUrlToken(token: string): string {
@@ -754,6 +773,32 @@ export function extractApprovedSourceUrls(
 
   for (const match of matches) {
     const validation = validateSourceUrl(trimUrlToken(match), options);
+    if (!validation.ok || seen.has(validation.url)) {
+      continue;
+    }
+    seen.add(validation.url);
+    urls.push(validation.url);
+    if (urls.length === MAX_SAVED_SOURCE_URLS) {
+      break;
+    }
+  }
+
+  return urls;
+}
+
+export function extractBuiltInApprovedSourceUrls(
+  sourceNotes: string | null | undefined,
+): string[] {
+  if (!sourceNotes) {
+    return [];
+  }
+
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const matches = sourceNotes.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
+
+  for (const match of matches) {
+    const validation = validateBuiltInSourceUrl(trimUrlToken(match));
     if (!validation.ok || seen.has(validation.url)) {
       continue;
     }

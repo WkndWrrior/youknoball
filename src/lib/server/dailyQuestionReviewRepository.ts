@@ -17,6 +17,7 @@ import {
   type DailyQuestionReviewRunStatus,
   type DailyQuestionSourceFetchResult,
   type DailyQuestionVerificationFinding,
+  type QuestionAnswerOption,
   type QuestionSnapshot,
 } from "@/lib/dailyQuestionReview";
 import type {
@@ -26,6 +27,7 @@ import type {
   DailyQuestionReviewUsage,
   PersistedDailyQuestionReviewCost,
 } from "@/lib/server/dailyQuestionReviewBudget";
+import { validateBuiltInSourceUrl } from "@/lib/server/dailyQuestionSourceFetcher";
 import type { ServerSupabaseClient } from "@/lib/server/supabaseServer";
 
 const RUN_COLUMNS = [
@@ -121,6 +123,12 @@ function isTimestamp(value: unknown): value is string {
 
 function isDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isRealDate(value: unknown): value is string {
+  if (!isDate(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function isNullableTimestamp(value: unknown): value is string | null {
@@ -772,6 +780,149 @@ export async function resolveDailyQuestionReviewItem(
     throw new Error("Daily review resolution returned invalid data.");
   }
   return data;
+}
+
+export async function claimDailyQuestionReviewAnswerCorrection(
+  client: ServerSupabaseClient,
+  input: {
+    challengeDate: string;
+    reviewItemId: string;
+    newCorrectOption: QuestionAnswerOption;
+    claimedBy: string;
+  },
+): Promise<
+  | { outcome: "claimed"; claimToken: string; claimExpiresAt: string }
+  | { outcome: "busy" | "conflict" | "not_draft" | "missing" | "unchanged" }
+> {
+  if (
+    !isUuid(input.reviewItemId) ||
+    !isUuid(input.claimedBy) ||
+    !isRealDate(input.challengeDate) ||
+    !(["A", "B", "C", "D"] as const).includes(input.newCorrectOption)
+  ) {
+    throw new Error("Daily review answer correction claim input is invalid.");
+  }
+  const claimToken = randomUUID();
+  const { data, error } = await client.rpc(
+    "claim_daily_question_review_answer_correction",
+    {
+      p_review_item_id: input.reviewItemId,
+      p_challenge_date: input.challengeDate,
+      p_new_correct_option: input.newCorrectOption,
+      p_claim_token: claimToken,
+      p_claimed_by: input.claimedBy,
+    },
+  );
+  throwIfError(error);
+  const outcomes = new Set([
+    "claimed",
+    "busy",
+    "conflict",
+    "not_draft",
+    "missing",
+    "unchanged",
+  ]);
+  if (!isRecord(data) || typeof data.outcome !== "string" || !outcomes.has(data.outcome)) {
+    throw new Error("Daily review answer correction claim returned invalid data.");
+  }
+  if (data.outcome === "claimed") {
+    if (!isTimestamp(data.claim_expires_at)) {
+      throw new Error("Daily review answer correction claim returned invalid data.");
+    }
+    return {
+      outcome: "claimed",
+      claimToken,
+      claimExpiresAt: data.claim_expires_at,
+    };
+  }
+  return {
+    outcome: data.outcome as "busy" | "conflict" | "not_draft" | "missing" | "unchanged",
+  };
+}
+
+export async function releaseDailyQuestionReviewAnswerCorrection(
+  client: ServerSupabaseClient,
+  input: { reviewItemId: string; claimToken: string },
+): Promise<{ outcome: "released" | "not_owned" | "missing" }> {
+  if (!isUuid(input.reviewItemId) || !isUuid(input.claimToken)) {
+    throw new Error("Daily review answer correction release input is invalid.");
+  }
+  const { data, error } = await client.rpc(
+    "release_daily_question_review_answer_correction",
+    {
+      p_review_item_id: input.reviewItemId,
+      p_claim_token: input.claimToken,
+    },
+  );
+  throwIfError(error);
+  const outcomes = new Set(["released", "not_owned", "missing"]);
+  if (!isRecord(data) || typeof data.outcome !== "string" || !outcomes.has(data.outcome)) {
+    throw new Error("Daily review answer correction release returned invalid data.");
+  }
+  return {
+    outcome: data.outcome as "released" | "not_owned" | "missing",
+  };
+}
+
+export async function correctDailyQuestionReviewAnswer(
+  client: ServerSupabaseClient,
+  input: {
+    challengeDate: string;
+    reviewItemId: string;
+    claimToken: string;
+    newCorrectOption: QuestionAnswerOption;
+    finding: DailyQuestionVerificationFinding & { verdict: "passed" };
+    resolvedBy: string;
+  },
+): Promise<{ outcome: "corrected" | "conflict" | "not_draft" | "missing" }> {
+  if (
+    !isUuid(input.reviewItemId) ||
+    !isUuid(input.claimToken) ||
+    !isUuid(input.resolvedBy) ||
+    !isRealDate(input.challengeDate) ||
+    !(["A", "B", "C", "D"] as const).includes(input.newCorrectOption)
+  ) {
+    throw new Error("Daily review answer correction input is invalid.");
+  }
+  const finding = parseDailyQuestionVerificationFinding(input.finding);
+  if (!finding || finding.verdict !== "passed") {
+    throw new Error("Daily review answer correction finding is invalid.");
+  }
+  const canonicalEvidence = finding.evidence.map((item) => {
+    const validation = validateBuiltInSourceUrl(item.url);
+    if (!validation.ok) {
+      throw new Error("Daily review answer correction evidence is not approved.");
+    }
+    return { ...item, url: validation.url };
+  });
+  const canonicalFinding = { ...finding, evidence: canonicalEvidence };
+  const resolvedAt = new Date().toISOString();
+  const { data, error } = await client.rpc(
+    "correct_daily_question_review_answer",
+    {
+      p_review_item_id: input.reviewItemId,
+      p_claim_token: input.claimToken,
+      p_challenge_date: input.challengeDate,
+      p_new_correct_option: input.newCorrectOption,
+      p_finding_question_id: canonicalFinding.questionId,
+      p_finding_verdict: canonicalFinding.verdict,
+      p_finding_confidence: canonicalFinding.confidence,
+      p_finding_explanation: canonicalFinding.explanation,
+      p_finding_conflicts: canonicalFinding.conflicts,
+      p_finding_evidence: canonicalFinding.evidence,
+      p_finding_verified_at: canonicalFinding.verifiedAt,
+      p_resolved_by: input.resolvedBy,
+      p_resolved_at: resolvedAt,
+    },
+  );
+  throwIfError(error);
+  const outcomes = new Set(["corrected", "conflict", "not_draft", "missing"]);
+  if (!isRecord(data) || typeof data.outcome !== "string" || !outcomes.has(data.outcome)) {
+    throw new Error("Daily review answer correction returned invalid data.");
+  }
+  return {
+    outcome: data.outcome as "corrected" | "conflict" | "not_draft" | "missing",
+  };
 }
 
 export async function loadDailyQuestionReviewResolutions(

@@ -42,4 +42,14 @@ describe("daily review admin page", () => {
     expect(actions).not.toContain("disabled: boolean");
     expect(actions).not.toContain("disabled ||");
   });
+
+  it("passes the reviewed answer choices to the correction controls", () => {
+    const source = readFileSync("src/app/admin/daily-review/[date]/page.tsx", "utf8");
+
+    expect(source).toContain("correctOption={item.question.correct_option}");
+    expect(source).toContain("A: item.question.option_a");
+    expect(source).toContain("B: item.question.option_b");
+    expect(source).toContain("C: item.question.option_c");
+    expect(source).toContain("D: item.question.option_d");
+  });
 });

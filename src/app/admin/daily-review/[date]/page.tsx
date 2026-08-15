@@ -90,6 +90,13 @@ export default async function DailyReviewPage({
                 date={date}
                 reviewItemId={item.id}
                 replacementQuestionId={item.replacement?.eligible ? item.replacement.questionId : null}
+                correctOption={item.question.correct_option}
+                options={{
+                  A: item.question.option_a,
+                  B: item.question.option_b,
+                  C: item.question.option_c,
+                  D: item.question.option_d,
+                }}
               />
             ) : null}
             {item.resolution !== "pending" ? <p>Resolution: {item.resolution}</p> : null}
