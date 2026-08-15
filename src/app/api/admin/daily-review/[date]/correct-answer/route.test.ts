@@ -1,14 +1,17 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createDailyReviewCorrectAnswerHandler } from "@/app/api/admin/daily-review/[date]/correct-answer/route";
+import {
+  createDailyReviewCorrectAnswerHandler,
+  maxDuration,
+} from "@/app/api/admin/daily-review/[date]/correct-answer/route";
 
 const reviewItemId = "00000000-0000-4000-8000-000000000010";
 const userId = "00000000-0000-4000-8000-000000000001";
 
 function request(
   body: unknown,
-  options: { contentType?: string; origin?: string } = {},
+  options: { contentLength?: string; contentType?: string; origin?: string } = {},
 ) {
   return new NextRequest(
     "https://youknoball.com/api/admin/daily-review/2026-08-15/correct-answer",
@@ -17,6 +20,7 @@ function request(
       headers: {
         "content-type": options.contentType ?? "application/json",
         origin: options.origin ?? "https://youknoball.com",
+        ...(options.contentLength ? { "content-length": options.contentLength } : {}),
       },
       body: typeof body === "string" ? body : JSON.stringify(body),
     },
@@ -58,6 +62,10 @@ const context = { params: Promise.resolve({ date: "2026-08-15" }) };
 
 describe("POST /api/admin/daily-review/[date]/correct-answer", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("uses the nightly route duration ceiling for the three-minute claim", () => {
+    expect(maxDuration).toBe(300);
+  });
 
   it.each([
     ["unauthenticated", 401],
@@ -101,6 +109,27 @@ describe("POST /api/admin/daily-review/[date]/correct-answer", () => {
     );
 
     expect(response.status).toBe(415);
+    expect(deps.correctAnswer).not.toHaveBeenCalled();
+  });
+
+  it("accepts application/json media types case-insensitively", async () => {
+    const deps = dependencies();
+    const response = await createDailyReviewCorrectAnswerHandler(deps)(
+      request(payload, { contentType: "Application/JSON; Charset=UTF-8" }),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects declared request bodies larger than 4096 bytes", async () => {
+    const deps = dependencies();
+    const response = await createDailyReviewCorrectAnswerHandler(deps)(
+      request(payload, { contentLength: "4097" }),
+      context,
+    );
+
+    expect(response.status).toBe(413);
     expect(deps.correctAnswer).not.toHaveBeenCalled();
   });
 
@@ -221,6 +250,7 @@ describe("POST /api/admin/daily-review/[date]/correct-answer", () => {
       outcome: "verification_failed",
       estimatedCostMicrodollars: 8765,
       retryable: true,
+      usageUncertain: true,
       internalMessage: "OPENAI_API_KEY=secret",
     } as never);
 
@@ -234,6 +264,30 @@ describe("POST /api/admin/daily-review/[date]/correct-answer", () => {
       outcome: "verification_failed",
       estimatedCostMicrodollars: 8765,
       retryable: true,
+      usageUncertain: true,
+    });
+  });
+
+  it("returns persistence failures as safe 500 responses with paid verification details", async () => {
+    const deps = dependencies();
+    const applied = await deps.correctAnswer();
+    deps.correctAnswer.mockResolvedValue({
+      ...applied,
+      outcome: "persistence_failed",
+      internalMessage: "database password=secret",
+    } as never);
+
+    const response = await createDailyReviewCorrectAnswerHandler(deps)(
+      request(payload),
+      context,
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      outcome: "persistence_failed",
+      finding: applied.finding,
+      evidence: applied.evidence,
+      estimatedCostMicrodollars: 1234,
     });
   });
 

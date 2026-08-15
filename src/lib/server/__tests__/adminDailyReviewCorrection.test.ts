@@ -4,6 +4,10 @@ import {
   verifyAndCorrectAdminDailyReviewAnswer,
   type AdminDailyReviewCorrectionDependencies,
 } from "@/lib/server/adminDailyReviewCorrection";
+import {
+  DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
+  DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS,
+} from "@/lib/server/dailyQuestionReviewBudget";
 import { OpenAiQuestionVerifierError } from "@/lib/server/openAiQuestionVerifier";
 
 const challengeDate = "2026-08-15";
@@ -367,6 +371,7 @@ describe("verifyAndCorrectAdminDailyReviewAnswer", () => {
       outcome: "verification_failed",
       estimatedCostMicrodollars: 4321,
       retryable: true,
+      usageUncertain: false,
     });
     expect(deps.estimateCost).toHaveBeenCalledWith({
       model: "gpt-5.6-terra",
@@ -377,6 +382,60 @@ describe("verifyAndCorrectAdminDailyReviewAnswer", () => {
       webSearchCalls: 2,
     });
     expect(deps.correctAnswer).not.toHaveBeenCalled();
+    expect(deps.releaseClaim).toHaveBeenCalledWith({ reviewItemId, claimToken });
+  });
+
+  it("uses the conservative reservation floor when verifier accounting is uncertain", async () => {
+    const deps = dependencies();
+    vi.mocked(deps.verifyQuestion).mockRejectedValue(
+      new OpenAiQuestionVerifierError("timeout", "timed out", {
+        retryable: true,
+        accounting: {
+          usageUncertain: true,
+          usage: {
+            inputTokens: 90,
+            cachedInputTokens: 10,
+            cacheWriteTokens: 0,
+            outputTokens: 5,
+          },
+          webSearchCalls: 2,
+          sources: [],
+        },
+      }),
+    );
+
+    await expect(verifyAndCorrectAdminDailyReviewAnswer(input, deps)).resolves.toEqual({
+      outcome: "verification_failed",
+      estimatedCostMicrodollars:
+        DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS *
+        DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
+      retryable: true,
+      usageUncertain: true,
+    });
+    expect(deps.releaseClaim).toHaveBeenCalledWith({ reviewItemId, claimToken });
+  });
+
+  it("returns paid verification details when correction persistence throws", async () => {
+    const deps = dependencies();
+    vi.mocked(deps.correctAnswer).mockRejectedValue(
+      new Error("database password=secret"),
+    );
+
+    await expect(verifyAndCorrectAdminDailyReviewAnswer(input, deps)).resolves.toEqual({
+      outcome: "persistence_failed",
+      finding: passedFinding,
+      evidence: passedFinding.evidence,
+      estimatedCostMicrodollars: 4321,
+    });
+    expect(deps.releaseClaim).toHaveBeenCalledWith({ reviewItemId, claimToken });
+  });
+
+  it("does not convert an unknown verifier error into persistence_failed", async () => {
+    const deps = dependencies();
+    const primary = new Error("unknown verifier failure");
+    vi.mocked(deps.verifyQuestion).mockRejectedValue(primary);
+
+    await expect(verifyAndCorrectAdminDailyReviewAnswer(input, deps)).rejects.toBe(primary);
     expect(deps.releaseClaim).toHaveBeenCalledWith({ reviewItemId, claimToken });
   });
 

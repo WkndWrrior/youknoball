@@ -216,7 +216,7 @@ begin
     return jsonb_build_object('outcome', 'busy');
   end if;
 
-  v_claim_expires_at := clock_timestamp() + interval '2 minutes';
+  v_claim_expires_at := clock_timestamp() + interval '3 minutes';
   update public.daily_question_review_items
   set answer_correction_claim_token = p_claim_token,
       answer_correction_claimed_by = p_claimed_by,

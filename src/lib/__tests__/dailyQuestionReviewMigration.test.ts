@@ -1056,7 +1056,7 @@ describe("daily review answer correction migration", () => {
     expect(claim).toContain("v_challenge.published_at is not null");
     expect(claim).toContain("answer_correction_claim_expires_at > clock_timestamp()");
     expect(claim).toContain("'outcome', 'busy'");
-    expect(claim).toContain("clock_timestamp() + interval '2 minutes'");
+    expect(claim).toContain("clock_timestamp() + interval '3 minutes'");
     expect(claim).toContain("answer_correction_claim_token = p_claim_token");
     expect(claim).toContain("answer_correction_claimed_by = p_claimed_by");
     expect(claim).toContain("answer_correction_claimed_option = p_new_correct_option");

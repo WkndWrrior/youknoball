@@ -8,10 +8,12 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ANSWER_OPTIONS = new Set(["A", "B", "C", "D"]);
+const MAX_JSON_BODY_BYTES = 4096;
 
 function validDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -43,8 +45,21 @@ export function createDailyReviewCorrectAnswerHandler(dependencies?: {
     if (request.headers.get("origin") !== request.nextUrl.origin) {
       return NextResponse.json({ message: "Forbidden." }, { status: 403 });
     }
-    if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") {
+    const mediaType = request.headers
+      .get("content-type")
+      ?.split(";", 1)[0]
+      .trim()
+      .toLowerCase();
+    if (mediaType !== "application/json") {
       return NextResponse.json({ message: "Invalid review request." }, { status: 415 });
+    }
+    const contentLength = request.headers.get("content-length");
+    if (
+      contentLength !== null &&
+      /^\d+$/.test(contentLength) &&
+      Number(contentLength) > MAX_JSON_BODY_BYTES
+    ) {
+      return NextResponse.json({ message: "Review request is too large." }, { status: 413 });
     }
 
     const { date } = await context.params;
@@ -93,8 +108,20 @@ export function createDailyReviewCorrectAnswerHandler(dependencies?: {
             outcome: result.outcome,
             estimatedCostMicrodollars: result.estimatedCostMicrodollars,
             retryable: result.retryable,
+            usageUncertain: result.usageUncertain,
           },
           { status: 502 },
+        );
+      }
+      if (result.outcome === "persistence_failed") {
+        return NextResponse.json(
+          {
+            outcome: result.outcome,
+            finding: result.finding,
+            evidence: result.evidence,
+            estimatedCostMicrodollars: result.estimatedCostMicrodollars,
+          },
+          { status: 500 },
         );
       }
       return NextResponse.json(result);

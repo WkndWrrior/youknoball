@@ -5,7 +5,11 @@ import type {
   DailyQuestionVerificationFinding,
   QuestionAnswerOption,
 } from "@/lib/dailyQuestionReview";
-import { estimateDailyQuestionReviewCostMicrodollars } from "@/lib/server/dailyQuestionReviewBudget";
+import {
+  DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
+  DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS,
+  estimateDailyQuestionReviewCostMicrodollars,
+} from "@/lib/server/dailyQuestionReviewBudget";
 import {
   claimDailyQuestionReviewAnswerCorrection,
   correctDailyQuestionReviewAnswer,
@@ -25,6 +29,21 @@ import {
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const DEFAULT_MODEL = "gpt-5.6-terra";
+
+function conservativeUncertainCostFloor(): number {
+  if (
+    DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS >
+    Math.floor(
+      Number.MAX_SAFE_INTEGER / DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION,
+    )
+  ) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return (
+    DAILY_REVIEW_MAX_REQUEST_RESERVATION_MICRODOLLARS *
+    DAILY_REVIEW_MAX_MODEL_CALLS_PER_QUESTION
+  );
+}
 
 type Review = NonNullable<Awaited<ReturnType<typeof loadDailyQuestionReviewByDate>>>;
 type ClaimInput = Parameters<typeof claimDailyQuestionReviewAnswerCorrection>[1];
@@ -83,7 +102,9 @@ export type AdminDailyReviewCorrectionResult =
       outcome: "verification_failed";
       estimatedCostMicrodollars: number;
       retryable: boolean;
+      usageUncertain: boolean;
     }
+  | ({ outcome: "persistence_failed" } & VerificationDetails)
   | ({ outcome: "applied" } & VerificationDetails);
 
 function productionDependencies(): AdminDailyReviewCorrectionDependencies {
@@ -173,15 +194,22 @@ export async function verifyAndCorrectAdminDailyReviewAnswer(
       if (!(error instanceof OpenAiQuestionVerifierError)) {
         throw error;
       }
-      const estimatedCostMicrodollars = dependencies.estimateCost({
+      const actualEstimatedCostMicrodollars = dependencies.estimateCost({
         model: dependencies.model,
         ...error.accounting.usage,
         webSearchCalls: error.accounting.webSearchCalls,
       });
+      const estimatedCostMicrodollars = error.accounting.usageUncertain
+        ? Math.max(
+            actualEstimatedCostMicrodollars,
+            conservativeUncertainCostFloor(),
+          )
+        : actualEstimatedCostMicrodollars;
       return {
         outcome: "verification_failed",
         estimatedCostMicrodollars,
         retryable: error.retryable,
+        usageUncertain: error.accounting.usageUncertain,
       };
     }
     const estimatedCostMicrodollars = dependencies.estimateCost({
@@ -201,14 +229,19 @@ export async function verifyAndCorrectAdminDailyReviewAnswer(
     }
     const passedFinding = { ...finding, verdict: finding.verdict };
 
-    const result = await dependencies.correctAnswer({
-      challengeDate: input.challengeDate,
-      reviewItemId: input.reviewItemId,
-      claimToken: claim.claimToken,
-      newCorrectOption: input.newCorrectOption,
-      finding: passedFinding,
-      resolvedBy: input.resolvedBy,
-    });
+    let result: CorrectionRepositoryResult;
+    try {
+      result = await dependencies.correctAnswer({
+        challengeDate: input.challengeDate,
+        reviewItemId: input.reviewItemId,
+        claimToken: claim.claimToken,
+        newCorrectOption: input.newCorrectOption,
+        finding: passedFinding,
+        resolvedBy: input.resolvedBy,
+      });
+    } catch {
+      return { outcome: "persistence_failed", ...details };
+    }
     if (result.outcome === "missing") {
       return { outcome: "missing" };
     }
