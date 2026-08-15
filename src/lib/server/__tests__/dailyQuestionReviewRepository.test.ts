@@ -868,6 +868,38 @@ describe("correctDailyQuestionReviewAnswer", () => {
     expect(client.rpc).not.toHaveBeenCalled();
   });
 
+  it("rejects an env-configured-only evidence domain before calling the RPC", async () => {
+    vi.stubEnv(
+      "DAILY_REVIEW_APPROVED_SOURCE_DOMAINS",
+      "ohiostatebuckeyes.com",
+    );
+    try {
+      const client = createClientMock({}, {
+        correct_daily_question_review_answer: {
+          data: { outcome: "corrected" },
+          error: null,
+        },
+      });
+
+      await expect(correctDailyQuestionReviewAnswer(client, {
+        challengeDate: "2026-08-10",
+        reviewItemId: ids.item,
+        newCorrectOption: "B",
+        finding: {
+          ...passedFinding,
+          evidence: [{
+            ...passedFinding.evidence[0],
+            url: "https://ohiostatebuckeyes.com/news/example",
+          }],
+        },
+        resolvedBy: ids.claim,
+      })).rejects.toThrow("Daily review answer correction evidence is not approved.");
+      expect(client.rpc).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it.each([
     ["review item UUID", { reviewItemId: "not-a-uuid" }],
     ["resolver UUID", { resolvedBy: "not-a-uuid" }],
