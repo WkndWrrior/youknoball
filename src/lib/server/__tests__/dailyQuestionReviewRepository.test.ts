@@ -781,12 +781,22 @@ describe("correctDailyQuestionReviewAnswer", () => {
           error: null,
         },
       });
+      const unnormalizedFinding = {
+        ...passedFinding,
+        explanation: `  ${passedFinding.explanation}  `,
+        conflicts: ["  No factual conflict.  "],
+        evidence: [{
+          ...passedFinding.evidence[0],
+          title: "  NBA record  ",
+          excerpt: "  The record supports the answer.  ",
+        }],
+      };
 
       await expect(correctDailyQuestionReviewAnswer(client, {
         challengeDate: "2026-08-10",
         reviewItemId: ids.item,
         newCorrectOption: "B",
-        finding: passedFinding,
+        finding: unnormalizedFinding,
         resolvedBy: ids.claim,
       })).resolves.toEqual({ outcome: "corrected" });
 
@@ -800,8 +810,12 @@ describe("correctDailyQuestionReviewAnswer", () => {
           p_finding_verdict: "passed",
           p_finding_confidence: 0.98,
           p_finding_explanation: finding.explanation,
-          p_finding_conflicts: [],
-          p_finding_evidence: finding.evidence,
+          p_finding_conflicts: ["No factual conflict."],
+          p_finding_evidence: [{
+            ...finding.evidence[0],
+            title: "NBA record",
+            excerpt: "The record supports the answer.",
+          }],
           p_finding_verified_at: timestamp,
           p_resolved_by: ids.claim,
           p_resolved_at: timestamp,
@@ -810,6 +824,24 @@ describe("correctDailyQuestionReviewAnswer", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("rejects an invalid passed finding before calling the correction RPC", async () => {
+    const client = createClientMock({}, {
+      correct_daily_question_review_answer: {
+        data: { outcome: "corrected" },
+        error: null,
+      },
+    });
+
+    await expect(correctDailyQuestionReviewAnswer(client, {
+      challengeDate: "2026-08-10",
+      reviewItemId: ids.item,
+      newCorrectOption: "B",
+      finding: { ...passedFinding, confidence: Number.NaN },
+      resolvedBy: ids.claim,
+    })).rejects.toThrow("Daily review answer correction finding is invalid.");
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 
   it("propagates correction RPC errors", async () => {

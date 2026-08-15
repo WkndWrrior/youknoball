@@ -997,7 +997,17 @@ describe("nightly question verification migration", () => {
 describe("daily review answer correction migration", () => {
   it("safely replaces the unnamed resolution-state check with a named compatible constraint", async () => {
     const migration = await readFile(answerCorrectionMigrationPath, "utf8");
-    const resolutionState = migration.replace(/\s+/g, " ");
+    const resolutionStateStart = migration.indexOf(
+      "alter table public.daily_question_review_items",
+    );
+    const correctionFunctionStart = migration.indexOf(
+      "create or replace function public.correct_daily_question_review_answer",
+    );
+    expect(resolutionStateStart).toBeGreaterThan(-1);
+    expect(correctionFunctionStart).toBeGreaterThan(resolutionStateStart);
+    const resolutionState = migration
+      .slice(resolutionStateStart, correctionFunctionStart)
+      .replace(/\s+/g, " ");
 
     expect(migration).toContain("from pg_catalog.pg_constraint c");
     expect(migration).toContain("c.contype = 'c'");
@@ -1052,6 +1062,11 @@ describe("daily review answer correction migration", () => {
     expect(resolutionState).toContain(
       "application_metadata->>'previousCorrectOption' <> application_metadata->>'newCorrectOption'",
     );
+    expect(resolutionState).toContain("verdict = 'passed'");
+    expect(resolutionState).toContain("jsonb_array_length(evidence) > 0");
+    expect(resolutionState).toContain(
+      "question_snapshot->>'correct_option' = application_metadata->>'newCorrectOption'",
+    );
     expect(resolutionState).toContain(
       "resolution = 'replaced' and review_status = 'completed' and resolved_by is not null and resolved_at is not null and applied_at is not null and resolved_at >= created_at and applied_at >= resolved_at",
     );
@@ -1098,17 +1113,51 @@ describe("daily review answer correction migration", () => {
       "evidence.value - array['url', 'title', 'excerpt', 'retrievedAt'] <> '{}'::jsonb",
     );
     expect(correction).toContain("p_finding_verified_at is null");
-    expect(correction).toContain("for update");
-    expect(correction).toMatch(
-      /from public\.daily_question_review_items[\s\S]*from public\.daily_question_review_runs[\s\S]*from public\.daily_challenges[\s\S]*from public\.questions[\s\S]*from public\.daily_challenge_items/,
+    const initialItemRead = correction.indexOf(
+      "select i.run_id into v_initial_run_id from public.daily_question_review_items i",
     );
+    const runLock = correction.indexOf(
+      "select r.* into v_run from public.daily_question_review_runs r",
+    );
+    const itemLock = correction.indexOf(
+      "select i.* into v_item from public.daily_question_review_items i",
+    );
+    expect(initialItemRead).toBeGreaterThan(-1);
+    expect(runLock).toBeGreaterThan(initialItemRead);
+    expect(itemLock).toBeGreaterThan(runLock);
+    expect(correction.slice(initialItemRead, runLock)).not.toContain("for update");
+    expect(correction.slice(runLock, itemLock)).toContain("for update");
+    expect(correction.slice(itemLock)).toContain("for update");
+    expect(correction).toContain("v_item.run_id <> v_initial_run_id");
+    expect(correction).toContain(
+      "v_run.status not in ('completed', 'completed_with_flags')",
+    );
+    expect(correction).toContain("v_run.completed_at is null");
     expect(correction).toContain("v_item.review_status <> 'completed'");
     expect(correction).toContain("v_item.resolution <> 'pending'");
     expect(correction).toContain("v_item.verdict not in ('risk', 'unable_to_verify')");
     expect(correction).toContain("v_challenge.status <> 'generated'");
     expect(correction).toContain("v_challenge.published_at is not null");
     expect(correction).toContain("p_new_correct_option = v_old_correct_option");
-    expect(correction).toContain("v_question.correct_option <> v_old_correct_option");
+    expect(correction).toContain(
+      "v_challenge_item.question_snapshot <> v_item.question_snapshot",
+    );
+    for (const canonicalField of [
+      "question_text",
+      "option_a",
+      "option_b",
+      "option_c",
+      "option_d",
+      "difficulty",
+      "source_notes",
+    ]) {
+      expect(correction).toContain(
+        `v_question.${canonicalField} is distinct from v_item.question_snapshot->>'${canonicalField}'`,
+      );
+    }
+    expect(correction).toContain(
+      "v_question.correct_option is distinct from v_old_correct_option",
+    );
     expect(correction).toContain(
       "v_challenge_item.question_snapshot->>'correct_option' <> v_old_correct_option",
     );

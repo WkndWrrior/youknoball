@@ -785,6 +785,10 @@ export async function correctDailyQuestionReviewAnswer(
     resolvedBy: string;
   },
 ): Promise<{ outcome: "corrected" | "conflict" | "not_draft" | "missing" }> {
+  const finding = parseDailyQuestionVerificationFinding(input.finding);
+  if (!finding || finding.verdict !== "passed") {
+    throw new Error("Daily review answer correction finding is invalid.");
+  }
   const resolvedAt = new Date().toISOString();
   const { data, error } = await client.rpc(
     "correct_daily_question_review_answer",
@@ -792,13 +796,13 @@ export async function correctDailyQuestionReviewAnswer(
       p_review_item_id: input.reviewItemId,
       p_challenge_date: input.challengeDate,
       p_new_correct_option: input.newCorrectOption,
-      p_finding_question_id: input.finding.questionId,
-      p_finding_verdict: input.finding.verdict,
-      p_finding_confidence: input.finding.confidence,
-      p_finding_explanation: input.finding.explanation,
-      p_finding_conflicts: input.finding.conflicts,
-      p_finding_evidence: input.finding.evidence,
-      p_finding_verified_at: input.finding.verifiedAt,
+      p_finding_question_id: finding.questionId,
+      p_finding_verdict: finding.verdict,
+      p_finding_confidence: finding.confidence,
+      p_finding_explanation: finding.explanation,
+      p_finding_conflicts: finding.conflicts,
+      p_finding_evidence: finding.evidence,
+      p_finding_verified_at: finding.verifiedAt,
       p_resolved_by: input.resolvedBy,
       p_resolved_at: resolvedAt,
     },

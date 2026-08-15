@@ -58,12 +58,16 @@ alter table public.daily_question_review_items
           and application_metadata - array['action', 'previousCorrectOption', 'newCorrectOption'] = '{}'::jsonb
           and jsonb_typeof(application_metadata->'action') = 'string'
           and application_metadata->>'action' = 'correct_answer'
+          and verdict = 'passed'
+          and jsonb_array_length(evidence) > 0
           and jsonb_typeof(application_metadata->'previousCorrectOption') = 'string'
           and application_metadata->>'previousCorrectOption' in ('A', 'B', 'C', 'D')
           and jsonb_typeof(application_metadata->'newCorrectOption') = 'string'
           and application_metadata->>'newCorrectOption' in ('A', 'B', 'C', 'D')
           and application_metadata->>'previousCorrectOption'
             <> application_metadata->>'newCorrectOption'
+          and question_snapshot->>'correct_option'
+            = application_metadata->>'newCorrectOption'
         )
       )
     )
@@ -103,6 +107,7 @@ declare
   v_challenge public.daily_challenges%rowtype;
   v_question public.questions%rowtype;
   v_challenge_item public.daily_challenge_items%rowtype;
+  v_initial_run_id uuid;
   v_old_correct_option text;
 begin
   if p_challenge_date is null
@@ -154,6 +159,21 @@ begin
     return jsonb_build_object('outcome', 'conflict');
   end if;
 
+  select i.run_id into v_initial_run_id
+  from public.daily_question_review_items i
+  where i.id = p_review_item_id;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+
+  select r.* into v_run
+  from public.daily_question_review_runs r
+  where r.id = v_initial_run_id
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+
   select i.* into v_item
   from public.daily_question_review_items i
   where i.id = p_review_item_id
@@ -161,16 +181,14 @@ begin
   if not found then
     return jsonb_build_object('outcome', 'missing');
   end if;
-
-  select r.* into v_run
-  from public.daily_question_review_runs r
-  where r.id = v_item.run_id
-  for update;
-  if not found then
-    return jsonb_build_object('outcome', 'missing');
+  if v_item.run_id <> v_initial_run_id then
+    return jsonb_build_object('outcome', 'conflict');
   end if;
+
   if v_run.challenge_date <> p_challenge_date
     or v_run.daily_challenge_id <> v_item.daily_challenge_id
+    or v_run.status not in ('completed', 'completed_with_flags')
+    or v_run.completed_at is null
   then
     return jsonb_build_object('outcome', 'conflict');
   end if;
@@ -213,7 +231,14 @@ begin
     return jsonb_build_object('outcome', 'missing');
   end if;
   if v_question.id <> v_item.question_id
-    or v_question.correct_option <> v_old_correct_option
+    or v_question.question_text is distinct from v_item.question_snapshot->>'question_text'
+    or v_question.option_a is distinct from v_item.question_snapshot->>'option_a'
+    or v_question.option_b is distinct from v_item.question_snapshot->>'option_b'
+    or v_question.option_c is distinct from v_item.question_snapshot->>'option_c'
+    or v_question.option_d is distinct from v_item.question_snapshot->>'option_d'
+    or v_question.correct_option is distinct from v_old_correct_option
+    or v_question.difficulty is distinct from v_item.question_snapshot->>'difficulty'
+    or v_question.source_notes is distinct from v_item.question_snapshot->>'source_notes'
   then
     return jsonb_build_object('outcome', 'conflict');
   end if;
@@ -227,6 +252,7 @@ begin
     return jsonb_build_object('outcome', 'missing');
   end if;
   if v_challenge_item.question_id <> v_item.question_id
+    or v_challenge_item.question_snapshot <> v_item.question_snapshot
     or (v_challenge_item.question_snapshot->>'id')::uuid <> v_item.question_id
     or v_challenge_item.question_snapshot->>'correct_option' <> v_old_correct_option
   then
