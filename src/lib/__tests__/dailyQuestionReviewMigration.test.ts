@@ -7,6 +7,10 @@ const migrationPath = path.join(
   process.cwd(),
   "supabase/migrations/202608080001_nightly_question_verification.sql",
 );
+const answerCorrectionMigrationPath = path.join(
+  process.cwd(),
+  "supabase/migrations/202608150001_daily_review_answer_corrections.sql",
+);
 
 function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
@@ -987,5 +991,99 @@ describe("nightly question verification migration", () => {
     expect(migration).toMatch(
       /grant execute on function public\.resolve_daily_question_review_item\(uuid, date, text, uuid, uuid, timestamptz\)\s+to service_role/,
     );
+  });
+});
+
+describe("daily review answer correction migration", () => {
+  it("creates a private service-role-only correction RPC", async () => {
+    const migration = await readFile(answerCorrectionMigrationPath, "utf8");
+    const correction = normalizedStatement(
+      migration,
+      "create or replace function public.correct_daily_question_review_answer",
+    );
+    const signature =
+      "public.correct_daily_question_review_answer(uuid, date, text, uuid, text, numeric, text, jsonb, jsonb, timestamptz, uuid, timestamptz)";
+
+    expect(correction).toContain("security definer");
+    expect(correction).toContain("set search_path = pg_catalog, public");
+    expect(migration).toContain(
+      `revoke all on function ${signature} from public, anon, authenticated`,
+    );
+    expect(migration).toContain(
+      `grant execute on function ${signature} to service_role`,
+    );
+    expect(migration).not.toMatch(
+      /grant execute on function public\.correct_daily_question_review_answer\([^;]+\) to (?:public|anon|authenticated)/i,
+    );
+  });
+
+  it("locks and validates every row and normalized passed finding before mutation", async () => {
+    const migration = await readFile(answerCorrectionMigrationPath, "utf8");
+    const correction = normalizedStatement(
+      migration,
+      "create or replace function public.correct_daily_question_review_answer",
+    );
+
+    expect(correction).toContain("p_new_correct_option not in ('A', 'B', 'C', 'D')");
+    expect(correction).toContain("p_finding_verdict <> 'passed'");
+    expect(correction).toContain("p_finding_confidence between 0 and 1");
+    expect(correction).toContain(
+      "char_length(btrim(p_finding_explanation)) between 1 and 2000",
+    );
+    expect(correction).toContain("jsonb_array_length(p_finding_conflicts) > 10");
+    expect(correction).toContain("jsonb_array_length(p_finding_evidence) between 1 and 10");
+    expect(correction).toContain(
+      "evidence.value - array['url', 'title', 'excerpt', 'retrievedAt'] <> '{}'::jsonb",
+    );
+    expect(correction).toContain("p_finding_verified_at is null");
+    expect(correction).toContain("for update");
+    expect(correction).toMatch(
+      /from public\.daily_question_review_items[\s\S]*from public\.daily_question_review_runs[\s\S]*from public\.daily_challenges[\s\S]*from public\.questions[\s\S]*from public\.daily_challenge_items/,
+    );
+    expect(correction).toContain("v_item.review_status <> 'completed'");
+    expect(correction).toContain("v_item.resolution <> 'pending'");
+    expect(correction).toContain("v_item.verdict not in ('risk', 'unable_to_verify')");
+    expect(correction).toContain("v_challenge.status <> 'generated'");
+    expect(correction).toContain("v_challenge.published_at is not null");
+    expect(correction).toContain("p_new_correct_option = v_old_correct_option");
+    expect(correction).toContain("v_question.correct_option <> v_old_correct_option");
+    expect(correction).toContain(
+      "v_challenge_item.question_snapshot->>'correct_option' <> v_old_correct_option",
+    );
+    expect(correction).toContain(
+      "v_challenge_item.question_id <> v_item.question_id",
+    );
+  });
+
+  it("atomically corrects only answer fields, finding fields, and resolution audit data", async () => {
+    const migration = await readFile(answerCorrectionMigrationPath, "utf8");
+    const correction = normalizedStatement(
+      migration,
+      "create or replace function public.correct_daily_question_review_answer",
+    );
+
+    expect(correction).toContain("update public.questions");
+    expect(correction).toContain("set correct_option = p_new_correct_option");
+    expect(correction).toContain("update public.daily_challenge_items");
+    expect(correction).toMatch(
+      /jsonb_set\(\s*v_challenge_item\.question_snapshot, '\{correct_option\}', to_jsonb\(p_new_correct_option\), false\s*\)/,
+    );
+    expect(correction).toContain("update public.daily_question_review_items");
+    expect(correction).toMatch(
+      /jsonb_set\(\s*v_item\.question_snapshot, '\{correct_option\}', to_jsonb\(p_new_correct_option\), false\s*\)/,
+    );
+    expect(correction).toContain("verdict = 'passed'");
+    expect(correction).toContain("resolution = 'kept'");
+    expect(correction).toContain("resolved_by = p_resolved_by");
+    expect(correction).toContain("resolved_at = p_resolved_at");
+    expect(correction).toContain("'action', 'correct_answer'");
+    expect(correction).toContain("'previousCorrectOption', v_old_correct_option");
+    expect(correction).toContain("'newCorrectOption', p_new_correct_option");
+    expect(correction).toContain("'outcome', 'corrected'");
+    for (const outcome of ["conflict", "not_draft", "missing"]) {
+      expect(correction).toContain(`'outcome', '${outcome}'`);
+    }
+    expect(correction).not.toMatch(/set\s+question_text\s*=/i);
+    expect(correction).not.toMatch(/set\s+option_[abcd]\s*=/i);
   });
 });

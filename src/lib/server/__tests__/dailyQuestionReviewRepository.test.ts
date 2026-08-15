@@ -12,6 +12,7 @@ import {
   claimDailyQuestionReviewBudgetEmail,
   claimOldestDailyQuestionReviewBudgetEmail,
   completeDailyQuestionReviewRun,
+  correctDailyQuestionReviewAnswer,
   heartbeatDailyQuestionReviewRun,
   listCurrentMonthDailyQuestionReviewCosts,
   loadActiveDailyQuestionReviewReservation,
@@ -112,6 +113,7 @@ const finding: DailyQuestionVerificationFinding = {
   ],
   verifiedAt: timestamp,
 };
+const passedFinding = { ...finding, verdict: "passed" as const };
 
 const snapshot = {
   id: ids.question,
@@ -765,6 +767,83 @@ describe("run accounting and reads", () => {
       expect.objectContaining({ id: ids.item, resolution: "kept" }),
     ]);
     expect(query.neq).toHaveBeenCalledWith("resolution", "pending");
+  });
+});
+
+describe("correctDailyQuestionReviewAnswer", () => {
+  it("maps one generated resolution timestamp and the normalized passed finding", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(timestamp));
+    try {
+      const client = createClientMock({}, {
+        correct_daily_question_review_answer: {
+          data: { outcome: "corrected" },
+          error: null,
+        },
+      });
+
+      await expect(correctDailyQuestionReviewAnswer(client, {
+        challengeDate: "2026-08-10",
+        reviewItemId: ids.item,
+        newCorrectOption: "B",
+        finding: passedFinding,
+        resolvedBy: ids.claim,
+      })).resolves.toEqual({ outcome: "corrected" });
+
+      expect(client.rpc).toHaveBeenCalledWith(
+        "correct_daily_question_review_answer",
+        {
+          p_review_item_id: ids.item,
+          p_challenge_date: "2026-08-10",
+          p_new_correct_option: "B",
+          p_finding_question_id: ids.question,
+          p_finding_verdict: "passed",
+          p_finding_confidence: 0.98,
+          p_finding_explanation: finding.explanation,
+          p_finding_conflicts: [],
+          p_finding_evidence: finding.evidence,
+          p_finding_verified_at: timestamp,
+          p_resolved_by: ids.claim,
+          p_resolved_at: timestamp,
+        },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("propagates correction RPC errors", async () => {
+    const error = { code: "P0001", message: "correction failed" };
+    const client = createClientMock({}, {
+      correct_daily_question_review_answer: { data: null, error },
+    });
+
+    await expect(correctDailyQuestionReviewAnswer(client, {
+      challengeDate: "2026-08-10",
+      reviewItemId: ids.item,
+      newCorrectOption: "B",
+      finding: passedFinding,
+      resolvedBy: ids.claim,
+    })).rejects.toBe(error);
+  });
+
+  it.each([
+    null,
+    {},
+    { outcome: "resolved" },
+    { outcome: 1 },
+  ])("rejects malformed correction response %#", async (data) => {
+    const client = createClientMock({}, {
+      correct_daily_question_review_answer: { data, error: null },
+    });
+
+    await expect(correctDailyQuestionReviewAnswer(client, {
+      challengeDate: "2026-08-10",
+      reviewItemId: ids.item,
+      newCorrectOption: "B",
+      finding: passedFinding,
+      resolvedBy: ids.claim,
+    })).rejects.toThrow("Daily review answer correction returned invalid data.");
   });
 });
 

@@ -17,6 +17,7 @@ import {
   type DailyQuestionReviewRunStatus,
   type DailyQuestionSourceFetchResult,
   type DailyQuestionVerificationFinding,
+  type QuestionAnswerOption,
   type QuestionSnapshot,
 } from "@/lib/dailyQuestionReview";
 import type {
@@ -772,6 +773,44 @@ export async function resolveDailyQuestionReviewItem(
     throw new Error("Daily review resolution returned invalid data.");
   }
   return data;
+}
+
+export async function correctDailyQuestionReviewAnswer(
+  client: ServerSupabaseClient,
+  input: {
+    challengeDate: string;
+    reviewItemId: string;
+    newCorrectOption: QuestionAnswerOption;
+    finding: DailyQuestionVerificationFinding & { verdict: "passed" };
+    resolvedBy: string;
+  },
+): Promise<{ outcome: "corrected" | "conflict" | "not_draft" | "missing" }> {
+  const resolvedAt = new Date().toISOString();
+  const { data, error } = await client.rpc(
+    "correct_daily_question_review_answer",
+    {
+      p_review_item_id: input.reviewItemId,
+      p_challenge_date: input.challengeDate,
+      p_new_correct_option: input.newCorrectOption,
+      p_finding_question_id: input.finding.questionId,
+      p_finding_verdict: input.finding.verdict,
+      p_finding_confidence: input.finding.confidence,
+      p_finding_explanation: input.finding.explanation,
+      p_finding_conflicts: input.finding.conflicts,
+      p_finding_evidence: input.finding.evidence,
+      p_finding_verified_at: input.finding.verifiedAt,
+      p_resolved_by: input.resolvedBy,
+      p_resolved_at: resolvedAt,
+    },
+  );
+  throwIfError(error);
+  const outcomes = new Set(["corrected", "conflict", "not_draft", "missing"]);
+  if (!isRecord(data) || typeof data.outcome !== "string" || !outcomes.has(data.outcome)) {
+    throw new Error("Daily review answer correction returned invalid data.");
+  }
+  return {
+    outcome: data.outcome as "corrected" | "conflict" | "not_draft" | "missing",
+  };
 }
 
 export async function loadDailyQuestionReviewResolutions(
