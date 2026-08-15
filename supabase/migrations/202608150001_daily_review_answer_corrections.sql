@@ -108,7 +108,6 @@ declare
   v_question public.questions%rowtype;
   v_sport public.sports%rowtype;
   v_challenge_item public.daily_challenge_items%rowtype;
-  v_initial_run_id uuid;
   v_old_correct_option text;
 begin
   if p_challenge_date is null
@@ -196,21 +195,6 @@ begin
     return jsonb_build_object('outcome', 'conflict');
   end if;
 
-  select i.run_id into v_initial_run_id
-  from public.daily_question_review_items i
-  where i.id = p_review_item_id;
-  if not found then
-    return jsonb_build_object('outcome', 'missing');
-  end if;
-
-  select r.* into v_run
-  from public.daily_question_review_runs r
-  where r.id = v_initial_run_id
-  for update;
-  if not found then
-    return jsonb_build_object('outcome', 'missing');
-  end if;
-
   select i.* into v_item
   from public.daily_question_review_items i
   where i.id = p_review_item_id
@@ -218,8 +202,13 @@ begin
   if not found then
     return jsonb_build_object('outcome', 'missing');
   end if;
-  if v_item.run_id <> v_initial_run_id then
-    return jsonb_build_object('outcome', 'conflict');
+
+  select r.* into v_run
+  from public.daily_question_review_runs r
+  where r.id = v_item.run_id
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
   end if;
 
   if v_run.challenge_date <> p_challenge_date

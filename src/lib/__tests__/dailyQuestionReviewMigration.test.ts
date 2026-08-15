@@ -1162,22 +1162,18 @@ describe("daily review answer correction migration", () => {
       : [];
     expect(approvedDomains).toEqual(defaultDomains);
     expect(correction).toContain("p_finding_verified_at is null");
-    const initialItemRead = correction.indexOf(
-      "select i.run_id into v_initial_run_id from public.daily_question_review_items i",
+    const itemLock = correction.indexOf(
+      "select i.* into v_item from public.daily_question_review_items i",
     );
     const runLock = correction.indexOf(
       "select r.* into v_run from public.daily_question_review_runs r",
     );
-    const itemLock = correction.indexOf(
-      "select i.* into v_item from public.daily_question_review_items i",
-    );
-    expect(initialItemRead).toBeGreaterThan(-1);
-    expect(runLock).toBeGreaterThan(initialItemRead);
-    expect(itemLock).toBeGreaterThan(runLock);
-    expect(correction.slice(initialItemRead, runLock)).not.toContain("for update");
-    expect(correction.slice(runLock, itemLock)).toContain("for update");
-    expect(correction.slice(itemLock)).toContain("for update");
-    expect(correction).toContain("v_item.run_id <> v_initial_run_id");
+    expect(itemLock).toBeGreaterThan(-1);
+    expect(runLock).toBeGreaterThan(itemLock);
+    expect(correction.slice(itemLock, runLock)).toContain("for update");
+    expect(correction.slice(runLock)).toContain("for update");
+    expect(correction).toContain("where r.id = v_item.run_id");
+    expect(correction).not.toContain("v_initial_run_id");
     expect(correction).toContain(
       "v_run.status not in ('completed', 'completed_with_flags')",
     );

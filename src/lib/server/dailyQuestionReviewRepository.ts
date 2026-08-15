@@ -839,12 +839,14 @@ export async function correctDailyQuestionReviewAnswer(
   if (!finding || finding.verdict !== "passed") {
     throw new Error("Daily review answer correction finding is invalid.");
   }
-  if (finding.evidence.some((item) => {
+  const canonicalEvidence = finding.evidence.map((item) => {
     const validation = validateSourceUrl(item.url);
-    return !validation.ok || !isBuiltInApprovedSourceUrl(validation.url);
-  })) {
-    throw new Error("Daily review answer correction evidence is not approved.");
-  }
+    if (!validation.ok || !isBuiltInApprovedSourceUrl(validation.url)) {
+      throw new Error("Daily review answer correction evidence is not approved.");
+    }
+    return { ...item, url: validation.url };
+  });
+  const canonicalFinding = { ...finding, evidence: canonicalEvidence };
   const resolvedAt = new Date().toISOString();
   const { data, error } = await client.rpc(
     "correct_daily_question_review_answer",
@@ -852,13 +854,13 @@ export async function correctDailyQuestionReviewAnswer(
       p_review_item_id: input.reviewItemId,
       p_challenge_date: input.challengeDate,
       p_new_correct_option: input.newCorrectOption,
-      p_finding_question_id: finding.questionId,
-      p_finding_verdict: finding.verdict,
-      p_finding_confidence: finding.confidence,
-      p_finding_explanation: finding.explanation,
-      p_finding_conflicts: finding.conflicts,
-      p_finding_evidence: finding.evidence,
-      p_finding_verified_at: finding.verifiedAt,
+      p_finding_question_id: canonicalFinding.questionId,
+      p_finding_verdict: canonicalFinding.verdict,
+      p_finding_confidence: canonicalFinding.confidence,
+      p_finding_explanation: canonicalFinding.explanation,
+      p_finding_conflicts: canonicalFinding.conflicts,
+      p_finding_evidence: canonicalFinding.evidence,
+      p_finding_verified_at: canonicalFinding.verifiedAt,
       p_resolved_by: input.resolvedBy,
       p_resolved_at: resolvedAt,
     },

@@ -787,6 +787,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
         conflicts: ["  No factual conflict.  "],
         evidence: [{
           ...passedFinding.evidence[0],
+          url: "HTTPS://WWW.NBA.COM/example",
           title: "  NBA record  ",
           excerpt: "  The record supports the answer.  ",
         }],
@@ -813,6 +814,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
           p_finding_conflicts: ["No factual conflict."],
           p_finding_evidence: [{
             ...finding.evidence[0],
+            url: "https://www.nba.com/example",
             title: "NBA record",
             excerpt: "The record supports the answer.",
           }],
