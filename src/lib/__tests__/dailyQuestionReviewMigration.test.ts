@@ -1112,6 +1112,55 @@ describe("daily review answer correction migration", () => {
     expect(correction).toContain(
       "evidence.value - array['url', 'title', 'excerpt', 'retrievedAt'] <> '{}'::jsonb",
     );
+    expect(correction).toMatch(/select lower\(\s*substring/);
+    expect(correction).toContain(
+      "substring(evidence.value->>'url' from '^https://([^/?#]+)')",
+    );
+    expect(correction).toContain("approved_source.domain");
+    expect(correction).toContain("evidence_authority.authority like '%.' || approved_source.domain");
+    expect(correction).toContain(
+      "evidence_authority.authority !~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'",
+    );
+    const approvedDomainBlock = /from \(values ([\s\S]*?)\) as approved_source\(domain\)/.exec(
+      correction,
+    )?.[1];
+    const approvedDomains = approvedDomainBlock
+      ? Array.from(approvedDomainBlock.matchAll(/\('([^']+)'\)/g), (match) => match[1])
+      : [];
+    expect(approvedDomains).toEqual([
+      "baseball-reference.com",
+      "baseballhall.org",
+      "basketball-reference.com",
+      "espn.com",
+      "goduke.com",
+      "heisman.com",
+      "hhof.com",
+      "hockey-reference.com",
+      "lsusports.net",
+      "mlb.com",
+      "nba.com",
+      "ncaa.com",
+      "nfl.com",
+      "nhl.com",
+      "osubeavers.com",
+      "pro-football-reference.com",
+      "sabr.org",
+      "seahawks.com",
+      "sports-reference.com",
+      "uconnhuskies.com",
+      "uhcougars.com",
+    ]);
+    const sourceFetcher = await readFile(
+      path.join(process.cwd(), "src/lib/server/dailyQuestionSourceFetcher.ts"),
+      "utf8",
+    );
+    const defaultDomainBlock = /const DEFAULT_APPROVED_SOURCE_DOMAINS = \[([\s\S]*?)\] as const;/.exec(
+      sourceFetcher,
+    )?.[1];
+    const defaultDomains = defaultDomainBlock
+      ? Array.from(defaultDomainBlock.matchAll(/"([^"]+)"/g), (match) => match[1])
+      : [];
+    expect(approvedDomains).toEqual(defaultDomains);
     expect(correction).toContain("p_finding_verified_at is null");
     const initialItemRead = correction.indexOf(
       "select i.run_id into v_initial_run_id from public.daily_question_review_items i",
@@ -1157,6 +1206,25 @@ describe("daily review answer correction migration", () => {
     }
     expect(correction).toContain(
       "v_question.correct_option is distinct from v_old_correct_option",
+    );
+    const questionLock = correction.indexOf(
+      "select q.* into v_question from public.questions q",
+    );
+    const sportRead = correction.indexOf(
+      "select s.* into v_sport from public.sports s",
+    );
+    const challengeItemLock = correction.indexOf(
+      "select i.* into v_challenge_item from public.daily_challenge_items i",
+    );
+    expect(questionLock).toBeGreaterThan(itemLock);
+    expect(sportRead).toBeGreaterThan(questionLock);
+    expect(challengeItemLock).toBeGreaterThan(sportRead);
+    expect(correction.slice(sportRead, challengeItemLock)).not.toContain("for update");
+    expect(correction).toContain(
+      "v_sport.slug is distinct from v_item.question_snapshot->'sport'->>'slug'",
+    );
+    expect(correction).toContain(
+      "v_sport.name is distinct from v_item.question_snapshot->'sport'->>'name'",
     );
     expect(correction).toContain(
       "v_challenge_item.question_snapshot->>'correct_option' <> v_old_correct_option",

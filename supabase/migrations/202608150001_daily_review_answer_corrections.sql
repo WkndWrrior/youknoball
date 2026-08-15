@@ -106,6 +106,7 @@ declare
   v_run public.daily_question_review_runs%rowtype;
   v_challenge public.daily_challenges%rowtype;
   v_question public.questions%rowtype;
+  v_sport public.sports%rowtype;
   v_challenge_item public.daily_challenge_items%rowtype;
   v_initial_run_id uuid;
   v_old_correct_option text;
@@ -137,6 +138,11 @@ begin
         or exists (
           select 1
           from jsonb_array_elements(p_finding_evidence) as evidence(value)
+          cross join lateral (
+            select lower(
+              substring(evidence.value->>'url' from '^https://([^/?#]+)')
+            ) as authority
+          ) as evidence_authority
           where jsonb_typeof(evidence.value) <> 'object'
             or not (evidence.value ?& array['url', 'title', 'excerpt', 'retrievedAt'])
             or evidence.value - array['url', 'title', 'excerpt', 'retrievedAt'] <> '{}'::jsonb
@@ -149,6 +155,37 @@ begin
             or not (char_length(btrim(evidence.value->>'excerpt')) between 1 and 1500)
             or jsonb_typeof(evidence.value->'retrievedAt') <> 'string'
             or not (char_length(btrim(evidence.value->>'retrievedAt')) between 1 and 50)
+            or evidence_authority.authority is null
+            or evidence_authority.authority
+              !~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+            or not exists (
+              select 1
+              from (values
+                ('baseball-reference.com'),
+                ('baseballhall.org'),
+                ('basketball-reference.com'),
+                ('espn.com'),
+                ('goduke.com'),
+                ('heisman.com'),
+                ('hhof.com'),
+                ('hockey-reference.com'),
+                ('lsusports.net'),
+                ('mlb.com'),
+                ('nba.com'),
+                ('ncaa.com'),
+                ('nfl.com'),
+                ('nhl.com'),
+                ('osubeavers.com'),
+                ('pro-football-reference.com'),
+                ('sabr.org'),
+                ('seahawks.com'),
+                ('sports-reference.com'),
+                ('uconnhuskies.com'),
+                ('uhcougars.com')
+              ) as approved_source(domain)
+              where evidence_authority.authority = approved_source.domain
+                or evidence_authority.authority like '%.' || approved_source.domain
+            )
         )
       else true
     end
@@ -239,6 +276,18 @@ begin
     or v_question.correct_option is distinct from v_old_correct_option
     or v_question.difficulty is distinct from v_item.question_snapshot->>'difficulty'
     or v_question.source_notes is distinct from v_item.question_snapshot->>'source_notes'
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  select s.* into v_sport
+  from public.sports s
+  where s.id = v_question.sport_id;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+  if v_sport.slug is distinct from v_item.question_snapshot->'sport'->>'slug'
+    or v_sport.name is distinct from v_item.question_snapshot->'sport'->>'name'
   then
     return jsonb_build_object('outcome', 'conflict');
   end if;

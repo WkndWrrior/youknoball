@@ -844,6 +844,57 @@ describe("correctDailyQuestionReviewAnswer", () => {
     expect(client.rpc).not.toHaveBeenCalled();
   });
 
+  it("rejects evidence outside the approved source policy before calling the RPC", async () => {
+    const client = createClientMock({}, {
+      correct_daily_question_review_answer: {
+        data: { outcome: "corrected" },
+        error: null,
+      },
+    });
+
+    await expect(correctDailyQuestionReviewAnswer(client, {
+      challengeDate: "2026-08-10",
+      reviewItemId: ids.item,
+      newCorrectOption: "B",
+      finding: {
+        ...passedFinding,
+        evidence: [{
+          ...passedFinding.evidence[0],
+          url: "https://attacker.test/fabricated-evidence",
+        }],
+      },
+      resolvedBy: ids.claim,
+    })).rejects.toThrow("Daily review answer correction evidence is not approved.");
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["review item UUID", { reviewItemId: "not-a-uuid" }],
+    ["resolver UUID", { resolvedBy: "not-a-uuid" }],
+    ["calendar date", { challengeDate: "2026-02-30" }],
+    ["correct option", { newCorrectOption: "E" }],
+  ])("rejects an invalid %s before calling the RPC", async (_label, override) => {
+    const client = createClientMock({}, {
+      correct_daily_question_review_answer: {
+        data: { outcome: "corrected" },
+        error: null,
+      },
+    });
+    const input = {
+      challengeDate: "2026-08-10",
+      reviewItemId: ids.item,
+      newCorrectOption: "B",
+      finding: passedFinding,
+      resolvedBy: ids.claim,
+      ...override,
+    } as Parameters<typeof correctDailyQuestionReviewAnswer>[1];
+
+    await expect(correctDailyQuestionReviewAnswer(client, input)).rejects.toThrow(
+      "Daily review answer correction input is invalid.",
+    );
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
   it("propagates correction RPC errors", async () => {
     const error = { code: "P0001", message: "correction failed" };
     const client = createClientMock({}, {

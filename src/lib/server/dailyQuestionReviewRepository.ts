@@ -27,6 +27,7 @@ import type {
   DailyQuestionReviewUsage,
   PersistedDailyQuestionReviewCost,
 } from "@/lib/server/dailyQuestionReviewBudget";
+import { validateSourceUrl } from "@/lib/server/dailyQuestionSourceFetcher";
 import type { ServerSupabaseClient } from "@/lib/server/supabaseServer";
 
 const RUN_COLUMNS = [
@@ -122,6 +123,12 @@ function isTimestamp(value: unknown): value is string {
 
 function isDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isRealDate(value: unknown): value is string {
+  if (!isDate(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function isNullableTimestamp(value: unknown): value is string | null {
@@ -785,9 +792,20 @@ export async function correctDailyQuestionReviewAnswer(
     resolvedBy: string;
   },
 ): Promise<{ outcome: "corrected" | "conflict" | "not_draft" | "missing" }> {
+  if (
+    !isUuid(input.reviewItemId) ||
+    !isUuid(input.resolvedBy) ||
+    !isRealDate(input.challengeDate) ||
+    !(["A", "B", "C", "D"] as const).includes(input.newCorrectOption)
+  ) {
+    throw new Error("Daily review answer correction input is invalid.");
+  }
   const finding = parseDailyQuestionVerificationFinding(input.finding);
   if (!finding || finding.verdict !== "passed") {
     throw new Error("Daily review answer correction finding is invalid.");
+  }
+  if (finding.evidence.some((item) => !validateSourceUrl(item.url).ok)) {
+    throw new Error("Daily review answer correction evidence is not approved.");
   }
   const resolvedAt = new Date().toISOString();
   const { data, error } = await client.rpc(
