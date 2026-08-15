@@ -995,6 +995,104 @@ describe("nightly question verification migration", () => {
 });
 
 describe("daily review answer correction migration", () => {
+  it("adds an all-or-none answer correction claim lease", async () => {
+    const migration = await readFile(answerCorrectionMigrationPath, "utf8");
+    const normalized = migration.replace(/\s+/g, " ");
+
+    expect(normalized).toContain(
+      "add column answer_correction_claim_token uuid, add column answer_correction_claimed_by uuid, add column answer_correction_claimed_option text, add column answer_correction_claim_expires_at timestamptz",
+    );
+    expect(normalized).toContain(
+      "constraint daily_question_review_items_answer_correction_claim_check",
+    );
+    expect(normalized).toContain(
+      "answer_correction_claim_token is null and answer_correction_claimed_by is null and answer_correction_claimed_option is null and answer_correction_claim_expires_at is null",
+    );
+    expect(normalized).toContain(
+      "answer_correction_claim_token is not null and answer_correction_claimed_by is not null and answer_correction_claimed_option in ('A', 'B', 'C', 'D') and answer_correction_claim_expires_at is not null",
+    );
+  });
+
+  it("privately claims a bounded correction lease after finalized-run precheck and item-to-run locking", async () => {
+    const migration = await readFile(answerCorrectionMigrationPath, "utf8");
+    const claim = normalizedStatement(
+      migration,
+      "create or replace function public.claim_daily_question_review_answer_correction",
+    );
+    const signature =
+      "public.claim_daily_question_review_answer_correction(uuid, date, text, uuid, uuid)";
+
+    expect(claim).toContain("security definer");
+    expect(claim).toContain("set search_path = pg_catalog, public");
+    const initialItemRead = claim.indexOf(
+      "select i.run_id into v_initial_run_id from public.daily_question_review_items i",
+    );
+    const runPrecheck = claim.indexOf(
+      "select r.* into v_precheck_run from public.daily_question_review_runs r",
+    );
+    const itemLock = claim.indexOf(
+      "select i.* into v_item from public.daily_question_review_items i",
+    );
+    const runLock = claim.indexOf(
+      "select r.* into v_run from public.daily_question_review_runs r",
+    );
+    expect(initialItemRead).toBeGreaterThan(-1);
+    expect(runPrecheck).toBeGreaterThan(initialItemRead);
+    expect(itemLock).toBeGreaterThan(runPrecheck);
+    expect(runLock).toBeGreaterThan(itemLock);
+    expect(claim.slice(initialItemRead, itemLock)).not.toContain("for update");
+    expect(claim.slice(itemLock, runLock)).toContain("for update");
+    expect(claim.slice(runLock)).toContain("for update");
+    expect(claim).toContain(
+      "v_precheck_run.status not in ('completed', 'completed_with_flags')",
+    );
+    expect(claim).toContain("v_precheck_run.completed_at is null");
+    expect(claim).toContain("v_item.run_id <> v_initial_run_id");
+    expect(claim).toContain("v_item.review_status <> 'completed'");
+    expect(claim).toContain("v_item.resolution <> 'pending'");
+    expect(claim).toContain("v_item.verdict not in ('risk', 'unable_to_verify')");
+    expect(claim).toContain("p_new_correct_option = v_old_correct_option");
+    expect(claim).toContain("v_challenge.status <> 'generated'");
+    expect(claim).toContain("v_challenge.published_at is not null");
+    expect(claim).toContain("answer_correction_claim_expires_at > clock_timestamp()");
+    expect(claim).toContain("'outcome', 'busy'");
+    expect(claim).toContain("clock_timestamp() + interval '2 minutes'");
+    expect(claim).toContain("answer_correction_claim_token = p_claim_token");
+    expect(claim).toContain("answer_correction_claimed_by = p_claimed_by");
+    expect(claim).toContain("answer_correction_claimed_option = p_new_correct_option");
+    expect(migration).toContain(
+      `revoke all on function ${signature} from public, anon, authenticated`,
+    );
+    expect(migration).toContain(
+      `grant execute on function ${signature} to service_role`,
+    );
+  });
+
+  it("releases only the matching answer correction claim token", async () => {
+    const migration = await readFile(answerCorrectionMigrationPath, "utf8");
+    const release = normalizedStatement(
+      migration,
+      "create or replace function public.release_daily_question_review_answer_correction",
+    );
+    const signature =
+      "public.release_daily_question_review_answer_correction(uuid, uuid)";
+
+    expect(release).toContain("security definer");
+    expect(release).toContain("answer_correction_claim_token = p_claim_token");
+    expect(release).toContain("answer_correction_claim_token = null");
+    expect(release).toContain("answer_correction_claimed_by = null");
+    expect(release).toContain("answer_correction_claimed_option = null");
+    expect(release).toContain("answer_correction_claim_expires_at = null");
+    expect(release).toContain("'outcome', 'released'");
+    expect(release).toContain("'outcome', 'not_owned'");
+    expect(migration).toContain(
+      `revoke all on function ${signature} from public, anon, authenticated`,
+    );
+    expect(migration).toContain(
+      `grant execute on function ${signature} to service_role`,
+    );
+  });
+
   it("safely replaces the unnamed resolution-state check with a named compatible constraint", async () => {
     const migration = await readFile(answerCorrectionMigrationPath, "utf8");
     const resolutionStateStart = migration.indexOf(
@@ -1079,7 +1177,7 @@ describe("daily review answer correction migration", () => {
       "create or replace function public.correct_daily_question_review_answer",
     );
     const signature =
-      "public.correct_daily_question_review_answer(uuid, date, text, uuid, text, numeric, text, jsonb, jsonb, timestamptz, uuid, timestamptz)";
+      "public.correct_daily_question_review_answer(uuid, uuid, date, text, uuid, text, numeric, text, jsonb, jsonb, timestamptz, uuid, timestamptz)";
 
     expect(correction).toContain("security definer");
     expect(correction).toContain("set search_path = pg_catalog, public");
@@ -1198,6 +1296,18 @@ describe("daily review answer correction migration", () => {
     expect(correction).toContain("v_item.review_status <> 'completed'");
     expect(correction).toContain("v_item.resolution <> 'pending'");
     expect(correction).toContain("v_item.verdict not in ('risk', 'unable_to_verify')");
+    expect(correction).toContain(
+      "v_item.answer_correction_claim_token is distinct from p_claim_token",
+    );
+    expect(correction).toContain(
+      "v_item.answer_correction_claimed_option is distinct from p_new_correct_option",
+    );
+    expect(correction).toContain(
+      "v_item.answer_correction_claimed_by is distinct from p_resolved_by",
+    );
+    expect(correction).toContain(
+      "v_item.answer_correction_claim_expires_at is null or v_item.answer_correction_claim_expires_at <= clock_timestamp()",
+    );
     expect(correction).toContain("v_challenge.status <> 'generated'");
     expect(correction).toContain("v_challenge.published_at is not null");
     expect(correction).toContain("p_new_correct_option = v_old_correct_option");
@@ -1268,6 +1378,10 @@ describe("daily review answer correction migration", () => {
     expect(correction).toContain("resolution = 'kept'");
     expect(correction).toContain("resolved_by = p_resolved_by");
     expect(correction).toContain("resolved_at = p_resolved_at");
+    expect(correction).toContain("answer_correction_claim_token = null");
+    expect(correction).toContain("answer_correction_claimed_by = null");
+    expect(correction).toContain("answer_correction_claimed_option = null");
+    expect(correction).toContain("answer_correction_claim_expires_at = null");
     expect(correction).toContain("'action', 'correct_answer'");
     expect(correction).toContain("'previousCorrectOption', v_old_correct_option");
     expect(correction).toContain("'newCorrectOption', p_new_correct_option");

@@ -83,8 +83,18 @@ export function createDailyReviewCorrectAnswerHandler(dependencies?: {
       }
       if (result.outcome === "conflict") {
         return NextResponse.json(
-          { message: "Review can no longer be changed." },
+          { ...result, message: "Review can no longer be changed." },
           { status: 409 },
+        );
+      }
+      if (result.outcome === "verification_failed") {
+        return NextResponse.json(
+          {
+            outcome: result.outcome,
+            estimatedCostMicrodollars: result.estimatedCostMicrodollars,
+            retryable: result.retryable,
+          },
+          { status: 502 },
         );
       }
       return NextResponse.json(result);

@@ -175,6 +175,8 @@ describe("POST /api/admin/daily-review/[date]/correct-answer", () => {
     ["conflict", "resolved", 409],
     ["conflict", "not_flagged", 409],
     ["conflict", "unchanged", 409],
+    ["conflict", "not_finalized", 409],
+    ["conflict", "busy", 409],
     ["conflict", "stale", 409],
     ["conflict", "not_draft", 409],
   ] as const)("maps %s/%s outcomes to %i", async (outcome, reason, status) => {
@@ -187,6 +189,52 @@ describe("POST /api/admin/daily-review/[date]/correct-answer", () => {
     );
 
     expect(response.status).toBe(status);
+  });
+
+  it("retains safe paid verification details on a stale correction conflict", async () => {
+    const deps = dependencies();
+    const applied = await deps.correctAnswer();
+    deps.correctAnswer.mockResolvedValue({
+      ...applied,
+      outcome: "conflict",
+      reason: "stale",
+    } as never);
+
+    const response = await createDailyReviewCorrectAnswerHandler(deps)(
+      request(payload),
+      context,
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      outcome: "conflict",
+      reason: "stale",
+      finding: applied.finding,
+      evidence: applied.evidence,
+      estimatedCostMicrodollars: 1234,
+    });
+  });
+
+  it("returns verifier failures as a safe 502 response", async () => {
+    const deps = dependencies();
+    deps.correctAnswer.mockResolvedValue({
+      outcome: "verification_failed",
+      estimatedCostMicrodollars: 8765,
+      retryable: true,
+      internalMessage: "OPENAI_API_KEY=secret",
+    } as never);
+
+    const response = await createDailyReviewCorrectAnswerHandler(deps)(
+      request(payload),
+      context,
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      outcome: "verification_failed",
+      estimatedCostMicrodollars: 8765,
+      retryable: true,
+    });
   });
 
   it("does not expose internal service errors", async () => {

@@ -8,6 +8,7 @@ import type {
 import type { ServerSupabaseClient } from "@/lib/server/supabaseServer";
 import {
   acquireDailyQuestionReviewReservation,
+  claimDailyQuestionReviewAnswerCorrection,
   claimDailyQuestionReviewEmail,
   claimDailyQuestionReviewBudgetEmail,
   claimOldestDailyQuestionReviewBudgetEmail,
@@ -25,6 +26,7 @@ import {
   markDailyQuestionReviewBudgetEmailFailed,
   markDailyQuestionReviewBudgetEmailSent,
   reconcileDailyQuestionReviewReservation,
+  releaseDailyQuestionReviewAnswerCorrection,
   recordDailyQuestionReviewBudgetBlock,
   startOrObserveDailyQuestionReviewRun,
   upsertDailyQuestionReviewItem,
@@ -770,6 +772,123 @@ describe("run accounting and reads", () => {
   });
 });
 
+describe("daily question review answer correction claims", () => {
+  it("claims a correction with a generated token before billable work", async () => {
+    const client = createClientMock({}, {
+      claim_daily_question_review_answer_correction: {
+        data: {
+          outcome: "claimed",
+          claim_expires_at: "2026-08-09T23:02:00.000Z",
+        },
+        error: null,
+      },
+    });
+
+    const result = await claimDailyQuestionReviewAnswerCorrection(client, {
+      challengeDate: "2026-08-10",
+      reviewItemId: ids.item,
+      newCorrectOption: "B",
+      claimedBy: ids.claim,
+    });
+
+    expect(result).toEqual({
+      outcome: "claimed",
+      claimToken: expect.any(String),
+      claimExpiresAt: "2026-08-09T23:02:00.000Z",
+    });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "claim_daily_question_review_answer_correction",
+      {
+        p_review_item_id: ids.item,
+        p_challenge_date: "2026-08-10",
+        p_new_correct_option: "B",
+        p_claim_token: result.outcome === "claimed" ? result.claimToken : null,
+        p_claimed_by: ids.claim,
+      },
+    );
+  });
+
+  it.each(["busy", "conflict", "not_draft", "missing", "unchanged"] as const)(
+    "maps the %s claim outcome without exposing database data",
+    async (outcome) => {
+      const client = createClientMock({}, {
+        claim_daily_question_review_answer_correction: {
+          data: { outcome },
+          error: null,
+        },
+      });
+
+      await expect(claimDailyQuestionReviewAnswerCorrection(client, {
+        challengeDate: "2026-08-10",
+        reviewItemId: ids.item,
+        newCorrectOption: "B",
+        claimedBy: ids.claim,
+      })).resolves.toEqual({ outcome });
+    },
+  );
+
+  it("rejects invalid claim inputs and malformed RPC outcomes", async () => {
+    const invalidClient = createClientMock({}, {});
+    await expect(claimDailyQuestionReviewAnswerCorrection(invalidClient, {
+      challengeDate: "2026-02-30",
+      reviewItemId: ids.item,
+      newCorrectOption: "B",
+      claimedBy: ids.claim,
+    })).rejects.toThrow("Daily review answer correction claim input is invalid.");
+    expect(invalidClient.rpc).not.toHaveBeenCalled();
+
+    const malformedClient = createClientMock({}, {
+      claim_daily_question_review_answer_correction: {
+        data: { outcome: "claimed", claim_expires_at: "not-a-time" },
+        error: null,
+      },
+    });
+    await expect(claimDailyQuestionReviewAnswerCorrection(malformedClient, {
+      challengeDate: "2026-08-10",
+      reviewItemId: ids.item,
+      newCorrectOption: "B",
+      claimedBy: ids.claim,
+    })).rejects.toThrow("Daily review answer correction claim returned invalid data.");
+  });
+
+  it("releases only the supplied correction claim token", async () => {
+    const client = createClientMock({}, {
+      release_daily_question_review_answer_correction: {
+        data: { outcome: "released" },
+        error: null,
+      },
+    });
+
+    await expect(releaseDailyQuestionReviewAnswerCorrection(client, {
+      reviewItemId: ids.item,
+      claimToken: ids.claim,
+    })).resolves.toEqual({ outcome: "released" });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "release_daily_question_review_answer_correction",
+      { p_review_item_id: ids.item, p_claim_token: ids.claim },
+    );
+  });
+
+  it("validates release inputs and outcomes", async () => {
+    const invalidClient = createClientMock({}, {});
+    await expect(releaseDailyQuestionReviewAnswerCorrection(invalidClient, {
+      reviewItemId: ids.item,
+      claimToken: "not-a-uuid",
+    })).rejects.toThrow("Daily review answer correction release input is invalid.");
+
+    const malformedClient = createClientMock({}, {
+      release_daily_question_review_answer_correction: {
+        data: { outcome: "cleared" },
+        error: null,
+      },
+    });
+    await expect(releaseDailyQuestionReviewAnswerCorrection(malformedClient, {
+      reviewItemId: ids.item,
+      claimToken: ids.claim,
+    })).rejects.toThrow("Daily review answer correction release returned invalid data.");
+  });
+});
+
 describe("correctDailyQuestionReviewAnswer", () => {
   it("maps one generated resolution timestamp and the normalized passed finding", async () => {
     vi.useFakeTimers();
@@ -796,6 +915,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
       await expect(correctDailyQuestionReviewAnswer(client, {
         challengeDate: "2026-08-10",
         reviewItemId: ids.item,
+        claimToken: ids.claim,
         newCorrectOption: "B",
         finding: unnormalizedFinding,
         resolvedBy: ids.claim,
@@ -805,6 +925,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
         "correct_daily_question_review_answer",
         {
           p_review_item_id: ids.item,
+          p_claim_token: ids.claim,
           p_challenge_date: "2026-08-10",
           p_new_correct_option: "B",
           p_finding_question_id: ids.question,
@@ -839,6 +960,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
     await expect(correctDailyQuestionReviewAnswer(client, {
       challengeDate: "2026-08-10",
       reviewItemId: ids.item,
+      claimToken: ids.claim,
       newCorrectOption: "B",
       finding: { ...passedFinding, confidence: Number.NaN },
       resolvedBy: ids.claim,
@@ -857,6 +979,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
     await expect(correctDailyQuestionReviewAnswer(client, {
       challengeDate: "2026-08-10",
       reviewItemId: ids.item,
+      claimToken: ids.claim,
       newCorrectOption: "B",
       finding: {
         ...passedFinding,
@@ -886,6 +1009,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
       await expect(correctDailyQuestionReviewAnswer(client, {
         challengeDate: "2026-08-10",
         reviewItemId: ids.item,
+        claimToken: ids.claim,
         newCorrectOption: "B",
         finding: {
           ...passedFinding,
@@ -904,6 +1028,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
 
   it.each([
     ["review item UUID", { reviewItemId: "not-a-uuid" }],
+    ["claim token UUID", { claimToken: "not-a-uuid" }],
     ["resolver UUID", { resolvedBy: "not-a-uuid" }],
     ["calendar date", { challengeDate: "2026-02-30" }],
     ["correct option", { newCorrectOption: "E" }],
@@ -917,6 +1042,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
     const input = {
       challengeDate: "2026-08-10",
       reviewItemId: ids.item,
+      claimToken: ids.claim,
       newCorrectOption: "B",
       finding: passedFinding,
       resolvedBy: ids.claim,
@@ -938,6 +1064,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
     await expect(correctDailyQuestionReviewAnswer(client, {
       challengeDate: "2026-08-10",
       reviewItemId: ids.item,
+      claimToken: ids.claim,
       newCorrectOption: "B",
       finding: passedFinding,
       resolvedBy: ids.claim,
@@ -957,6 +1084,7 @@ describe("correctDailyQuestionReviewAnswer", () => {
     await expect(correctDailyQuestionReviewAnswer(client, {
       challengeDate: "2026-08-10",
       reviewItemId: ids.item,
+      claimToken: ids.claim,
       newCorrectOption: "B",
       finding: passedFinding,
       resolvedBy: ids.claim,

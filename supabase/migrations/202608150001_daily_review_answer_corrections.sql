@@ -1,3 +1,24 @@
+alter table public.daily_question_review_items
+  add column answer_correction_claim_token uuid,
+  add column answer_correction_claimed_by uuid,
+  add column answer_correction_claimed_option text,
+  add column answer_correction_claim_expires_at timestamptz,
+  add constraint daily_question_review_items_answer_correction_claim_check
+    check (
+      (
+        answer_correction_claim_token is null
+        and answer_correction_claimed_by is null
+        and answer_correction_claimed_option is null
+        and answer_correction_claim_expires_at is null
+      )
+      or (
+        answer_correction_claim_token is not null
+        and answer_correction_claimed_by is not null
+        and answer_correction_claimed_option in ('A', 'B', 'C', 'D')
+        and answer_correction_claim_expires_at is not null
+      )
+    );
+
 do $migration$
 declare
   v_resolution_constraint_names text[];
@@ -82,8 +103,180 @@ alter table public.daily_question_review_items
     )
   );
 
+create or replace function public.claim_daily_question_review_answer_correction(
+  p_review_item_id uuid,
+  p_challenge_date date,
+  p_new_correct_option text,
+  p_claim_token uuid,
+  p_claimed_by uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  v_item public.daily_question_review_items%rowtype;
+  v_precheck_run public.daily_question_review_runs%rowtype;
+  v_run public.daily_question_review_runs%rowtype;
+  v_challenge public.daily_challenges%rowtype;
+  v_initial_run_id uuid;
+  v_old_correct_option text;
+  v_claim_expires_at timestamptz;
+begin
+  if p_review_item_id is null
+    or p_challenge_date is null
+    or p_new_correct_option is null
+    or p_new_correct_option not in ('A', 'B', 'C', 'D')
+    or p_claim_token is null
+    or p_claimed_by is null
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  select i.run_id into v_initial_run_id
+  from public.daily_question_review_items i
+  where i.id = p_review_item_id;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+
+  select r.* into v_precheck_run
+  from public.daily_question_review_runs r
+  where r.id = v_initial_run_id;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+  if v_precheck_run.status not in ('completed', 'completed_with_flags')
+    or v_precheck_run.completed_at is null
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  select i.* into v_item
+  from public.daily_question_review_items i
+  where i.id = p_review_item_id
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+  if v_item.run_id <> v_initial_run_id then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  select r.* into v_run
+  from public.daily_question_review_runs r
+  where r.id = v_item.run_id
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+  if v_run.challenge_date <> p_challenge_date
+    or v_run.daily_challenge_id <> v_item.daily_challenge_id
+    or v_run.status not in ('completed', 'completed_with_flags')
+    or v_run.completed_at is null
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  if v_item.review_status <> 'completed'
+    or v_item.resolution <> 'pending'
+    or v_item.verdict not in ('risk', 'unable_to_verify')
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+
+  v_old_correct_option := v_item.question_snapshot->>'correct_option';
+  if (v_item.question_snapshot->>'id')::uuid <> v_item.question_id
+    or v_old_correct_option not in ('A', 'B', 'C', 'D')
+  then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+  if p_new_correct_option = v_old_correct_option then
+    return jsonb_build_object('outcome', 'unchanged');
+  end if;
+
+  select c.* into v_challenge
+  from public.daily_challenges c
+  where c.id = v_item.daily_challenge_id
+  for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+  if v_challenge.challenge_date <> p_challenge_date then
+    return jsonb_build_object('outcome', 'conflict');
+  end if;
+  if v_challenge.status <> 'generated' or v_challenge.published_at is not null then
+    return jsonb_build_object('outcome', 'not_draft');
+  end if;
+
+  if v_item.answer_correction_claim_token is not null
+    and v_item.answer_correction_claim_expires_at > clock_timestamp()
+  then
+    return jsonb_build_object('outcome', 'busy');
+  end if;
+
+  v_claim_expires_at := clock_timestamp() + interval '2 minutes';
+  update public.daily_question_review_items
+  set answer_correction_claim_token = p_claim_token,
+      answer_correction_claimed_by = p_claimed_by,
+      answer_correction_claimed_option = p_new_correct_option,
+      answer_correction_claim_expires_at = v_claim_expires_at
+  where id = v_item.id;
+
+  return jsonb_build_object(
+    'outcome', 'claimed',
+    'claim_expires_at', v_claim_expires_at
+  );
+end;
+$function$;
+
+revoke all on function public.claim_daily_question_review_answer_correction(uuid, date, text, uuid, uuid) from public, anon, authenticated;
+
+grant execute on function public.claim_daily_question_review_answer_correction(uuid, date, text, uuid, uuid) to service_role;
+
+create or replace function public.release_daily_question_review_answer_correction(
+  p_review_item_id uuid,
+  p_claim_token uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+begin
+  if p_review_item_id is null or p_claim_token is null then
+    return jsonb_build_object('outcome', 'not_owned');
+  end if;
+
+  update public.daily_question_review_items
+  set answer_correction_claim_token = null,
+      answer_correction_claimed_by = null,
+      answer_correction_claimed_option = null,
+      answer_correction_claim_expires_at = null
+  where id = p_review_item_id
+    and answer_correction_claim_token = p_claim_token;
+  if found then
+    return jsonb_build_object('outcome', 'released');
+  end if;
+  if exists (
+    select 1
+    from public.daily_question_review_items i
+    where i.id = p_review_item_id
+  ) then
+    return jsonb_build_object('outcome', 'not_owned');
+  end if;
+  return jsonb_build_object('outcome', 'missing');
+end;
+$function$;
+
+revoke all on function public.release_daily_question_review_answer_correction(uuid, uuid) from public, anon, authenticated;
+
+grant execute on function public.release_daily_question_review_answer_correction(uuid, uuid) to service_role;
+
 create or replace function public.correct_daily_question_review_answer(
   p_review_item_id uuid,
+  p_claim_token uuid,
   p_challenge_date date,
   p_new_correct_option text,
   p_finding_question_id uuid,
@@ -112,7 +305,8 @@ declare
   v_initial_run_id uuid;
   v_old_correct_option text;
 begin
-  if p_challenge_date is null
+  if p_claim_token is null
+    or p_challenge_date is null
     or p_new_correct_option is null
     or p_new_correct_option not in ('A', 'B', 'C', 'D')
     or p_finding_question_id is null
@@ -247,6 +441,11 @@ begin
     or v_item.resolution <> 'pending'
     or v_item.verdict not in ('risk', 'unable_to_verify')
     or p_finding_question_id <> v_item.question_id
+    or v_item.answer_correction_claim_token is distinct from p_claim_token
+    or v_item.answer_correction_claimed_option is distinct from p_new_correct_option
+    or v_item.answer_correction_claimed_by is distinct from p_resolved_by
+    or v_item.answer_correction_claim_expires_at is null
+    or v_item.answer_correction_claim_expires_at <= clock_timestamp()
   then
     return jsonb_build_object('outcome', 'conflict');
   end if;
@@ -350,6 +549,10 @@ begin
       resolution = 'kept',
       resolved_by = p_resolved_by,
       resolved_at = p_resolved_at,
+      answer_correction_claim_token = null,
+      answer_correction_claimed_by = null,
+      answer_correction_claimed_option = null,
+      answer_correction_claim_expires_at = null,
       application_metadata = jsonb_build_object(
         'action', 'correct_answer',
         'previousCorrectOption', v_old_correct_option,
@@ -361,6 +564,6 @@ begin
 end;
 $function$;
 
-revoke all on function public.correct_daily_question_review_answer(uuid, date, text, uuid, text, numeric, text, jsonb, jsonb, timestamptz, uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public.correct_daily_question_review_answer(uuid, uuid, date, text, uuid, text, numeric, text, jsonb, jsonb, timestamptz, uuid, timestamptz) from public, anon, authenticated;
 
-grant execute on function public.correct_daily_question_review_answer(uuid, date, text, uuid, text, numeric, text, jsonb, jsonb, timestamptz, uuid, timestamptz) to service_role;
+grant execute on function public.correct_daily_question_review_answer(uuid, uuid, date, text, uuid, text, numeric, text, jsonb, jsonb, timestamptz, uuid, timestamptz) to service_role;
