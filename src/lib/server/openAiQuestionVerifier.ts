@@ -564,19 +564,6 @@ function collectSearchMetadata(output: unknown): {
         }
       }
     }
-    if (!Array.isArray(item.content)) {
-      continue;
-    }
-    for (const content of item.content) {
-      if (!isRecord(content) || !Array.isArray(content.annotations)) {
-        continue;
-      }
-      for (const annotation of content.annotations) {
-        if (isRecord(annotation) && annotation.type === "url_citation") {
-          addSource(annotation.url, annotation.title);
-        }
-      }
-    }
   }
   return { calls, sources, urls };
 }

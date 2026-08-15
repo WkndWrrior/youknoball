@@ -364,6 +364,36 @@ describe("OpenAI question verifier", () => {
     }
   });
 
+  it.each(["passed", "risk"] as const)(
+    "does not trust citation-only evidence for a %s decision",
+    async (verdict) => {
+      vi.stubEnv("OPENAI_API_KEY", "secret");
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+        jsonResponse(responseBody(finding(verdict), {
+          searchCalls: 0,
+          annotations: [{
+            type: "url_citation",
+            url: "https://www.ncaa.com/news/basketball-men/article/example",
+            title: "NCAA report",
+            start_index: 0,
+            end_index: 10,
+          }],
+        })),
+      );
+
+      const result = await createVerifier(fetchMock).verifyQuestion(input);
+
+      expect(result.finding).toMatchObject({
+        verdict: "unable_to_verify",
+        confidence: 0,
+        evidence: [],
+      });
+      expect(result.sources).toEqual([]);
+      expect(result.webSearchCalls).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("excludes unapproved and unsafe returned source URLs", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const fetchMock = vi
