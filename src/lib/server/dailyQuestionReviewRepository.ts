@@ -27,7 +27,7 @@ import type {
   DailyQuestionReviewUsage,
   PersistedDailyQuestionReviewCost,
 } from "@/lib/server/dailyQuestionReviewBudget";
-import { validateSourceUrl } from "@/lib/server/dailyQuestionSourceFetcher";
+import { validateBuiltInSourceUrl } from "@/lib/server/dailyQuestionSourceFetcher";
 import type { ServerSupabaseClient } from "@/lib/server/supabaseServer";
 
 const RUN_COLUMNS = [
@@ -90,29 +90,6 @@ const ITEM_COLUMNS = [
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const DAILY_ANSWER_CORRECTION_APPROVED_SOURCE_DOMAINS = [
-  "baseball-reference.com",
-  "baseballhall.org",
-  "basketball-reference.com",
-  "espn.com",
-  "goduke.com",
-  "heisman.com",
-  "hhof.com",
-  "hockey-reference.com",
-  "lsusports.net",
-  "mlb.com",
-  "nba.com",
-  "ncaa.com",
-  "nfl.com",
-  "nhl.com",
-  "osubeavers.com",
-  "pro-football-reference.com",
-  "sabr.org",
-  "seahawks.com",
-  "sports-reference.com",
-  "uconnhuskies.com",
-  "uhcougars.com",
-] as const;
 const RUN_STATUSES = new Set<DailyQuestionReviewRunStatus>([
   "preparing",
   "running",
@@ -152,18 +129,6 @@ function isRealDate(value: unknown): value is string {
   if (!isDate(value)) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
-
-function isBuiltInApprovedSourceUrl(input: string): boolean {
-  let hostname: string;
-  try {
-    hostname = new URL(input).hostname.toLowerCase();
-  } catch {
-    return false;
-  }
-  return DAILY_ANSWER_CORRECTION_APPROVED_SOURCE_DOMAINS.some(
-    (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
-  );
 }
 
 function isNullableTimestamp(value: unknown): value is string | null {
@@ -924,8 +889,8 @@ export async function correctDailyQuestionReviewAnswer(
     throw new Error("Daily review answer correction finding is invalid.");
   }
   const canonicalEvidence = finding.evidence.map((item) => {
-    const validation = validateSourceUrl(item.url);
-    if (!validation.ok || !isBuiltInApprovedSourceUrl(validation.url)) {
+    const validation = validateBuiltInSourceUrl(item.url);
+    if (!validation.ok) {
       throw new Error("Daily review answer correction evidence is not approved.");
     }
     return { ...item, url: validation.url };

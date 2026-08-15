@@ -15,6 +15,7 @@ import {
   fetchSourceEvidence as fetchSourceEvidenceProduction,
   isPublicSourceAddress,
   resolvePublicSourceAddresses,
+  validateBuiltInSourceUrl,
   validateSourceUrl,
   type SourceFetchOptions,
 } from "@/lib/server/dailyQuestionSourceFetcher";
@@ -232,6 +233,25 @@ describe("approved question source URLs", () => {
     vi.stubEnv("DAILY_REVIEW_APPROVED_SOURCE_DOMAINS", "");
     expect(validateSourceUrl("https://ohiostatebuckeyes.com/news/example")).toMatchObject({
       ok: false,
+    });
+  });
+
+  it("keeps built-in validation independent from configured additions", () => {
+    vi.stubEnv(
+      "DAILY_REVIEW_APPROVED_SOURCE_DOMAINS",
+      "ohiostatebuckeyes.com",
+    );
+
+    expect(
+      validateBuiltInSourceUrl(
+        "https://ohiostatebuckeyes.com/news/example",
+      ),
+    ).toMatchObject({ ok: false });
+    expect(
+      validateBuiltInSourceUrl("https://stats.nfl.com/news/example"),
+    ).toEqual({
+      ok: true,
+      url: "https://stats.nfl.com/news/example",
     });
   });
 

@@ -1026,6 +1026,31 @@ describe("correctDailyQuestionReviewAnswer", () => {
     }
   });
 
+  it("accepts evidence from a built-in source subdomain", async () => {
+    const client = createClientMock({}, {
+      correct_daily_question_review_answer: {
+        data: { outcome: "corrected" },
+        error: null,
+      },
+    });
+
+    await expect(correctDailyQuestionReviewAnswer(client, {
+      challengeDate: "2026-08-10",
+      reviewItemId: ids.item,
+      claimToken: ids.claim,
+      newCorrectOption: "B",
+      finding: {
+        ...passedFinding,
+        evidence: [{
+          ...passedFinding.evidence[0],
+          url: "https://stats.nfl.com/news/example",
+        }],
+      },
+      resolvedBy: ids.claim,
+    })).resolves.toEqual({ outcome: "corrected" });
+    expect(client.rpc).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["review item UUID", { reviewItemId: "not-a-uuid" }],
     ["claim token UUID", { claimToken: "not-a-uuid" }],

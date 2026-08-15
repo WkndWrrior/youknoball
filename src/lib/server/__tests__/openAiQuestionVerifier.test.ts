@@ -430,6 +430,60 @@ describe("OpenAI question verifier", () => {
     );
   });
 
+  it("ignores configured-only domains throughout verification", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "secret");
+    vi.stubEnv(
+      "DAILY_REVIEW_APPROVED_SOURCE_DOMAINS",
+      "ohiostatebuckeyes.com",
+    );
+    const configuredUrl = "https://ohiostatebuckeyes.com/news/example";
+    const configuredInput: OpenAiQuestionVerifierInput = {
+      question: {
+        ...input.question,
+        source_notes: `Configured source: ${configuredUrl}`,
+      },
+      savedEvidence: [{
+        status: "fetched",
+        requestedUrl: configuredUrl,
+        finalUrl: configuredUrl,
+        redirects: [],
+        title: "Configured-only evidence",
+        excerpt: "This must not influence verification.",
+        bytes: 40,
+        contentType: "text/html",
+      }],
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(responseBody(finding("passed"), {
+        searchSources: [
+          { url: configuredUrl, title: "Configured-only result" },
+          {
+            url: "https://stats.nfl.com/news/approved-result",
+            title: "Built-in subdomain result",
+          },
+        ],
+      })),
+    );
+
+    const result = await createVerifier(fetchMock).verifyQuestion(configuredInput);
+
+    const body = getRequestBody(fetchMock);
+    const allowedDomains = (
+      body.tools as Array<{ filters: { allowed_domains: string[] } }>
+    )[0]?.filters.allowed_domains ?? [];
+    expect(allowedDomains).not.toContain("ohiostatebuckeyes.com");
+    expect(allowedDomains).toContain("nfl.com");
+    expect(String(body.input)).not.toContain("ohiostatebuckeyes.com");
+    expect(String(body.input)).not.toContain("Configured-only evidence");
+    expect(result.sources).toEqual([{
+      url: "https://stats.nfl.com/news/approved-result",
+      title: "Built-in subdomain result",
+    }]);
+    expect(result.finding.evidence.map((item) => item.url)).toEqual([
+      "https://stats.nfl.com/news/approved-result",
+    ]);
+  });
+
   it("trusts the documented completed search URL source shape", async () => {
     vi.stubEnv("OPENAI_API_KEY", "secret");
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(

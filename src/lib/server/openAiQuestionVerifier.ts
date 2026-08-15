@@ -11,8 +11,9 @@ import {
   type QuestionSnapshot,
 } from "@/lib/dailyQuestionReview";
 import {
-  extractApprovedSourceUrls,
-  validateSourceUrl,
+  DEFAULT_APPROVED_SOURCE_DOMAINS,
+  extractBuiltInApprovedSourceUrls,
+  validateBuiltInSourceUrl,
   type SourceEvidenceResult,
 } from "@/lib/server/dailyQuestionSourceFetcher";
 
@@ -35,24 +36,6 @@ const UTF8_DECODER = new TextDecoder();
 
 export const MAX_OPENAI_WEB_SEARCH_CALLS_PER_RESPONSE = 10;
 export const MAX_DAILY_QUESTION_VERIFIER_DURATION_MS = DEFAULT_TIMEOUT_MS * 2;
-
-const WEB_SEARCH_DOMAINS = [
-  "baseball-reference.com",
-  "baseballhall.org",
-  "basketball-reference.com",
-  "espn.com",
-  "heisman.com",
-  "hhof.com",
-  "hockey-reference.com",
-  "mlb.com",
-  "nba.com",
-  "ncaa.com",
-  "nfl.com",
-  "nhl.com",
-  "pro-football-reference.com",
-  "sabr.org",
-  "sports-reference.com",
-] as const;
 
 const VERIFICATION_SCHEMA = {
   type: "object",
@@ -288,7 +271,7 @@ function canonicalApprovedUrl(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
-  const validation = validateSourceUrl(value);
+  const validation = validateBuiltInSourceUrl(value);
   return validation.ok ? validation.url : null;
 }
 
@@ -346,11 +329,11 @@ function sanitizeSavedEvidence(value: unknown): SourceEvidenceResult[] | null {
     }
     const requestedUrl =
       typeof item.requestedUrl === "string"
-        ? validateSourceUrl(item.requestedUrl)
+        ? validateBuiltInSourceUrl(item.requestedUrl)
         : null;
     const finalUrl =
       typeof item.finalUrl === "string"
-        ? validateSourceUrl(item.finalUrl)
+        ? validateBuiltInSourceUrl(item.finalUrl)
         : null;
     if (
       !requestedUrl?.ok ||
@@ -404,7 +387,7 @@ function buildPrompt(
     expectedAnswer: getExpectedAnswer(question),
     sport: question.sport,
     difficulty: question.difficulty,
-    sourceNotes: question.source_notes,
+    sourceNotes: sanitizeSourceNotes(question.source_notes),
   };
   const searchInstruction = webSearchEnabled
     ? "\nApproved-domain web search is available. Use it only to resolve the verification gap, and cite the pages that determine the verdict."
@@ -425,7 +408,7 @@ function buildPrompt(
     if (
       source.status !== "fetched" ||
       typeof source.finalUrl !== "string" ||
-      !validateSourceUrl(source.finalUrl).ok ||
+      !validateBuiltInSourceUrl(source.finalUrl).ok ||
       typeof source.title !== "string" ||
       !source.title.trim() ||
       typeof source.excerpt !== "string" ||
@@ -809,16 +792,27 @@ function malformedOutputError(
   });
 }
 
+function sanitizeSourceNotes(sourceNotes: string | null): string | null {
+  if (!sourceNotes) {
+    return sourceNotes;
+  }
+  return sourceNotes.replace(/https?:\/\/[^\s<>"']+/gi, (candidate) =>
+    extractBuiltInApprovedSourceUrls(candidate).length > 0
+      ? candidate
+      : "[unapproved source omitted]"
+  );
+}
+
 function getWebSearchDomains(input: OpenAiQuestionVerifierInput): string[] {
-  const domains = new Set<string>(WEB_SEARCH_DOMAINS);
+  const domains = new Set<string>(DEFAULT_APPROVED_SOURCE_DOMAINS);
   const candidateUrls = [
-    ...extractApprovedSourceUrls(input.question.source_notes),
+    ...extractBuiltInApprovedSourceUrls(input.question.source_notes),
     ...input.savedEvidence.flatMap((item) =>
       item.status === "fetched" ? [item.finalUrl] : [],
     ),
   ];
   for (const candidate of candidateUrls) {
-    const validation = validateSourceUrl(candidate);
+    const validation = validateBuiltInSourceUrl(candidate);
     if (!validation.ok) {
       continue;
     }
