@@ -1,0 +1,1535 @@
+YOU KNO BALL - QUESTION BANK EXPANSION REVIEW
+==============================================
+
+Status: REVIEW ONLY - NOT IMPLEMENTED IN SUPABASE
+Total drafts: 150
+Categories: NBA, CBB, NFL, CFB, NHL, MLB
+Per category: 25 questions (8 easy, 9 medium, 8 hard)
+Review status for every question: Pending
+
+Review guidance: Mark questions you want to approve, revise, or retire. Each source URL was checked before delivery.
+
+
+NBA - 25 QUESTIONS
+------------------
+
+NBA-001 | EASY | REVIEW STATUS: Pending
+Question: On a January night in 2006, which Lakers star erupted for 81 points against Toronto, the second-highest total in NBA history?
+A. Kobe Bryant
+B. Shaquille O'Neal
+C. Allen Iverson
+D. Tracy McGrady
+Correct: A - Kobe Bryant
+Fact note: Kobe Bryant scored 81 points against the Raptors on January 22, 2006.
+Source: https://www.basketball-reference.com/boxscores/200601220LAL.html
+
+NBA-002 | EASY | REVIEW STATUS: Pending
+Question: At 22 years old in 2011, which Chicago Bulls guard became the youngest MVP in NBA history?
+A. Michael Jordan
+B. Derrick Rose
+C. Russell Westbrook
+D. Ja Morant
+Correct: B - Derrick Rose
+Fact note: Derrick Rose won the 2010-11 MVP at age 22.
+Source: https://www.nba.com/news/history-nba-legend-derrick-rose
+
+NBA-003 | EASY | REVIEW STATUS: Pending
+Question: Which Celtics forward collected three straight NBA MVP awards from 1984 through 1986?
+A. Kevin McHale
+B. Julius Erving
+C. Larry Bird
+D. Moses Malone
+Correct: C - Larry Bird
+Fact note: Larry Bird won consecutive MVP awards in 1984, 1985, and 1986.
+Source: https://www.basketball-reference.com/players/b/birdla01.html
+
+NBA-004 | EASY | REVIEW STATUS: Pending
+Question: Which 2001 NBA MVP carried Philadelphia to the Finals with a crossover, a scoring title, and plenty of attitude?
+A. Vince Carter
+B. Jason Kidd
+C. Ray Allen
+D. Allen Iverson
+Correct: D - Allen Iverson
+Fact note: Allen Iverson won MVP and led the 76ers to the 2001 NBA Finals.
+Source: https://www.basketball-reference.com/players/i/iversal01.html
+
+NBA-005 | EASY | REVIEW STATUS: Pending
+Question: Which Phoenix Suns point guard won back-to-back NBA MVP awards in 2005 and 2006?
+A. Steve Nash
+B. Jason Kidd
+C. Chris Paul
+D. Gary Payton
+Correct: A - Steve Nash
+Fact note: Steve Nash won consecutive MVP awards in 2004-05 and 2005-06.
+Source: https://www.basketball-reference.com/players/n/nashst01.html
+
+NBA-006 | EASY | REVIEW STATUS: Pending
+Question: When the NBA first handed out its MVP award in 1956, which St. Louis Hawks big man took it home?
+A. Bill Russell
+B. Bob Pettit
+C. George Mikan
+D. Dolph Schayes
+Correct: B - Bob Pettit
+Fact note: Bob Pettit was the NBA's first Most Valuable Player in 1955-56.
+Source: https://www.basketball-reference.com/awards/mvp.html
+
+NBA-007 | EASY | REVIEW STATUS: Pending
+Question: Which Georgetown guard went first overall in the star-packed 1996 NBA Draft?
+A. Ray Allen
+B. Kobe Bryant
+C. Allen Iverson
+D. Steve Nash
+Correct: C - Allen Iverson
+Fact note: Philadelphia selected Allen Iverson with the first pick in 1996.
+Source: https://www.basketball-reference.com/draft/NBA_1996.html
+
+NBA-008 | EASY | REVIEW STATUS: Pending
+Question: Which Lakers center swept the 2000 regular-season MVP, Finals MVP, and championship honors?
+A. Tim Duncan
+B. David Robinson
+C. Alonzo Mourning
+D. Shaquille O'Neal
+Correct: D - Shaquille O'Neal
+Fact note: Shaquille O'Neal won the 1999-2000 MVP and 2000 Finals MVP.
+Source: https://www.basketball-reference.com/players/o/onealsh01.html
+
+NBA-009 | MEDIUM | REVIEW STATUS: Pending
+Question: Which relentless guard passed Oscar Robertson to become the NBA's career triple-double leader?
+A. Russell Westbrook
+B. Jason Kidd
+C. Magic Johnson
+D. LeBron James
+Correct: A - Russell Westbrook
+Fact note: Russell Westbrook broke Oscar Robertson's career triple-double record in 2021.
+Source: https://www.nba.com/news/russell-westbrook-triple-double-record
+
+NBA-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which superstar became the first player to win NBA Finals MVP with three different franchises?
+A. Kawhi Leonard
+B. LeBron James
+C. Shaquille O'Neal
+D. Robert Horry
+Correct: B - LeBron James
+Fact note: LeBron James won Finals MVP with Miami, Cleveland, and the Lakers.
+Source: https://www.nba.com/news/lebron-james-first-player-finals-mvp-three-franchises
+
+NBA-011 | MEDIUM | REVIEW STATUS: Pending
+Question: Before Dallas made him its franchise cornerstone, which team drafted Dirk Nowitzki ninth overall in 1998 and traded him that night?
+A. Phoenix Suns
+B. Boston Celtics
+C. Milwaukee Bucks
+D. Sacramento Kings
+Correct: C - Milwaukee Bucks
+Fact note: Milwaukee drafted Dirk Nowitzki before trading his rights to Dallas.
+Source: https://www.basketball-reference.com/draft/NBA_1998.html
+
+NBA-012 | MEDIUM | REVIEW STATUS: Pending
+Question: Which franchise drafted Scottie Pippen fifth in 1987 before dealing his rights to Chicago?
+A. Indiana Pacers
+B. Cleveland Cavaliers
+C. New Jersey Nets
+D. Seattle SuperSonics
+Correct: D - Seattle SuperSonics
+Fact note: Seattle selected Scottie Pippen and traded him to the Bulls on draft night.
+Source: https://www.basketball-reference.com/draft/NBA_1987.html
+
+NBA-013 | MEDIUM | REVIEW STATUS: Pending
+Question: With 0.9 seconds left in 2014, which Trail Blazer buried a series-ending three against Houston and sprinted into Portland lore?
+A. Damian Lillard
+B. LaMarcus Aldridge
+C. Brandon Roy
+D. CJ McCollum
+Correct: A - Damian Lillard
+Fact note: Damian Lillard's buzzer-beater ended Portland's 2014 first-round series against Houston.
+Source: https://www.basketball-reference.com/boxscores/201405020POR.html
+
+NBA-014 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Pacers sharpshooter stunned Madison Square Garden by scoring eight points in nine seconds in the 1995 playoffs?
+A. Mark Jackson
+B. Reggie Miller
+C. Chuck Person
+D. Rik Smits
+Correct: B - Reggie Miller
+Fact note: Reggie Miller scored eight points in 8.9 seconds against the Knicks.
+Source: https://www.nba.com/news/history-top-moments-reggie-miller-8-points-9-seconds
+
+NBA-015 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Milwaukee Bucks guard became the first backcourt player to win NBA Defensive Player of the Year?
+A. Michael Cooper
+B. Alvin Robertson
+C. Sidney Moncrief
+D. Dennis Johnson
+Correct: C - Sidney Moncrief
+Fact note: Sidney Moncrief won the first two Defensive Player of the Year awards.
+Source: https://www.basketball-reference.com/awards/dpoy.html
+
+NBA-016 | MEDIUM | REVIEW STATUS: Pending
+Question: In 1994, which Spurs center completed a quadruple-double with 34 points, 10 rebounds, 10 assists, and 10 blocks?
+A. Hakeem Olajuwon
+B. Patrick Ewing
+C. Dikembe Mutombo
+D. David Robinson
+Correct: D - David Robinson
+Fact note: David Robinson recorded a quadruple-double against Detroit on February 17, 1994.
+Source: https://www.basketball-reference.com/boxscores/199402170SAS.html
+
+NBA-017 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Warriors star averaged 29.5 points in a 1975 Finals sweep and took home series MVP?
+A. Rick Barry
+B. Jamaal Wilkes
+C. Nate Thurmond
+D. Phil Smith
+Correct: A - Rick Barry
+Fact note: Rick Barry was the 1975 NBA Finals MVP as Golden State swept Washington.
+Source: https://www.basketball-reference.com/playoffs/1975-nba-finals-warriors-vs-bullets.html
+
+NBA-018 | HARD | REVIEW STATUS: Pending
+Question: Who scored a Finals Game 7 record 42 points in 1969, even though Boston still escaped Los Angeles with the title?
+A. Elgin Baylor
+B. Jerry West
+C. John Havlicek
+D. Wilt Chamberlain
+Correct: B - Jerry West
+Fact note: Jerry West scored 42 points in Game 7 of the 1969 NBA Finals.
+Source: https://www.basketball-reference.com/boxscores/196905050LAL.html
+
+NBA-019 | HARD | REVIEW STATUS: Pending
+Question: When the NBA introduced the 3-point line in 1979, which Celtics guard made the league's first official triple?
+A. Larry Bird
+B. Rick Barry
+C. Chris Ford
+D. Brian Taylor
+Correct: C - Chris Ford
+Fact note: Chris Ford made the first 3-pointer in NBA history on October 12, 1979.
+Source: https://www.nba.com/news/first-3-pointer-nba-history-chris-ford
+
+NBA-020 | HARD | REVIEW STATUS: Pending
+Question: Standing 5-foot-3, which Charlotte point guard remains the shortest player in NBA history?
+A. Earl Boykins
+B. Spud Webb
+C. Calvin Murphy
+D. Muggsy Bogues
+Correct: D - Muggsy Bogues
+Fact note: Muggsy Bogues played 14 NBA seasons at 5-foot-3.
+Source: https://www.basketball-reference.com/players/b/boguemu01.html
+
+NBA-021 | HARD | REVIEW STATUS: Pending
+Question: Which Celtics legend won the 1968 championship while serving as both Boston's starting center and head coach?
+A. Bill Russell
+B. Tom Heinsohn
+C. Bob Cousy
+D. John Havlicek
+Correct: A - Bill Russell
+Fact note: Bill Russell became the first Black head coach to win a major U.S. professional championship.
+Source: https://www.nba.com/news/history-nba-legend-bill-russell
+
+NBA-022 | HARD | REVIEW STATUS: Pending
+Question: Who claimed the final ABA regular-season MVP award before the 1976 merger?
+A. David Thompson
+B. Julius Erving
+C. Artis Gilmore
+D. George Gervin
+Correct: B - Julius Erving
+Fact note: Julius Erving was the ABA MVP in its final 1975-76 season.
+Source: https://www.basketball-reference.com/players/e/ervinju01.html
+
+NBA-023 | HARD | REVIEW STATUS: Pending
+Question: Only three seasons after joining the league, which expansion franchise won the 1971 NBA championship?
+A. Phoenix Suns
+B. Portland Trail Blazers
+C. Milwaukee Bucks
+D. Buffalo Braves
+Correct: C - Milwaukee Bucks
+Fact note: The Bucks debuted in 1968-69 and won the 1971 NBA title.
+Source: https://www.basketball-reference.com/teams/MIL/
+
+NBA-024 | HARD | REVIEW STATUS: Pending
+Question: Which smooth-scoring Spurs star was known as "The Iceman" and won four NBA scoring titles?
+A. James Silas
+B. Artis Gilmore
+C. David Thompson
+D. George Gervin
+Correct: D - George Gervin
+Fact note: George Gervin earned four NBA scoring titles and the nickname "The Iceman."
+Source: https://www.nba.com/news/history-nba-legend-george-gervin
+
+NBA-025 | HARD | REVIEW STATUS: Pending
+Question: Which center became the first NBA player to cross 30,000 career points, reaching the milestone in 1972?
+A. Wilt Chamberlain
+B. Kareem Abdul-Jabbar
+C. Elgin Baylor
+D. Oscar Robertson
+Correct: A - Wilt Chamberlain
+Fact note: Wilt Chamberlain was the first NBA player to score 30,000 career points.
+Source: https://www.nba.com/news/history-nba-legend-wilt-chamberlain
+
+
+CBB - 25 QUESTIONS
+------------------
+
+CBB-001 | EASY | REVIEW STATUS: Pending
+Question: Down 16 in the 2022 title game, which team stormed back past North Carolina to finish the job in New Orleans?
+A. Kansas
+B. Duke
+C. Villanova
+D. Baylor
+Correct: A - Kansas
+Fact note: Kansas erased a 16-point deficit and beat North Carolina 72-69 for the 2022 title.
+Source: https://www.ncaa.com/history/basketball-men/d1
+
+CBB-002 | EASY | REVIEW STATUS: Pending
+Question: Which team ruined Gonzaga's perfect-season dream with an 86-70 win in the 2021 NCAA men's basketball championship game?
+A. Houston
+B. Baylor
+C. UCLA
+D. Arkansas
+Correct: B - Baylor
+Fact note: Baylor defeated unbeaten Gonzaga to win its first men's basketball championship.
+Source: https://www.ncaa.com/history/basketball-men/d1
+
+CBB-003 | EASY | REVIEW STATUS: Pending
+Question: Which Villanova guard poured in 31 points off the bench to win 2018 Final Four Most Outstanding Player?
+A. Jalen Brunson
+B. Mikal Bridges
+C. Donte DiVincenzo
+D. Josh Hart
+Correct: C - Donte DiVincenzo
+Fact note: Donte DiVincenzo scored 31 in the title game and earned Final Four MOP.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-004 | EASY | REVIEW STATUS: Pending
+Question: Before the Lakers drafted him, Magic Johnson led which school past Larry Bird's Indiana State team for the 1979 national title?
+A. Michigan
+B. Purdue
+C. DePaul
+D. Michigan State
+Correct: D - Michigan State
+Fact note: Magic Johnson's Michigan State team beat Indiana State in the 1979 title game.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-005 | EASY | REVIEW STATUS: Pending
+Question: Which team ended undefeated UNLV's 45-game winning streak in the 1991 Final Four?
+A. Duke
+B. North Carolina
+C. Kansas
+D. Arizona
+Correct: A - Duke
+Fact note: Duke upset UNLV 79-77 in the 1991 national semifinal.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-006 | EASY | REVIEW STATUS: Pending
+Question: Which 11 seed crashed the 2006 Final Four after beating Michigan State, North Carolina, Wichita State, and UConn?
+A. VCU
+B. George Mason
+C. Loyola Chicago
+D. Butler
+Correct: B - George Mason
+Fact note: George Mason became the second 11 seed to reach the Final Four.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-007 | EASY | REVIEW STATUS: Pending
+Question: Which "Dunk City" team became the first 15 seed to reach the Sweet 16 in 2013?
+A. Saint Peter's
+B. Oral Roberts
+C. Florida Gulf Coast
+D. Lehigh
+Correct: C - Florida Gulf Coast
+Fact note: Florida Gulf Coast beat Georgetown and San Diego State to reach the Sweet 16.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-008 | EASY | REVIEW STATUS: Pending
+Question: Which tiny New Jersey school became the first 15 seed to reach the Elite Eight in 2022?
+A. Fairleigh Dickinson
+B. Princeton
+C. Monmouth
+D. Saint Peter's
+Correct: D - Saint Peter's
+Fact note: Saint Peter's beat Kentucky, Murray State, and Purdue during its historic run.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-009 | MEDIUM | REVIEW STATUS: Pending
+Question: "One Shining Moment" first closed an NCAA men's basketball tournament broadcast after which championship year?
+A. 1987
+B. 1982
+C. 1991
+D. 1979
+Correct: A - 1987
+Fact note: The tournament anthem first accompanied the championship montage in 1987.
+Source: https://www.ncaa.com/news/basketball-men/article/2025-06-10/march-madness-history-comprehensive-guide-mens-tournament
+
+CBB-010 | MEDIUM | REVIEW STATUS: Pending
+Question: In what year did the NCAA men's basketball tournament first expand to a 64-team field?
+A. 1979
+B. 1985
+C. 1991
+D. 2001
+Correct: B - 1985
+Fact note: The tournament expanded from 53 teams to 64 in 1985.
+Source: https://www.ncaa.com/news/basketball-men/article/2025-06-10/march-madness-history-comprehensive-guide-mens-tournament
+
+CBB-011 | MEDIUM | REVIEW STATUS: Pending
+Question: The NCAA men's basketball tournament introduced its four-game First Four format in which year?
+A. 2001
+B. 2008
+C. 2011
+D. 2014
+Correct: C - 2011
+Fact note: Three games were added to the opening round in 2011, creating the 68-team field.
+Source: https://www.ncaa.com/news/basketball-men/article/2025-06-10/march-madness-history-comprehensive-guide-mens-tournament
+
+CBB-012 | MEDIUM | REVIEW STATUS: Pending
+Question: Which broadcaster helped attach the phrase "March Madness" to the NCAA tournament during 1982 coverage?
+A. Dick Vitale
+B. Jim Nantz
+C. Al McGuire
+D. Brent Musburger
+Correct: D - Brent Musburger
+Fact note: Brent Musburger used the phrase during NCAA tournament coverage in 1982.
+Source: https://www.ncaa.com/news/basketball-men/article/2025-06-10/march-madness-history-comprehensive-guide-mens-tournament
+
+CBB-013 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Notre Dame star still owns the NCAA tournament single-game scoring record after dropping 61 on Ohio in 1970?
+A. Austin Carr
+B. Adrian Dantley
+C. Calvin Murphy
+D. Pete Maravich
+Correct: A - Austin Carr
+Fact note: Austin Carr scored a tournament-record 61 points against Ohio.
+Source: https://www.ncaa.com/news/basketball-men/article/2025-06-10/march-madness-history-comprehensive-guide-mens-tournament
+
+CBB-014 | MEDIUM | REVIEW STATUS: Pending
+Question: Which team erased a tournament-record 25-point deficit against Iona in the 2012 First Four?
+A. VCU
+B. BYU
+C. Dayton
+D. La Salle
+Correct: B - BYU
+Fact note: BYU rallied from 25 down to beat Iona 78-72.
+Source: https://www.ncaa.com/news/basketball-men/article/2025-08-18/biggest-comeback-wins-mens-ncaa-tournament-history-march-madness
+
+CBB-015 | MEDIUM | REVIEW STATUS: Pending
+Question: Which run-and-gun team hung 149 points on defending champion Michigan in the highest-scoring modern NCAA tournament game?
+A. UNLV
+B. Arkansas
+C. Loyola Marymount
+D. Oklahoma
+Correct: C - Loyola Marymount
+Fact note: Loyola Marymount beat Michigan 149-115 in the 1990 second round.
+Source: https://www.ncaa.com/news/basketball-men/bracketiq/2026-02-17/highest-scoring-march-madness-games-ncaa-tournament-history
+
+CBB-016 | MEDIUM | REVIEW STATUS: Pending
+Question: Which school went from the inaugural First Four all the way to the 2011 Final Four?
+A. Butler
+B. Wichita State
+C. George Mason
+D. VCU
+Correct: D - VCU
+Fact note: VCU won five games to advance from the First Four to the Final Four.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-017 | MEDIUM | REVIEW STATUS: Pending
+Question: Which program became the first 7 seed to win the NCAA men's basketball title, doing it in 2014?
+A. UConn
+B. Michigan State
+C. Louisville
+D. Syracuse
+Correct: A - UConn
+Fact note: UConn won the 2014 championship as a No. 7 seed.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-018 | HARD | REVIEW STATUS: Pending
+Question: Which school gave Al McGuire a storybook retirement by winning the 1977 NCAA men's basketball championship in his final game?
+A. DePaul
+B. Marquette
+C. Notre Dame
+D. Providence
+Correct: B - Marquette
+Fact note: Marquette defeated North Carolina to win the 1977 title in McGuire's last game.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-019 | HARD | REVIEW STATUS: Pending
+Question: Which team did undefeated North Carolina outlast in triple overtime to win the 1957 NCAA men's basketball title?
+A. Michigan State
+B. San Francisco
+C. Kansas
+D. Kentucky
+Correct: C - Kansas
+Fact note: North Carolina beat Kansas and Wilt Chamberlain 54-53 in triple overtime.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-020 | HARD | REVIEW STATUS: Pending
+Question: Which team broke Cincinnati's two-year title grip with a 60-58 overtime win in the 1963 championship game?
+A. Ohio State
+B. Duke
+C. Illinois
+D. Loyola Chicago
+Correct: D - Loyola Chicago
+Fact note: Loyola Chicago rallied to defeat Cincinnati for the 1963 championship.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-021 | HARD | REVIEW STATUS: Pending
+Question: Which Indiana guard hit the baseline jumper that beat Syracuse for the 1987 national championship?
+A. Keith Smart
+B. Steve Alford
+C. Isiah Thomas
+D. Jay Edwards
+Correct: A - Keith Smart
+Fact note: Keith Smart's jumper with five seconds left gave Indiana a 74-73 win.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-022 | HARD | REVIEW STATUS: Pending
+Question: Who took over Michigan just before the 1989 NCAA tournament and coached the Wolverines to the title as an interim?
+A. Bill Frieder
+B. Steve Fisher
+C. Jud Heathcote
+D. Johnny Orr
+Correct: B - Steve Fisher
+Fact note: Steve Fisher became interim coach immediately before Michigan's title run.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-023 | HARD | REVIEW STATUS: Pending
+Question: Which UCLA guard went coast to coast in 4.8 seconds to save the Bruins against Missouri in the 1995 second round?
+A. Toby Bailey
+B. Cameron Dollar
+C. Tyus Edney
+D. Charles O'Bannon
+Correct: C - Tyus Edney
+Fact note: Tyus Edney's full-court drive produced UCLA's 75-74 win.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-024 | HARD | REVIEW STATUS: Pending
+Question: Which UConn guard won 1999 Final Four Most Outstanding Player after the Huskies denied Duke a 38-win season?
+A. Khalid El-Amin
+B. Kevin Freeman
+C. Ricky Moore
+D. Richard Hamilton
+Correct: D - Richard Hamilton
+Fact note: Richard Hamilton led UConn with 27 points in the 1999 title game.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+CBB-025 | HARD | REVIEW STATUS: Pending
+Question: Which senior guard earned 2002 Final Four Most Outstanding Player while leading Maryland to its first national title?
+A. Juan Dixon
+B. Steve Blake
+C. Lonny Baxter
+D. Chris Wilcox
+Correct: A - Juan Dixon
+Fact note: Juan Dixon scored 18 points in Maryland's championship win over Indiana.
+Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
+
+
+NFL - 25 QUESTIONS
+------------------
+
+NFL-001 | EASY | REVIEW STATUS: Pending
+Question: Before the Super Bowl and even before the NFL name, which club was crowned the league's first champion in 1920?
+A. Akron Pros
+B. Canton Bulldogs
+C. Chicago Bears
+D. Green Bay Packers
+Correct: A - Akron Pros
+Fact note: The Akron Pros won the inaugural APFA championship in 1920.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-002 | EASY | REVIEW STATUS: Pending
+Question: Which two-sport superstar served as the first president of the league that became the NFL?
+A. George Halas
+B. Jim Thorpe
+C. Red Grange
+D. Curly Lambeau
+Correct: B - Jim Thorpe
+Fact note: Jim Thorpe became the APFA's first president in 1920.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-003 | EASY | REVIEW STATUS: Pending
+Question: Which Jets quarterback became pro football's first 4,000-yard passer in 1967?
+A. Johnny Unitas
+B. Sonny Jurgensen
+C. Joe Namath
+D. Daryle Lamonica
+Correct: C - Joe Namath
+Fact note: Joe Namath passed for 4,007 yards in 1967.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-004 | EASY | REVIEW STATUS: Pending
+Question: Which Bills running back became the first NFL player to rush for 2,000 yards in a season?
+A. Thurman Thomas
+B. Jim Brown
+C. Earl Campbell
+D. O.J. Simpson
+Correct: D - O.J. Simpson
+Fact note: O.J. Simpson rushed for 2,003 yards in 1973.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-005 | EASY | REVIEW STATUS: Pending
+Question: Which team beat the Giants in the 1958 NFL Championship, the overtime classic remembered as "The Greatest Game Ever Played"?
+A. Baltimore Colts
+B. Cleveland Browns
+C. Chicago Bears
+D. Detroit Lions
+Correct: A - Baltimore Colts
+Fact note: Baltimore defeated New York 23-17 in the first overtime NFL championship game.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-006 | EASY | REVIEW STATUS: Pending
+Question: Which quarterback delivered on his famous guarantee by leading the Jets past Baltimore in Super Bowl III (3)?
+A. Len Dawson
+B. Joe Namath
+C. Johnny Unitas
+D. Bob Griese
+Correct: B - Joe Namath
+Fact note: Joe Namath guaranteed and delivered a Jets victory in Super Bowl III.
+Source: https://www.profootballhof.com/players/joe-namath/
+
+NFL-007 | EASY | REVIEW STATUS: Pending
+Question: Which Patriots kicker ended Super Bowl XXXVI (36) on the final play with a 48-yard field goal?
+A. Stephen Gostkowski
+B. Matt Stover
+C. Adam Vinatieri
+D. Jason Elam
+Correct: C - Adam Vinatieri
+Fact note: Adam Vinatieri's kick gave New England its first championship.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-008 | EASY | REVIEW STATUS: Pending
+Question: Which 335-pound Bears rookie scored a touchdown in Super Bowl XX (20) and became known simply as "The Fridge"?
+A. Dan Hampton
+B. Steve McMichael
+C. Richard Dent
+D. William Perry
+Correct: D - William Perry
+Fact note: William Perry scored on a one-yard run in Chicago's Super Bowl XX win.
+Source: https://www.pro-football-reference.com/boxscores/198601260chi.htm
+
+NFL-009 | MEDIUM | REVIEW STATUS: Pending
+Question: The American Professional Football Association adopted the name National Football League in which year?
+A. 1922
+B. 1920
+C. 1925
+D. 1933
+Correct: A - 1922
+Fact note: The APFA was renamed the NFL in 1922.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which team beat the Jets in the first Monday Night Football broadcast in 1970?
+A. Baltimore Colts
+B. Cleveland Browns
+C. Kansas City Chiefs
+D. Miami Dolphins
+Correct: B - Cleveland Browns
+Fact note: Cleveland defeated New York 31-21 in Monday Night Football's debut.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-011 | MEDIUM | REVIEW STATUS: Pending
+Question: Which dynasty became the first franchise to win four Super Bowls by beating the Rams in Super Bowl XIV (14)?
+A. Dallas Cowboys
+B. Green Bay Packers
+C. Pittsburgh Steelers
+D. Miami Dolphins
+Correct: C - Pittsburgh Steelers
+Fact note: Pittsburgh won its fourth Super Bowl in six seasons in January 1980.
+Source: https://www.profootballhof.com/history/archives.html
+
+NFL-012 | MEDIUM | REVIEW STATUS: Pending
+Question: Which team won the first Super Bowl played indoors, beating Denver in Super Bowl XII (12) at the Superdome?
+A. Pittsburgh Steelers
+B. Oakland Raiders
+C. Minnesota Vikings
+D. Dallas Cowboys
+Correct: D - Dallas Cowboys
+Fact note: Dallas defeated Denver 27-10 in the first indoor Super Bowl.
+Source: https://www.pro-football-reference.com/boxscores/197801150dal.htm
+
+NFL-013 | MEDIUM | REVIEW STATUS: Pending
+Question: The NFL first used instant replay for an entire regular season in what year?
+A. 1986
+B. 1978
+C. 1992
+D. 1999
+Correct: A - 1986
+Fact note: The league introduced regular instant-replay review in 1986.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-014 | MEDIUM | REVIEW STATUS: Pending
+Question: Who went first overall in the NFL's inaugural draft in 1936 but never played a league game?
+A. Sammy Baugh
+B. Jay Berwanger
+C. Don Hutson
+D. Sid Luckman
+Correct: B - Jay Berwanger
+Fact note: Philadelphia selected Heisman winner Jay Berwanger with the first NFL Draft pick.
+Source: https://www.profootballhof.com/football-history/nfl-draft-history/1930/1936/
+
+NFL-015 | MEDIUM | REVIEW STATUS: Pending
+Question: Which 1936 Bears pick became the first drafted player eventually enshrined in Canton?
+A. Bronko Nagurski
+B. Sid Luckman
+C. Joe Stydahar
+D. Bill Hewitt
+Correct: C - Joe Stydahar
+Fact note: Chicago selected Joe Stydahar sixth overall in the first NFL Draft.
+Source: https://www.profootballhof.com/news/joe-stydahar-the-first-drafted-player-to-make-it-to-canton
+
+NFL-016 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Giants defensive back became the first Black player elected to the Pro Football Hall of Fame?
+A. Fritz Pollard
+B. Marion Motley
+C. Kenny Washington
+D. Emlen Tunnell
+Correct: D - Emlen Tunnell
+Fact note: Emlen Tunnell was elected to the Hall of Fame in 1967.
+Source: https://www.profootballhof.com/news/african-american-pioneers
+
+NFL-017 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Akron star became the NFL's first Black head coach while still playing for the team in 1921?
+A. Fritz Pollard
+B. Duke Slater
+C. Paul Robeson
+D. Charles Follis
+Correct: A - Fritz Pollard
+Fact note: Fritz Pollard served as a player-coach for Akron in 1921.
+Source: https://www.profootballhof.com/news/african-american-pioneers
+
+NFL-018 | HARD | REVIEW STATUS: Pending
+Question: Who received $500 to play for the Allegheny Athletic Association in 1892, becoming pro football's first documented paid player?
+A. Jim Thorpe
+B. Pudge Heffelfinger
+C. John Brallier
+D. William Walter Camp
+Correct: B - Pudge Heffelfinger
+Fact note: Pudge Heffelfinger was paid $500 for a game on November 12, 1892.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-019 | HARD | REVIEW STATUS: Pending
+Question: Which club beat the Columbus Panhandles 14-0 in one of the first official NFL games on October 3, 1920?
+A. Rock Island Independents
+B. Akron Pros
+C. Dayton Triangles
+D. Canton Bulldogs
+Correct: C - Dayton Triangles
+Fact note: The Dayton Triangles defeated Columbus in an opening-day APFA game.
+Source: https://www.profootballhof.com/news/football-firsts
+
+NFL-020 | HARD | REVIEW STATUS: Pending
+Question: Which Chiefs linebacker set the NFL single-game record with seven sacks against Seattle in 1990?
+A. Neil Smith
+B. Reggie White
+C. Kevin Greene
+D. Derrick Thomas
+Correct: D - Derrick Thomas
+Fact note: Derrick Thomas recorded seven sacks on November 11, 1990.
+Source: https://www.profootballhof.com/players/derrick-thomas/
+
+NFL-021 | HARD | REVIEW STATUS: Pending
+Question: Which Rams receiver set the NFL single-game record with 336 receiving yards in a 1989 overtime win?
+A. Flipper Anderson
+B. Henry Ellard
+C. Jerry Rice
+D. Art Monk
+Correct: A - Flipper Anderson
+Fact note: Flipper Anderson gained 336 receiving yards against New Orleans.
+Source: https://www.pro-football-reference.com/boxscores/198911260nor.htm
+
+NFL-022 | HARD | REVIEW STATUS: Pending
+Question: Who opened the 2013 NFL season with seven touchdown passes, becoming the first post-merger quarterback to hit that number in one game?
+A. Drew Brees
+B. Peyton Manning
+C. Tom Brady
+D. Aaron Rodgers
+Correct: B - Peyton Manning
+Fact note: Peyton Manning threw seven touchdowns without an interception against Baltimore.
+Source: https://www.profootballhof.com/news/manning-s-jersey-football-from-record-day
+
+NFL-023 | HARD | REVIEW STATUS: Pending
+Question: Which Packers return specialist became the first special-teams player named Super Bowl MVP after Super Bowl XXXI (31)?
+A. Devin Hester
+B. Brian Mitchell
+C. Desmond Howard
+D. Steve Tasker
+Correct: C - Desmond Howard
+Fact note: Desmond Howard returned a kickoff 99 yards and won Super Bowl XXXI MVP.
+Source: https://www.pro-football-reference.com/players/H/HowaDe00.htm
+
+NFL-024 | HARD | REVIEW STATUS: Pending
+Question: Which 49ers back became the first NFL player with 1,000 rushing yards and 1,000 receiving yards in the same season?
+A. Marshall Faulk
+B. Marcus Allen
+C. Thurman Thomas
+D. Roger Craig
+Correct: D - Roger Craig
+Fact note: Roger Craig reached both 1,000-yard marks in 1985.
+Source: https://www.pro-football-reference.com/players/C/CraiRo00.htm
+
+NFL-025 | HARD | REVIEW STATUS: Pending
+Question: Which Falcons quarterback became the first NFL quarterback to rush for 1,000 yards in a season?
+A. Michael Vick
+B. Randall Cunningham
+C. Cam Newton
+D. Lamar Jackson
+Correct: A - Michael Vick
+Fact note: Michael Vick rushed for 1,039 yards in 2006.
+Source: https://www.pro-football-reference.com/players/V/VickMi00.htm
+
+
+CFB - 25 QUESTIONS
+------------------
+
+CFB-001 | EASY | REVIEW STATUS: Pending
+Question: Which team beat Florida State 23-16 to win the first BCS national championship for the 1998 season?
+A. Tennessee
+B. Florida
+C. Nebraska
+D. Virginia Tech
+Correct: A - Tennessee
+Fact note: Tennessee completed a 13-0 season by winning the first BCS title game.
+Source: https://www.ncaa.com/news/ncaa/article/2023-08-04/college-football-history-notable-firsts-and-milestones
+
+CFB-002 | EASY | REVIEW STATUS: Pending
+Question: Which team rolled past Oregon to win the first College Football Playoff championship for the 2014 season?
+A. Alabama
+B. Ohio State
+C. Florida State
+D. Clemson
+Correct: B - Ohio State
+Fact note: Ohio State beat Oregon 42-20 in the inaugural CFP championship game.
+Source: https://www.ncaa.com/news/ncaa/article/2023-08-04/college-football-history-notable-firsts-and-milestones
+
+CFB-003 | EASY | REVIEW STATUS: Pending
+Question: Which program finished No. 1 when the Associated Press crowned its first college football champion in 1936?
+A. Notre Dame
+B. Alabama
+C. Minnesota
+D. Pittsburgh
+Correct: C - Minnesota
+Fact note: Minnesota finished atop the first final AP poll in 1936.
+Source: https://www.ncaa.com/news/ncaa/article/2023-08-04/college-football-history-notable-firsts-and-milestones
+
+CFB-004 | EASY | REVIEW STATUS: Pending
+Question: On fourth-and-5 with the national title hanging in the balance, which Texas quarterback ran past USC in the 2006 Rose Bowl?
+A. Colt McCoy
+B. Chris Simms
+C. Major Applewhite
+D. Vince Young
+Correct: D - Vince Young
+Fact note: Vince Young's late touchdown gave Texas a 41-38 championship win.
+Source: https://www.sports-reference.com/cfb/boxscores/2006-01-04-southern-california.html
+
+CFB-005 | EASY | REVIEW STATUS: Pending
+Question: Who took Alabama's missed field goal 109 yards the other way for Auburn's "Kick Six" in 2013?
+A. Chris Davis
+B. Tre Mason
+C. Nick Marshall
+D. Ricardo Louis
+Correct: A - Chris Davis
+Fact note: Chris Davis returned the missed kick for the game-winning Iron Bowl touchdown.
+Source: https://www.sports-reference.com/cfb/boxscores/2013-11-30-auburn.html
+
+CFB-006 | EASY | REVIEW STATUS: Pending
+Question: Which Colorado quarterback launched the Hail Mary that became the 1994 "Miracle at Michigan"?
+A. Rashaan Salaam
+B. Kordell Stewart
+C. Michael Westbrook
+D. Darien Hagan
+Correct: B - Kordell Stewart
+Fact note: Kordell Stewart's 64-yard pass was tipped to Michael Westbrook for the win.
+Source: https://www.sports-reference.com/cfb/boxscores/1994-09-24-michigan.html
+
+CFB-007 | EASY | REVIEW STATUS: Pending
+Question: Which program finished 13-0 and won the 1984 national title after beating Michigan in the Holiday Bowl?
+A. Washington
+B. Oklahoma
+C. BYU
+D. Boston College
+Correct: C - BYU
+Fact note: BYU remains the most recent non-power-conference program to win a consensus title.
+Source: https://www.ncaa.com/news/football/article/2025-01-23/college-football-teams-most-national-championships
+
+CFB-008 | EASY | REVIEW STATUS: Pending
+Question: Which two-loss team survived the chaos of 2007 and beat Ohio State for the national championship?
+A. Florida
+B. USC
+C. Georgia
+D. LSU
+Correct: D - LSU
+Fact note: LSU became the first two-loss BCS champion after the 2007 season.
+Source: https://www.ncaa.com/news/football/article/2025-01-23/college-football-teams-most-national-championships
+
+CFB-009 | MEDIUM | REVIEW STATUS: Pending
+Question: Instant replay made its college football television debut during which rivalry game in 1963?
+A. Army-Navy
+B. Michigan-Ohio State
+C. Texas-Oklahoma
+D. USC-UCLA
+Correct: A - Army-Navy
+Fact note: CBS replayed a touchdown during the 1963 Army-Navy game.
+Source: https://www.ncaa.com/news/ncaa/article/2023-08-04/college-football-history-notable-firsts-and-milestones
+
+CFB-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Yale coach helped shape the line of scrimmage, the snap, and the system of downs, earning the title "Father of American Football"?
+A. Amos Alonzo Stagg
+B. Walter Camp
+C. Pop Warner
+D. John Heisman
+Correct: B - Walter Camp
+Fact note: Walter Camp proposed several rules fundamental to modern football.
+Source: https://www.ncaa.com/news/ncaa/article/2023-08-04/college-football-history-notable-firsts-and-milestones
+
+CFB-011 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Pennsylvania school hosted the first college football game played at night, an 1892 experiment under electric lights?
+A. Lehigh
+B. Penn State
+C. Mansfield
+D. Lafayette
+Correct: C - Mansfield
+Fact note: Mansfield hosted Wyoming Seminary in a game halted at halftime by poor lighting.
+Source: https://www.ncaa.com/news/football/article/2019-09-18/story-first-ever-night-football-game-1892
+
+CFB-012 | MEDIUM | REVIEW STATUS: Pending
+Question: Which program became the first to pass 1,000 all-time college football wins?
+A. Ohio State
+B. Alabama
+C. Notre Dame
+D. Michigan
+Correct: D - Michigan
+Fact note: Michigan is the winningest program and the first to reach 1,000 victories.
+Source: https://www.ncaa.com/news/football/article/2019-09-22/college-footballs-9-winningest-teams
+
+CFB-013 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Ivy League program owns the most NCAA-recognized major-college national championships with 18?
+A. Yale
+B. Princeton
+C. Harvard
+D. Penn
+Correct: A - Yale
+Fact note: The NCAA recognizes Yale with 18 national championships.
+Source: https://www.ncaa.com/news/football/article/2025-01-23/college-football-teams-most-national-championships
+
+CFB-014 | MEDIUM | REVIEW STATUS: Pending
+Question: Which matchup, first played in 1873, is the oldest rivalry in Division I college football?
+A. Lehigh-Lafayette
+B. Yale-Princeton
+C. Harvard-Yale
+D. Army-Navy
+Correct: B - Yale-Princeton
+Fact note: Yale and Princeton first met in 1873.
+Source: https://www.ncaa.com/news/football/article/2019-10-20/15-oldest-rivalries-college-football
+
+CFB-015 | MEDIUM | REVIEW STATUS: Pending
+Question: California's powerhouse "Wonder Team" was held to a 0-0 tie by which underdog in the 1922 Rose Bowl?
+A. Washington
+B. Stanford
+C. Washington & Jefferson
+D. Penn
+Correct: C - Washington & Jefferson
+Fact note: Washington & Jefferson crossed the country and tied California without allowing a point.
+Source: https://www.ncaa.com/news/football/article/2019-07-10/college-football-bowl-games-have-ended-tie
+
+CFB-016 | MEDIUM | REVIEW STATUS: Pending
+Question: Colorado shared the 1990 national championship with which unbeaten program?
+A. Miami
+B. Washington
+C. Notre Dame
+D. Georgia Tech
+Correct: D - Georgia Tech
+Fact note: Colorado won the AP poll while Georgia Tech won the Coaches Poll.
+Source: https://www.ncaa.com/news/football/article/2025-08-22/how-college-football-national-championship-has-changed-through-decades-polls-and-bowls
+
+CFB-017 | MEDIUM | REVIEW STATUS: Pending
+Question: Michigan split the 1997 national championship with which undefeated powerhouse?
+A. Nebraska
+B. Florida State
+C. Tennessee
+D. Washington State
+Correct: A - Nebraska
+Fact note: Michigan topped the AP poll and Nebraska finished first in the Coaches Poll.
+Source: https://www.ncaa.com/news/football/article/2025-08-22/how-college-football-national-championship-has-changed-through-decades-polls-and-bowls
+
+CFB-018 | HARD | REVIEW STATUS: Pending
+Question: Which team became the first 14-0 national champion by winning a double-overtime title game after the 2002 season?
+A. Miami
+B. Ohio State
+C. USC
+D. Oklahoma
+Correct: B - Ohio State
+Fact note: Ohio State finished 14-0 after defeating Miami in the Fiesta Bowl.
+Source: https://www.ncaa.com/news/football/article/2026-01-19/college-football-champions-every-undefeated-team-win-national-championship-1936
+
+CFB-019 | HARD | REVIEW STATUS: Pending
+Question: Which team became the first major-college national champion to finish 15-0 since Penn did it in 1897?
+A. LSU
+B. Georgia
+C. Clemson
+D. Alabama
+Correct: C - Clemson
+Fact note: Clemson went 15-0 during its 2018 championship season.
+Source: https://www.ncaa.com/news/football/article/2026-01-19/college-football-champions-every-undefeated-team-win-national-championship-1936
+
+CFB-020 | HARD | REVIEW STATUS: Pending
+Question: Which 1971 national champion became the first in the poll era to finish with more than 11 wins, going 13-0?
+A. Oklahoma
+B. Alabama
+C. Notre Dame
+D. Nebraska
+Correct: D - Nebraska
+Fact note: Nebraska completed a 13-0 season and won the 1971 national championship.
+Source: https://www.ncaa.com/news/football/article/2026-01-19/college-football-champions-every-undefeated-team-win-national-championship-1936
+
+CFB-021 | HARD | REVIEW STATUS: Pending
+Question: After which team beat Arkansas in the 1969 "Game of the Century" did President Richard Nixon present a national-title plaque?
+A. Texas
+B. Penn State
+C. Ohio State
+D. Notre Dame
+Correct: A - Texas
+Fact note: Texas rallied from 14-0 down to beat Arkansas 15-14.
+Source: https://www.ncaa.com/news/football/article/2025-08-22/how-college-football-national-championship-has-changed-through-decades-polls-and-bowls
+
+CFB-022 | HARD | REVIEW STATUS: Pending
+Question: Which coach led six-touchdown underdog Arkansas to a 31-6 shocker over Oklahoma in the 1978 Orange Bowl?
+A. Frank Broyles
+B. Lou Holtz
+C. Barry Switzer
+D. Jimmy Johnson
+Correct: B - Lou Holtz
+Fact note: Lou Holtz's Razorbacks upset No. 2 Oklahoma to cap his first Arkansas season.
+Source: https://www.ncaa.com/news/football/article/2026-03-04/legendary-national-championship-coach-lou-holtz-passes-away
+
+CFB-023 | HARD | REVIEW STATUS: Pending
+Question: Which Miami coach chose a two-point conversion and stunned unbeaten Nebraska 31-30 in the 1984 Orange Bowl?
+A. Jimmy Johnson
+B. Dennis Erickson
+C. Howard Schnellenberger
+D. Butch Davis
+Correct: C - Howard Schnellenberger
+Fact note: Howard Schnellenberger led Miami to its first national championship.
+Source: https://www.sports-reference.com/cfb/boxscores/1984-01-02-nebraska.html
+
+CFB-024 | HARD | REVIEW STATUS: Pending
+Question: Which Nebraska returner broke open the 1971 "Game of the Century" against Oklahoma with a 72-yard punt-return touchdown?
+A. Jeff Kinney
+B. Rich Glover
+C. Greg Pruitt
+D. Johnny Rodgers
+Correct: D - Johnny Rodgers
+Fact note: Johnny Rodgers scored the game's opening touchdown on a punt return.
+Source: https://www.sports-reference.com/cfb/boxscores/1971-11-25-oklahoma.html
+
+CFB-025 | HARD | REVIEW STATUS: Pending
+Question: Who scored through Stanford's band on the five-lateral final play of the 1982 Cal-Stanford game?
+A. Kevin Moen
+B. Richard Rodgers
+C. Dwight Garner
+D. Mariet Ford
+Correct: A - Kevin Moen
+Fact note: Kevin Moen carried the final lateral into the end zone during "The Play."
+Source: https://www.sports-reference.com/cfb/boxscores/1982-11-20-california.html
+
+
+NHL - 25 QUESTIONS
+------------------
+
+NHL-001 | EASY | REVIEW STATUS: Pending
+Question: Which team won the 1993 Stanley Cup and remains the most recent Canadian franchise to lift it?
+A. Montreal Canadiens
+B. Toronto Maple Leafs
+C. Edmonton Oilers
+D. Calgary Flames
+Correct: A - Montreal Canadiens
+Fact note: Montreal defeated Los Angeles in 1993 for its 24th Stanley Cup.
+Source: https://www.nhl.com/news/topic/playoffs/nhl-stanley-cup-champions-winners-complete-list-287705398
+
+NHL-002 | EASY | REVIEW STATUS: Pending
+Question: Which team became the first post-1967 expansion franchise to win the Stanley Cup, doing it in 1974?
+A. Buffalo Sabres
+B. Philadelphia Flyers
+C. St. Louis Blues
+D. Los Angeles Kings
+Correct: B - Philadelphia Flyers
+Fact note: Philadelphia defeated Boston to win the 1974 Stanley Cup.
+Source: https://www.nhl.com/news/topic/playoffs/nhl-stanley-cup-champions-winners-complete-list-287705398
+
+NHL-003 | EASY | REVIEW STATUS: Pending
+Question: Which long-suffering franchise finally won its first Stanley Cup in 2019 after entering the NHL in 1967?
+A. Vancouver Canucks
+B. Buffalo Sabres
+C. St. Louis Blues
+D. Minnesota North Stars
+Correct: C - St. Louis Blues
+Fact note: St. Louis defeated Boston in seven games for its first championship.
+Source: https://www.nhl.com/news/topic/playoffs/nhl-stanley-cup-champions-winners-complete-list-287705398
+
+NHL-004 | EASY | REVIEW STATUS: Pending
+Question: Which Canadiens legend became the first NHL player to score 50 goals in 50 games?
+A. Jean Beliveau
+B. Gordie Howe
+C. Bobby Hull
+D. Maurice Richard
+Correct: D - Maurice Richard
+Fact note: Maurice Richard scored his 50th goal in Montreal's 50th game in 1944-45.
+Source: https://www.nhl.com/news/this-date-in-nhl-history-march-18-279731228
+
+NHL-005 | EASY | REVIEW STATUS: Pending
+Question: Who became the first NHL player to reach 500 career goals in 1957?
+A. Maurice Richard
+B. Gordie Howe
+C. Ted Lindsay
+D. Jean Beliveau
+Correct: A - Maurice Richard
+Fact note: Maurice Richard scored his 500th goal on October 19, 1957.
+Source: https://www.nhl.com/news/this-date-in-nhl-history-october-19-282764248
+
+NHL-006 | EASY | REVIEW STATUS: Pending
+Question: Which Red Wings icon became the first NHL player to reach 1,000 career points?
+A. Ted Lindsay
+B. Gordie Howe
+C. Alex Delvecchio
+D. Sid Abel
+Correct: B - Gordie Howe
+Fact note: Gordie Howe recorded his 1,000th point in 1960.
+Source: https://www.nhl.com/news/this-date-in-nhl-history-november-27-283880820
+
+NHL-007 | EASY | REVIEW STATUS: Pending
+Question: Which Canadiens goalie permanently changed the position by wearing a mask in an NHL game in 1959?
+A. Gump Worsley
+B. Glenn Hall
+C. Jacques Plante
+D. Terry Sawchuk
+Correct: C - Jacques Plante
+Fact note: Jacques Plante wore his mask after taking a shot to the face on November 1, 1959.
+Source: https://www.nhl.com/news/jacques-plante-changed-face-of-hockey-with-goalie-mask-292386082
+
+NHL-008 | EASY | REVIEW STATUS: Pending
+Question: Which Islanders forward scored the overtime goal that clinched the franchise's first Stanley Cup in 1980?
+A. Mike Bossy
+B. Bryan Trottier
+C. Clark Gillies
+D. Bob Nystrom
+Correct: D - Bob Nystrom
+Fact note: Bob Nystrom scored at 7:11 of overtime in Game 6 against Philadelphia.
+Source: https://www.nhl.com/news/this-date-in-nhl-history-may-24-280762644
+
+NHL-009 | MEDIUM | REVIEW STATUS: Pending
+Question: Which club became the first NHL team to win the Stanley Cup in 1918?
+A. Toronto Arenas
+B. Montreal Canadiens
+C. Ottawa Senators
+D. Montreal Wanderers
+Correct: A - Toronto Arenas
+Fact note: The Toronto Arenas beat the Vancouver Millionaires in a five-game challenge series.
+Source: https://www.nhl.com/news/this-date-in-nhl-history-march-30-279902262
+
+NHL-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which amateur club was awarded the first Stanley Cup in 1893?
+A. Ottawa Hockey Club
+B. Montreal AAA
+C. Montreal Victorias
+D. Winnipeg Victorias
+Correct: B - Montreal AAA
+Fact note: The Montreal Amateur Athletic Association was the Cup's first champion.
+Source: https://www.nhl.com/news/topic/playoffs/nhl-stanley-cup-champions-winners-complete-list-287705398
+
+NHL-011 | MEDIUM | REVIEW STATUS: Pending
+Question: Lord Stanley originally purchased the trophy that became the Stanley Cup for how much?
+A. 50 guineas
+B. 100 pounds
+C. 10 guineas
+D. One silver dollar
+Correct: C - 10 guineas
+Fact note: Lord Stanley bought the original bowl for 10 guineas in 1892.
+Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
+
+NHL-012 | MEDIUM | REVIEW STATUS: Pending
+Question: Which surprising Stanley Cup fact is true of Lord Stanley himself?
+A. He engraved the first champion
+B. He captained the first winner
+C. He designed the modern trophy
+D. He never saw a Cup game or presentation
+Correct: D - He never saw a Cup game or presentation
+Fact note: Lord Stanley returned to England before the first Cup presentation.
+Source: https://www.nhl.com/news/topic/playoffs/nhl-stanley-cup-champions-winners-complete-list-287705398
+
+NHL-013 | MEDIUM | REVIEW STATUS: Pending
+Question: Beginning with which season did the Stanley Cup become exclusive to NHL teams?
+A. 1926-27
+B. 1917-18
+C. 1946-47
+D. 1967-68
+Correct: A - 1926-27
+Fact note: Only NHL clubs have competed for the Cup since 1926-27.
+Source: https://www.nhl.com/news/stanley-cup-by-the-numbers-287614406
+
+NHL-014 | MEDIUM | REVIEW STATUS: Pending
+Question: Which franchise won five straight Stanley Cups from 1956 through 1960, still the NHL record?
+A. Toronto Maple Leafs
+B. Montreal Canadiens
+C. Detroit Red Wings
+D. Edmonton Oilers
+Correct: B - Montreal Canadiens
+Fact note: Montreal's five consecutive championships remain unmatched.
+Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
+
+NHL-015 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Dallas Stars defenseman became the first American-born captain to hoist the Stanley Cup in 1999?
+A. Brian Leetch
+B. Chris Chelios
+C. Derian Hatcher
+D. Mike Modano
+Correct: C - Derian Hatcher
+Fact note: Derian Hatcher captained Dallas to the 1999 championship.
+Source: https://www.nhl.com/news/derian-hatcher-first-american-captain-stanley-cup-307872838
+
+NHL-016 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Red Wings defenseman became the first European-born captain to win the Stanley Cup in 2008?
+A. Sergei Fedorov
+B. Zdeno Chara
+C. Mats Sundin
+D. Nicklas Lidstrom
+Correct: D - Nicklas Lidstrom
+Fact note: Sweden's Nicklas Lidstrom captained Detroit to the 2008 title.
+Source: https://www.nhl.com/news/lidstrom-first-european-captain-to-win-cup-371948
+
+NHL-017 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Flyers goalie became the first to score an NHL goal by actually shooting the puck into the opposing net?
+A. Ron Hextall
+B. Billy Smith
+C. Martin Brodeur
+D. Tom Barrasso
+Correct: A - Ron Hextall
+Fact note: Ron Hextall shot the puck into Boston's empty net in 1987.
+Source: https://www.nhl.com/news/this-date-in-nhl-history-december-8-284479218
+
+NHL-018 | HARD | REVIEW STATUS: Pending
+Question: The Stanley Cup's current five-band form was introduced in which year?
+A. 1939
+B. 1958
+C. 1948
+D. 1967
+Correct: B - 1958
+Fact note: The modern presentation design debuted in 1958.
+Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
+
+NHL-019 | HARD | REVIEW STATUS: Pending
+Question: The Stanley Cup looks light during a victory lap, but approximately how much does it weigh?
+A. 18 pounds
+B. 52 pounds
+C. 34.5 pounds
+D. 70 pounds
+Correct: C - 34.5 pounds
+Fact note: The Cup measures 35.25 inches high and weighs about 34.5 pounds.
+Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
+
+NHL-020 | HARD | REVIEW STATUS: Pending
+Question: Under the standard rule, how many regular-season games must a player appear in to have his name engraved on the Stanley Cup without a petition?
+A. 25
+B. 50
+C. 82
+D. 41
+Correct: D - 41
+Fact note: A player qualifies with 41 regular-season games or one Stanley Cup Final appearance.
+Source: https://www.nhl.com/news/stanley-cup-by-the-numbers-287614406
+
+NHL-021 | HARD | REVIEW STATUS: Pending
+Question: What is the maximum number of names a championship team can normally engrave on the Stanley Cup?
+A. 55
+B. 45
+C. 60
+D. 75
+Correct: A - 55
+Fact note: The NHL allows a maximum of 55 names from a championship team.
+Source: https://www.nhl.com/news/stanley-cup-by-the-numbers-287614406
+
+NHL-022 | HARD | REVIEW STATUS: Pending
+Question: Which 1972 champion appears on the Stanley Cup as the badly misspelled "BQSTQN BRUINS"?
+A. Buffalo Sabres
+B. Boston Bruins
+C. New York Bruins
+D. Birmingham Bulls
+Correct: B - Boston Bruins
+Fact note: The 1971-72 Boston Bruins engraving contains the famous typo.
+Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
+
+NHL-023 | HARD | REVIEW STATUS: Pending
+Question: Whose unauthorized name was struck from the 1984 Edmonton Oilers' Stanley Cup engraving with a row of X marks?
+A. Peter Pocklington
+B. Glen Sather
+C. Basil Pocklington
+D. John Ziegler
+Correct: C - Basil Pocklington
+Fact note: Owner Peter Pocklington added his father Basil, who held no team role.
+Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
+
+NHL-024 | HARD | REVIEW STATUS: Pending
+Question: Which Canadiens forward scored just nine seconds into overtime in the 1986 Final, still the fastest OT goal in Stanley Cup Final history?
+A. Claude Lemieux
+B. Mats Naslund
+C. Bobby Smith
+D. Brian Skrudland
+Correct: D - Brian Skrudland
+Fact note: Brian Skrudland ended Game 2 against Calgary nine seconds into overtime.
+Source: https://www.nhl.com/news/this-date-in-nhl-history-may-18-280691340
+
+NHL-025 | HARD | REVIEW STATUS: Pending
+Question: Which Pittsburgh-born forward became the first American player to score 500 NHL goals?
+A. Joe Mullen
+B. Pat LaFontaine
+C. Mike Modano
+D. Jeremy Roenick
+Correct: A - Joe Mullen
+Fact note: Joe Mullen reached 500 goals with Pittsburgh in 1997.
+Source: https://www.nhl.com/news/this-date-in-nhl-history-march-14-287686228
+
+
+MLB - 25 QUESTIONS
+------------------
+
+MLB-001 | EASY | REVIEW STATUS: Pending
+Question: Which Yankees center fielder owns baseball's iconic 56-game hitting streak from 1941?
+A. Joe DiMaggio
+B. Mickey Mantle
+C. Ted Williams
+D. Lou Gehrig
+Correct: A - Joe DiMaggio
+Fact note: Joe DiMaggio hit safely in 56 consecutive games in 1941.
+Source: https://baseballhall.org/about-the-hall/1110
+
+MLB-002 | EASY | REVIEW STATUS: Pending
+Question: Which power pitcher threw an MLB-record seven no-hitters during his 27-season career?
+A. Sandy Koufax
+B. Nolan Ryan
+C. Randy Johnson
+D. Bob Feller
+Correct: B - Nolan Ryan
+Fact note: Nolan Ryan threw seven no-hitters, three more than any other pitcher.
+Source: https://baseballhall.org/discover/museum/one-for-the-books
+
+MLB-003 | EASY | REVIEW STATUS: Pending
+Question: Which pitcher piled up an untouchable-looking MLB record of 511 career wins?
+A. Walter Johnson
+B. Christy Mathewson
+C. Cy Young
+D. Grover Cleveland Alexander
+Correct: C - Cy Young
+Fact note: Cy Young won 511 games across 22 major-league seasons.
+Source: https://baseballhall.org/discover-more/stories/baseball-history/greatness-defined
+
+MLB-004 | EASY | REVIEW STATUS: Pending
+Question: Who won the first Cy Young Award in 1956 after leading Brooklyn in wins and strikeouts?
+A. Whitey Ford
+B. Warren Spahn
+C. Bob Lemon
+D. Don Newcombe
+Correct: D - Don Newcombe
+Fact note: Don Newcombe was the first recipient when MLB gave one league-wide Cy Young Award.
+Source: https://www.baseball-reference.com/players/n/newcodo01.shtml
+
+MLB-005 | EASY | REVIEW STATUS: Pending
+Question: Which Braves slugger passed Babe Ruth with career home run No. 715 on April 8, 1974?
+A. Hank Aaron
+B. Eddie Mathews
+C. Willie Mays
+D. Frank Robinson
+Correct: A - Hank Aaron
+Fact note: Hank Aaron hit No. 715 off Dodgers pitcher Al Downing.
+Source: https://baseballhall.org/discover/fifty-years-ago-hank-aaron-became-king
+
+MLB-006 | EASY | REVIEW STATUS: Pending
+Question: Which Yankees star earned the name "Mr. October" by homering on three straight pitches in Game 6 of the 1977 World Series?
+A. Thurman Munson
+B. Reggie Jackson
+C. Graig Nettles
+D. Chris Chambliss
+Correct: B - Reggie Jackson
+Fact note: Reggie Jackson hit three home runs against three different Dodgers pitchers.
+Source: https://www.mlb.com/news/world-series-feats-best-moments-c259740790
+
+MLB-007 | EASY | REVIEW STATUS: Pending
+Question: Barely able to walk, which Dodgers slugger came off the bench for a Game 1 walk-off homer in the 1988 World Series?
+A. Orel Hershiser
+B. Mike Scioscia
+C. Kirk Gibson
+D. Steve Sax
+Correct: C - Kirk Gibson
+Fact note: Kirk Gibson homered off Dennis Eckersley in his only plate appearance of the Series.
+Source: https://www.mlb.com/news/world-series-feats-best-moments-c259740790
+
+MLB-008 | EASY | REVIEW STATUS: Pending
+Question: Which Pirates second baseman hit the only walk-off home run in a World Series Game 7, beating the Yankees in 1960?
+A. Roberto Clemente
+B. Dick Groat
+C. Willie Stargell
+D. Bill Mazeroski
+Correct: D - Bill Mazeroski
+Fact note: Bill Mazeroski's ninth-inning homer won Game 7 by a 10-9 score.
+Source: https://baseballhall.org/discover/remembering-bill-mazeroski
+
+MLB-009 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Giants center fielder made "The Catch" on Vic Wertz's deep drive in Game 1 of the 1954 World Series?
+A. Willie Mays
+B. Monte Irvin
+C. Hank Thompson
+D. Don Mueller
+Correct: A - Willie Mays
+Fact note: Willie Mays made the over-the-shoulder catch at the Polo Grounds.
+Source: https://baseballhall.org/discover/still-a-classic
+
+MLB-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Orioles third baseman turned the 1970 World Series into a defensive highlight reel and won series MVP?
+A. Boog Powell
+B. Brooks Robinson
+C. Frank Robinson
+D. Davey Johnson
+Correct: B - Brooks Robinson
+Fact note: Brooks Robinson's glove and bat powered Baltimore past Cincinnati.
+Source: https://baseballhall.org/discover/still-a-classic
+
+MLB-011 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Hall of Famer still owns MLB's highest career batting average at .366?
+A. Rogers Hornsby
+B. Ted Williams
+C. Ty Cobb
+D. Shoeless Joe Jackson
+Correct: C - Ty Cobb
+Fact note: Ty Cobb's official career batting average is .366.
+Source: https://baseballhall.org/discover-more/stories/baseball-history/greatness-defined
+
+MLB-012 | MEDIUM | REVIEW STATUS: Pending
+Question: Which pitching ace joined Ty Cobb, Babe Ruth, Honus Wagner, and Walter Johnson in the first Hall of Fame class elected in 1936?
+A. Cy Young
+B. Lefty Grove
+C. Pete Alexander
+D. Christy Mathewson
+Correct: D - Christy Mathewson
+Fact note: Christy Mathewson was one of the first five players elected to Cooperstown.
+Source: https://baseballhall.org/discover-more/stories/baseball-history/first-bbwaa-hof-election-1936
+
+MLB-013 | MEDIUM | REVIEW STATUS: Pending
+Question: Jackie Robinson won the 1949 National League MVP while leading the league in hitting at what average?
+A. .342
+B. .406
+C. .367
+D. .331
+Correct: A - .342
+Fact note: Robinson hit .342 with 37 steals during his MVP season.
+Source: https://baseballhall.org/discover-more/stories/baseball-history/remembering-jackie
+
+MLB-014 | MEDIUM | REVIEW STATUS: Pending
+Question: Which franchise became the last of MLB's original 16 clubs to integrate, in 1959?
+A. New York Yankees
+B. Boston Red Sox
+C. Detroit Tigers
+D. Philadelphia Phillies
+Correct: B - Boston Red Sox
+Fact note: The Red Sox became the final pre-expansion team to integrate.
+Source: https://baseballhall.org/discover-more/stories/baseball-history/remembering-jackie
+
+MLB-015 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Twins ace threw a 10-inning shutout to win Game 7 of the 1991 World Series?
+A. Frank Viola
+B. Bert Blyleven
+C. Jack Morris
+D. Scott Erickson
+Correct: C - Jack Morris
+Fact note: Jack Morris held Atlanta scoreless for 10 innings in Minnesota's 1-0 win.
+Source: https://www.baseball-reference.com/boxes/MIN/MIN199110270.shtml
+
+MLB-016 | MEDIUM | REVIEW STATUS: Pending
+Question: Which National League champion refused to face Boston, leaving baseball without a World Series in 1904?
+A. Chicago Cubs
+B. Pittsburgh Pirates
+C. St. Louis Cardinals
+D. New York Giants
+Correct: D - New York Giants
+Fact note: Manager John McGraw's Giants declined to play the American League champion.
+Source: https://www.mlb.com/postseason/history/world-series
+
+MLB-017 | MEDIUM | REVIEW STATUS: Pending
+Question: Which franchise won a record five consecutive World Series from 1949 through 1953?
+A. New York Yankees
+B. Brooklyn Dodgers
+C. St. Louis Cardinals
+D. New York Giants
+Correct: A - New York Yankees
+Fact note: The Yankees' five straight championships remain an MLB record.
+Source: https://www.mlb.com/postseason/history/world-series
+
+MLB-018 | HARD | REVIEW STATUS: Pending
+Question: Which legendary pitcher became the first player elected through the Hall of Fame's Committee on Negro Baseball Leagues in 1971?
+A. Josh Gibson
+B. Satchel Paige
+C. Cool Papa Bell
+D. Buck Leonard
+Correct: B - Satchel Paige
+Fact note: Satchel Paige was the committee's first electee.
+Source: https://baseballhall.org/discover/inside-pitch/paige-fires-shutout
+
+MLB-019 | HARD | REVIEW STATUS: Pending
+Question: Which ballpark hosted MLB's first night game when Cincinnati beat Philadelphia in 1935?
+A. Wrigley Field
+B. Ebbets Field
+C. Crosley Field
+D. Forbes Field
+Correct: C - Crosley Field
+Fact note: President Franklin Roosevelt symbolically switched on Crosley Field's lights.
+Source: https://www.baseball-reference.com/boxes/CIN/CIN193505240.shtml
+
+MLB-020 | HARD | REVIEW STATUS: Pending
+Question: Which two teams played MLB's first televised game in 1939?
+A. Yankees and Red Sox
+B. Cubs and Cardinals
+C. Giants and Phillies
+D. Cincinnati Reds and Brooklyn Dodgers
+Correct: D - Cincinnati Reds and Brooklyn Dodgers
+Fact note: NBC televised a Reds-Dodgers doubleheader from Ebbets Field.
+Source: https://www.baseball-reference.com/boxes/BRO/BRO193908261.shtml
+
+MLB-021 | HARD | REVIEW STATUS: Pending
+Question: Which stadium hosted MLB's first regular-season game indoors in 1965?
+A. Astrodome
+B. Kingdome
+C. Metrodome
+D. Tropicana Field
+Correct: A - Astrodome
+Fact note: Houston opened the Astrodome for regular-season play in April 1965.
+Source: https://www.baseball-reference.com/boxes/HOU/HOU196504120.shtml
+
+MLB-022 | HARD | REVIEW STATUS: Pending
+Question: Which matchup opened regular-season interleague play in 1997?
+A. Yankees at Mets
+B. San Francisco Giants at Texas Rangers
+C. Cubs at White Sox
+D. Dodgers at Angels
+Correct: B - San Francisco Giants at Texas Rangers
+Fact note: The Giants visited the Rangers for MLB's first regular-season interleague game.
+Source: https://www.baseball-reference.com/boxes/TEX/TEX199706120.shtml
+
+MLB-023 | HARD | REVIEW STATUS: Pending
+Question: Which two teams played the first night game in World Series history, Game 4 in 1971?
+A. Reds and Athletics
+B. Dodgers and Yankees
+C. Pittsburgh Pirates and Baltimore Orioles
+D. Mets and Orioles
+Correct: C - Pittsburgh Pirates and Baltimore Orioles
+Fact note: Pittsburgh beat Baltimore 4-3 under the lights at Three Rivers Stadium.
+Source: https://www.baseball-reference.com/boxes/PIT/PIT197110130.shtml
+
+MLB-024 | HARD | REVIEW STATUS: Pending
+Question: Which Athletics slugger founded the 40-40 club with 42 homers and 40 steals in 1988?
+A. Rickey Henderson
+B. Mark McGwire
+C. Barry Bonds
+D. Jose Canseco
+Correct: D - Jose Canseco
+Fact note: Jose Canseco became MLB's first 40-homer, 40-steal player.
+Source: https://www.baseball-reference.com/players/c/cansejo01.shtml
+
+MLB-025 | HARD | REVIEW STATUS: Pending
+Question: Which Red Sox pitcher became the first to strike out 20 batters in a nine-inning MLB game, doing it in 1986?
+A. Roger Clemens
+B. Pedro Martinez
+C. Nolan Ryan
+D. Dwight Gooden
+Correct: A - Roger Clemens
+Fact note: Roger Clemens struck out 20 Seattle Mariners on April 29, 1986.
+Source: https://www.baseball-reference.com/boxes/BOS/BOS198604290.shtml
+
