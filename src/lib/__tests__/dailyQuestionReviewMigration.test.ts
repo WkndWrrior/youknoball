@@ -1199,6 +1199,13 @@ describe("daily review answer correction migration", () => {
       "create or replace function public.correct_daily_question_review_answer",
     );
 
+    expect(migration).toMatch(
+      /or\s+\(\s*case\s+when jsonb_typeof\(p_finding_conflicts\) = 'array'/,
+    );
+    expect(migration).toMatch(
+      /or\s+\(\s*case\s+when jsonb_typeof\(p_finding_evidence\) = 'array'/,
+    );
+
     expect(correction).toContain("p_new_correct_option not in ('A', 'B', 'C', 'D')");
     expect(correction).toContain("p_finding_verdict <> 'passed'");
     expect(correction).toContain("p_finding_confidence between 0 and 1");
