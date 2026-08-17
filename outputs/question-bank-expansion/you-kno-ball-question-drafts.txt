@@ -1,13 +1,13 @@
 YOU KNO BALL - QUESTION BANK EXPANSION REVIEW
 ==============================================
 
-Status: REVIEW ONLY - NOT IMPLEMENTED IN SUPABASE
+Status: IMPLEMENTED IN SUPABASE ON 2026-08-17
 Total drafts: 142
 Categories: NBA, CBB, NFL, CFB, NHL, MLB
 Drafts by category: NBA 25, CBB 24, NFL 23, CFB 25, NHL 20, MLB 25
 Review status for every question: Pending
 
-Review guidance: Mark questions you want to approve, revise, or retire. Each source URL was checked before delivery.
+Review guidance: These questions were approved and added to the live question bank. Each source URL was checked before delivery.
 
 
 NBA - 25 QUESTIONS
@@ -1452,4 +1452,3 @@ D. Dwight Gooden
 Correct: A - Roger Clemens
 Fact note: Roger Clemens struck out 20 Seattle Mariners on April 29, 1986.
 Source: https://www.baseball-reference.com/boxes/BOS/BOS198604290.shtml
-
