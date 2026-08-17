@@ -2,9 +2,9 @@ YOU KNO BALL - QUESTION BANK EXPANSION REVIEW
 ==============================================
 
 Status: REVIEW ONLY - NOT IMPLEMENTED IN SUPABASE
-Total drafts: 150
+Total drafts: 142
 Categories: NBA, CBB, NFL, CFB, NHL, MLB
-Per category: 25 questions (8 easy, 9 medium, 8 hard)
+Drafts by category: NBA 25, CBB 24, NFL 23, CFB 25, NHL 20, MLB 25
 Review status for every question: Pending
 
 Review guidance: Mark questions you want to approve, revise, or retire. Each source URL was checked before delivery.
@@ -14,14 +14,14 @@ NBA - 25 QUESTIONS
 ------------------
 
 NBA-001 | EASY | REVIEW STATUS: Pending
-Question: On a January night in 2006, which Lakers star erupted for 81 points against Toronto, the second-highest total in NBA history?
+Question: On a January night in 2006, which Lakers star erupted for 81 points against Toronto, a total that now ranks third in NBA history?
 A. Kobe Bryant
 B. Shaquille O'Neal
 C. Allen Iverson
 D. Tracy McGrady
 Correct: A - Kobe Bryant
-Fact note: Kobe Bryant scored 81 points against the Raptors on January 22, 2006.
-Source: https://www.basketball-reference.com/boxscores/200601220LAL.html
+Fact note: Kobe Bryant scored 81 points against the Raptors on January 22, 2006; Bam Adebayo moved ahead of him with 83 points in 2026.
+Source: https://www.nba.com/news/live-updates-jayson-tatums-celtics-take-on-victor-wembanyamas-spurs-on-nbc-and-peacock
 
 NBA-002 | EASY | REVIEW STATUS: Pending
 Question: At 22 years old in 2011, which Chicago Bulls guard became the youngest MVP in NBA history?
@@ -220,7 +220,7 @@ B. Tom Heinsohn
 C. Bob Cousy
 D. John Havlicek
 Correct: A - Bill Russell
-Fact note: Bill Russell became the first Black head coach to win a major U.S. professional championship.
+Fact note: Bill Russell served as Boston's player-coach and became the first Black head coach to win a major U.S. professional championship.
 Source: https://www.nba.com/news/history-nba-legend-bill-russell
 
 NBA-022 | HARD | REVIEW STATUS: Pending
@@ -264,7 +264,7 @@ Fact note: Wilt Chamberlain was the first NBA player to score 30,000 career poin
 Source: https://www.nba.com/news/history-nba-legend-wilt-chamberlain
 
 
-CBB - 25 QUESTIONS
+CBB - 24 QUESTIONS
 ------------------
 
 CBB-001 | EASY | REVIEW STATUS: Pending
@@ -288,7 +288,7 @@ Fact note: Baylor defeated unbeaten Gonzaga to win its first men's basketball ch
 Source: https://www.ncaa.com/history/basketball-men/d1
 
 CBB-003 | EASY | REVIEW STATUS: Pending
-Question: Which Villanova guard poured in 31 points off the bench to win 2018 Final Four Most Outstanding Player?
+Question: Which Villanova guard poured in 31 points off the bench in the 2018 title game and won Final Four Most Outstanding Player?
 A. Jalen Brunson
 B. Mikal Bridges
 C. Donte DiVincenzo
@@ -348,7 +348,7 @@ Fact note: Saint Peter's beat Kentucky, Murray State, and Purdue during its hist
 Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
 
 CBB-009 | MEDIUM | REVIEW STATUS: Pending
-Question: "One Shining Moment" first closed an NCAA men's basketball tournament broadcast after which championship year?
+Question: The nostalgic "One Shining Moment" first closed an NCAA men's basketball tournament broadcast after which championship year?
 A. 1987
 B. 1982
 C. 1991
@@ -408,7 +408,7 @@ Fact note: BYU rallied from 25 down to beat Iona 78-72.
 Source: https://www.ncaa.com/news/basketball-men/article/2025-08-18/biggest-comeback-wins-mens-ncaa-tournament-history-march-madness
 
 CBB-015 | MEDIUM | REVIEW STATUS: Pending
-Question: Which run-and-gun team hung 149 points on defending champion Michigan in the highest-scoring modern NCAA tournament game?
+Question: In 1990, which run-and-gun team hung 149 points on defending champion Michigan in the highest-scoring modern NCAA tournament game?
 A. UNLV
 B. Arkansas
 C. Loyola Marymount
@@ -487,16 +487,6 @@ Correct: B - Steve Fisher
 Fact note: Steve Fisher became interim coach immediately before Michigan's title run.
 Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
 
-CBB-023 | HARD | REVIEW STATUS: Pending
-Question: Which UCLA guard went coast to coast in 4.8 seconds to save the Bruins against Missouri in the 1995 second round?
-A. Toby Bailey
-B. Cameron Dollar
-C. Tyus Edney
-D. Charles O'Bannon
-Correct: C - Tyus Edney
-Fact note: Tyus Edney's full-court drive produced UCLA's 75-74 win.
-Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
-
 CBB-024 | HARD | REVIEW STATUS: Pending
 Question: Which UConn guard won 1999 Final Four Most Outstanding Player after the Huskies denied Duke a 38-win season?
 A. Khalid El-Amin
@@ -518,7 +508,7 @@ Fact note: Juan Dixon scored 18 points in Maryland's championship win over India
 Source: https://www.ncaa.com/basketball-men/d1/every-ncaa-bracket-1939-today-tournament-stats-records
 
 
-NFL - 25 QUESTIONS
+NFL - 23 QUESTIONS
 ------------------
 
 NFL-001 | EASY | REVIEW STATUS: Pending
@@ -611,16 +601,6 @@ Correct: A - 1922
 Fact note: The APFA was renamed the NFL in 1922.
 Source: https://www.profootballhof.com/news/football-firsts
 
-NFL-010 | MEDIUM | REVIEW STATUS: Pending
-Question: Which team beat the Jets in the first Monday Night Football broadcast in 1970?
-A. Baltimore Colts
-B. Cleveland Browns
-C. Kansas City Chiefs
-D. Miami Dolphins
-Correct: B - Cleveland Browns
-Fact note: Cleveland defeated New York 31-21 in Monday Night Football's debut.
-Source: https://www.profootballhof.com/news/football-firsts
-
 NFL-011 | MEDIUM | REVIEW STATUS: Pending
 Question: Which dynasty became the first franchise to win four Super Bowls by beating the Rams in Super Bowl XIV (14)?
 A. Dallas Cowboys
@@ -690,16 +670,6 @@ D. Charles Follis
 Correct: A - Fritz Pollard
 Fact note: Fritz Pollard served as a player-coach for Akron in 1921.
 Source: https://www.profootballhof.com/news/african-american-pioneers
-
-NFL-018 | HARD | REVIEW STATUS: Pending
-Question: Who received $500 to play for the Allegheny Athletic Association in 1892, becoming pro football's first documented paid player?
-A. Jim Thorpe
-B. Pudge Heffelfinger
-C. John Brallier
-D. William Walter Camp
-Correct: B - Pudge Heffelfinger
-Fact note: Pudge Heffelfinger was paid $500 for a game on November 12, 1892.
-Source: https://www.profootballhof.com/news/football-firsts
 
 NFL-019 | HARD | REVIEW STATUS: Pending
 Question: Which club beat the Columbus Panhandles 14-0 in one of the first official NFL games on October 3, 1920?
@@ -916,7 +886,7 @@ Fact note: Yale and Princeton first met in 1873.
 Source: https://www.ncaa.com/news/football/article/2019-10-20/15-oldest-rivalries-college-football
 
 CFB-015 | MEDIUM | REVIEW STATUS: Pending
-Question: California's powerhouse "Wonder Team" was held to a 0-0 tie by which underdog in the 1922 Rose Bowl?
+Question: Which underdog held California's powerhouse "Wonder Team" to a 0-0 tie in the 1922 Rose Bowl?
 A. Washington
 B. Stanford
 C. Washington & Jefferson
@@ -1026,7 +996,7 @@ Fact note: Kevin Moen carried the final lateral into the end zone during "The Pl
 Source: https://www.sports-reference.com/cfb/boxscores/1982-11-20-california.html
 
 
-NHL - 25 QUESTIONS
+NHL - 20 QUESTIONS
 ------------------
 
 NHL-001 | EASY | REVIEW STATUS: Pending
@@ -1119,26 +1089,6 @@ Correct: A - Toronto Arenas
 Fact note: The Toronto Arenas beat the Vancouver Millionaires in a five-game challenge series.
 Source: https://www.nhl.com/news/this-date-in-nhl-history-march-30-279902262
 
-NHL-010 | MEDIUM | REVIEW STATUS: Pending
-Question: Which amateur club was awarded the first Stanley Cup in 1893?
-A. Ottawa Hockey Club
-B. Montreal AAA
-C. Montreal Victorias
-D. Winnipeg Victorias
-Correct: B - Montreal AAA
-Fact note: The Montreal Amateur Athletic Association was the Cup's first champion.
-Source: https://www.nhl.com/news/topic/playoffs/nhl-stanley-cup-champions-winners-complete-list-287705398
-
-NHL-011 | MEDIUM | REVIEW STATUS: Pending
-Question: Lord Stanley originally purchased the trophy that became the Stanley Cup for how much?
-A. 50 guineas
-B. 100 pounds
-C. 10 guineas
-D. One silver dollar
-Correct: C - 10 guineas
-Fact note: Lord Stanley bought the original bowl for 10 guineas in 1892.
-Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
-
 NHL-012 | MEDIUM | REVIEW STATUS: Pending
 Question: Which surprising Stanley Cup fact is true of Lord Stanley himself?
 A. He engraved the first champion
@@ -1199,16 +1149,6 @@ Correct: A - Ron Hextall
 Fact note: Ron Hextall shot the puck into Boston's empty net in 1987.
 Source: https://www.nhl.com/news/this-date-in-nhl-history-december-8-284479218
 
-NHL-018 | HARD | REVIEW STATUS: Pending
-Question: The Stanley Cup's current five-band form was introduced in which year?
-A. 1939
-B. 1958
-C. 1948
-D. 1967
-Correct: B - 1958
-Fact note: The modern presentation design debuted in 1958.
-Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
-
 NHL-019 | HARD | REVIEW STATUS: Pending
 Question: The Stanley Cup looks light during a victory lap, but approximately how much does it weigh?
 A. 18 pounds
@@ -1238,26 +1178,6 @@ D. 75
 Correct: A - 55
 Fact note: The NHL allows a maximum of 55 names from a championship team.
 Source: https://www.nhl.com/news/stanley-cup-by-the-numbers-287614406
-
-NHL-022 | HARD | REVIEW STATUS: Pending
-Question: Which 1972 champion appears on the Stanley Cup as the badly misspelled "BQSTQN BRUINS"?
-A. Buffalo Sabres
-B. Boston Bruins
-C. New York Bruins
-D. Birmingham Bulls
-Correct: B - Boston Bruins
-Fact note: The 1971-72 Boston Bruins engraving contains the famous typo.
-Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
-
-NHL-023 | HARD | REVIEW STATUS: Pending
-Question: Whose unauthorized name was struck from the 1984 Edmonton Oilers' Stanley Cup engraving with a row of X marks?
-A. Peter Pocklington
-B. Glen Sather
-C. Basil Pocklington
-D. John Ziegler
-Correct: C - Basil Pocklington
-Fact note: Owner Peter Pocklington added his father Basil, who held no team role.
-Source: https://www.nhl.com/news/stanley-cup-has-incredible-125-years-of-history-287633638
 
 NHL-024 | HARD | REVIEW STATUS: Pending
 Question: Which Canadiens forward scored just nine seconds into overtime in the 1986 Final, still the fastest OT goal in Stanley Cup Final history?
