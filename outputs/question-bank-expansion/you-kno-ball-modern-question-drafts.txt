@@ -1,0 +1,1019 @@
+YOU KNO BALL - MODERN QUESTION EXPANSION REVIEW
+================================================
+
+Status: REVIEW ONLY - NOT IMPLEMENTED
+Total drafts: 110
+Categories: NHL 25, MLB 25, NBA 15, CBB 15, NFL 15, CFB 15
+Era guidance: Focused on 1980-present, with no pre-1980 selections in this round.
+Review status for every question: Pending
+
+Each entry includes four choices, the keyed answer, and a direct source. No database changes have been made.
+
+NHL - 25 QUESTIONS
+------------------
+
+NHL-R2-001 | EASY | REVIEW STATUS: Pending
+Question: Which team finished a 16-4 playoff run by winning the 2022 Stanley Cup, its first championship since 2001?
+A. Colorado Avalanche
+B. Tampa Bay Lightning
+C. Vegas Golden Knights
+D. Boston Bruins
+Correct: A - Colorado Avalanche
+Source: https://www.nhl.com/news/colorado-avalanche-win-stanley-cup-325117764
+
+NHL-R2-002 | EASY | REVIEW STATUS: Pending
+Question: After finally lifting the Stanley Cup in 2018, which Capitals captain also took home the Conn Smythe Trophy?
+A. Nicklas Backstrom
+B. Alex Ovechkin
+C. Braden Holtby
+D. Evgeny Kuznetsov
+Correct: B - Alex Ovechkin
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+NHL-R2-003 | EASY | REVIEW STATUS: Pending
+Question: Which franchise won consecutive Stanley Cups in 2020 and 2021?
+A. Pittsburgh Penguins
+B. Colorado Avalanche
+C. Tampa Bay Lightning
+D. Chicago Blackhawks
+Correct: C - Tampa Bay Lightning
+Source: https://www.nhl.com/news/montreal-canadiens-tampa-bay-lightning-game-5-scf-live-blog-325570300
+
+NHL-R2-004 | EASY | REVIEW STATUS: Pending
+Question: Which Blackhawks star ended Chicago's 49-year Stanley Cup drought with an overtime winner in 2010?
+A. Jonathan Toews
+B. Duncan Keith
+C. Marian Hossa
+D. Patrick Kane
+Correct: D - Patrick Kane
+Source: https://www.nhl.com/news/patrick-kane-stanley-cup-winner-named-nhl-goal-of-the-decade-314182708
+
+NHL-R2-005 | EASY | REVIEW STATUS: Pending
+Question: Which rookie goalie backstopped Carolina to the 2006 Stanley Cup and won the Conn Smythe Trophy?
+A. Cam Ward
+B. Henrik Lundqvist
+C. Ryan Miller
+D. Marc-Andre Fleury
+Correct: A - Cam Ward
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+NHL-R2-006 | MEDIUM | REVIEW STATUS: Pending
+Question: Nearly 105 minutes into Game 4 of the 1996 Final, which Avalanche defenseman ended the marathon and clinched the Stanley Cup?
+A. Adam Foote
+B. Uwe Krupp
+C. Sandis Ozolinsh
+D. Sylvain Lefebvre
+Correct: B - Uwe Krupp
+Source: https://www.nhl.com/news/stanley-cup-final-facts-and-figures-280822092
+
+NHL-R2-007 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Kings defenseman scored in double overtime to clinch the 2014 Stanley Cup?
+A. Drew Doughty
+B. Jake Muzzin
+C. Alec Martinez
+D. Slava Voynov
+Correct: C - Alec Martinez
+Source: https://www.nhl.com/news/stanley-cup-final-facts-and-figures-280822092
+
+NHL-R2-008 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Devils center scored the double-overtime goal that won the 2000 Stanley Cup in Dallas?
+A. Scott Gomez
+B. Bobby Holik
+C. John Madden
+D. Jason Arnott
+Correct: D - Jason Arnott
+Source: https://www.nhl.com/news/jason-arnott-remembers-stanley-cup-winning-goal-with-new-jersey-devils-317118966
+
+NHL-R2-009 | MEDIUM | REVIEW STATUS: Pending
+Question: On New Year's Eve 1988, which Penguins superstar scored five goals five different ways: even strength, power play, shorthanded, penalty shot, and empty net?
+A. Mario Lemieux
+B. Wayne Gretzky
+C. Mark Messier
+D. Ron Francis
+Correct: A - Mario Lemieux
+Source: https://www.nhl.com/news/mario-lemieux-five-goal-game-is-greatest-nhl-moment-294046120
+
+NHL-R2-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which team won an NHL-record 10 straight overtime games during its 1993 Stanley Cup run?
+A. New Jersey Devils
+B. Montreal Canadiens
+C. New York Rangers
+D. Pittsburgh Penguins
+Correct: B - Montreal Canadiens
+Source: https://www.nhl.com/news/nhl-stanley-cup-champions-1990-1999-287977078
+
+NHL-R2-011 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Devils goalie recorded a record seven shutouts during the 2003 Stanley Cup playoffs?
+A. Patrick Roy
+B. Dominik Hasek
+C. Martin Brodeur
+D. Jean-Sebastien Giguere
+Correct: C - Martin Brodeur
+Source: https://www.nhl.com/news/hall-of-fame-player-inductees-by-the-numbers-301796700
+
+NHL-R2-012 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Oilers icon piled up a still-record 47 points in the 1985 playoffs?
+A. Mark Messier
+B. Jari Kurri
+C. Paul Coffey
+D. Wayne Gretzky
+Correct: D - Wayne Gretzky
+Source: https://www.nhl.com/news/all-time-playoff-stats-box-scores-on-nhl-com-289306906
+
+NHL-R2-013 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Lightning goalie capped five consecutive series-clinching wins with shutouts when Tampa Bay repeated in 2021?
+A. Andrei Vasilevskiy
+B. Ben Bishop
+C. Nikolai Khabibulin
+D. Louis Domingue
+Correct: A - Andrei Vasilevskiy
+Source: https://www.nhl.com/news/tampa-bay-lightning-andrei-vasilevskiy-wins-conn-smythe-trophy-325597644
+
+NHL-R2-014 | HARD | REVIEW STATUS: Pending
+Question: Which Bruins goalie stopped a playoff-record 798 shots during Boston's 2011 Stanley Cup run?
+A. Tuukka Rask
+B. Tim Thomas
+C. Jonathan Quick
+D. Roberto Luongo
+Correct: B - Tim Thomas
+Source: https://www.nhl.com/nhl/en/v3/ext/pdfs/2012TotalStanleyCup.pdf
+
+NHL-R2-015 | HARD | REVIEW STATUS: Pending
+Question: Which unlikely Oilers hero ended Game 1 of the 1990 Stanley Cup Final in triple overtime?
+A. Craig MacTavish
+B. Esa Tikkanen
+C. Petr Klima
+D. Glenn Anderson
+Correct: C - Petr Klima
+Source: https://www.nhl.com/news/stanley-cup-final-facts-and-figures-280822092
+
+NHL-R2-016 | HARD | REVIEW STATUS: Pending
+Question: Which Stars forward scored the triple-overtime goal that clinched the 1999 Stanley Cup?
+A. Mike Modano
+B. Joe Nieuwendyk
+C. Jamie Langenbrunner
+D. Brett Hull
+Correct: D - Brett Hull
+Source: https://www.nhl.com/news/stanley-cup-final-facts-and-figures-280822092
+
+NHL-R2-017 | HARD | REVIEW STATUS: Pending
+Question: Whose deflection ended triple-overtime Game 1 of the 2013 Stanley Cup Final for Chicago?
+A. Andrew Shaw
+B. Bryan Bickell
+C. Brandon Saad
+D. Dave Bolland
+Correct: A - Andrew Shaw
+Source: https://www.nhl.com/news/stanley-cup-final-facts-and-figures-280822092
+
+NHL-R2-018 | HARD | REVIEW STATUS: Pending
+Question: Which Ducks goalie won the 2003 Conn Smythe Trophy even though Anaheim lost the Stanley Cup Final?
+A. Martin Brodeur
+B. Jean-Sebastien Giguere
+C. Curtis Joseph
+D. Nikolai Khabibulin
+Correct: B - Jean-Sebastien Giguere
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+NHL-R2-019 | HARD | REVIEW STATUS: Pending
+Question: Which Avalanche defenseman posted 29 playoff points and won the 2022 Conn Smythe Trophy?
+A. Devon Toews
+B. Samuel Girard
+C. Cale Makar
+D. Erik Johnson
+Correct: C - Cale Makar
+Source: https://media.nhl.com/site/vasset/public/attachments/2022/06/16286/ConnSmythe-Makar-2022.pdf
+
+NHL-R2-020 | HARD | REVIEW STATUS: Pending
+Question: Which Flames defenseman won the 1989 Conn Smythe Trophy after recording 31 playoff points?
+A. Gary Suter
+B. Brad McCrimmon
+C. Paul Reinhart
+D. Al MacInnis
+Correct: D - Al MacInnis
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+NHL-R2-021 | HARD | REVIEW STATUS: Pending
+Question: Which Rangers defenseman became the first American-born Conn Smythe winner in 1994?
+A. Brian Leetch
+B. Kevin Hatcher
+C. Chris Chelios
+D. Phil Housley
+Correct: A - Brian Leetch
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+NHL-R2-022 | HARD | REVIEW STATUS: Pending
+Question: Which Devils forward won the 1995 Conn Smythe after scoring 13 playoff goals?
+A. Stephane Richer
+B. Claude Lemieux
+C. John MacLean
+D. Randy McKay
+Correct: B - Claude Lemieux
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+NHL-R2-023 | HARD | REVIEW STATUS: Pending
+Question: Which Red Wings captain won the 1998 Conn Smythe Trophy during Detroit's second straight title run?
+A. Sergei Fedorov
+B. Brendan Shanahan
+C. Steve Yzerman
+D. Nicklas Lidstrom
+Correct: C - Steve Yzerman
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+NHL-R2-024 | HARD | REVIEW STATUS: Pending
+Question: Which Lightning center led the 2004 playoffs with 26 points and won the Conn Smythe Trophy?
+A. Vincent Lecavalier
+B. Martin St. Louis
+C. Ruslan Fedotenko
+D. Brad Richards
+Correct: D - Brad Richards
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+NHL-R2-025 | HARD | REVIEW STATUS: Pending
+Question: Which Ducks defenseman won the Conn Smythe Trophy during Anaheim's 2007 championship run?
+A. Scott Niedermayer
+B. Chris Pronger
+C. Francois Beauchemin
+D. Rob Niedermayer
+Correct: A - Scott Niedermayer
+Source: https://media.nhl.com/site/asset/public/ext/2021-22/2022AwardsGuide.pdf
+
+MLB - 25 QUESTIONS
+------------------
+
+MLB-R2-001 | EASY | REVIEW STATUS: Pending
+Question: Which Dodgers superstar created the 50-homer, 50-steal club in 2024?
+A. Shohei Ohtani
+B. Ronald Acuna Jr.
+C. Mookie Betts
+D. Aaron Judge
+Correct: A - Shohei Ohtani
+Source: https://www.mlb.com/news/shohei-ohtani-reaches-50-homers-50-steals
+
+MLB-R2-002 | EASY | REVIEW STATUS: Pending
+Question: Which Yankees slugger set the American League single-season record with 62 home runs in 2022?
+A. Giancarlo Stanton
+B. Aaron Judge
+C. Juan Soto
+D. Alex Rodriguez
+Correct: B - Aaron Judge
+Source: https://www.mlb.com/news/pitchers-who-gave-up-milestone-home-runs
+
+MLB-R2-003 | EASY | REVIEW STATUS: Pending
+Question: Which three-time MVP joined the 700-home-run club in 2022?
+A. Miguel Cabrera
+B. Nelson Cruz
+C. Albert Pujols
+D. Joey Votto
+Correct: C - Albert Pujols
+Source: https://www.mlb.com/news/pitchers-who-gave-up-milestone-home-runs
+
+MLB-R2-004 | EASY | REVIEW STATUS: Pending
+Question: Which Mariners star set the modern single-season record with 262 hits in 2004?
+A. Edgar Martinez
+B. Ken Griffey Jr.
+C. Bret Boone
+D. Ichiro Suzuki
+Correct: D - Ichiro Suzuki
+Source: https://www.mlb.com/news/ichiro-suzuki-amazing-stats
+
+MLB-R2-005 | EASY | REVIEW STATUS: Pending
+Question: Who launched the first walk-off grand slam in World Series history in Game 1 of the 2024 Fall Classic?
+A. Freddie Freeman
+B. Mookie Betts
+C. Teoscar Hernandez
+D. Max Muncy
+Correct: A - Freddie Freeman
+Source: https://www.mlb.com/news/freddie-freeman-walk-off-grand-slam-world-series-game-1-2024
+
+MLB-R2-006 | EASY | REVIEW STATUS: Pending
+Question: Which team beat the Yankees in five games to win the 2024 World Series?
+A. Houston Astros
+B. Los Angeles Dodgers
+C. Atlanta Braves
+D. San Diego Padres
+Correct: B - Los Angeles Dodgers
+Source: https://www.mlb.com/news/best-baseball-moments-2024
+
+MLB-R2-007 | EASY | REVIEW STATUS: Pending
+Question: Which Blue Jays slugger ended the 1993 World Series with a walk-off home run?
+A. Roberto Alomar
+B. John Olerud
+C. Joe Carter
+D. Paul Molitor
+Correct: C - Joe Carter
+Source: https://www.mlb.com/news/joe-carter-world-series-walk-off-hr-streaming-on-mlb
+
+MLB-R2-008 | EASY | REVIEW STATUS: Pending
+Question: Which Red Sox star batted .688 and won World Series MVP in 2013?
+A. Dustin Pedroia
+B. Jacoby Ellsbury
+C. Mike Napoli
+D. David Ortiz
+Correct: D - David Ortiz
+Source: https://www.mlb.com/news/most-valuable-papi-david-ortiz-outstanding-c63544092
+
+MLB-R2-009 | EASY | REVIEW STATUS: Pending
+Question: Which Cubs utility man doubled home the go-ahead run in Game 7 and won 2016 World Series MVP?
+A. Ben Zobrist
+B. Kris Bryant
+C. Anthony Rizzo
+D. Javier Baez
+Correct: A - Ben Zobrist
+Source: https://www.mlb.com/news/ben-zobrist-named-world-series-mvp-c207951690
+
+MLB-R2-010 | EASY | REVIEW STATUS: Pending
+Question: Which Diamondbacks hitter floated the Game 7 walk-off single that ended the 2001 World Series?
+A. Matt Williams
+B. Luis Gonzalez
+C. Steve Finley
+D. Tony Womack
+Correct: B - Luis Gonzalez
+Source: https://content.mlb.com/documents/5/3/0/273638530/2018_Arizona_Diamondbacks_Media_Guide.pdf
+
+MLB-R2-011 | EASY | REVIEW STATUS: Pending
+Question: Down to the Cardinals' final strike twice, which hometown hero delivered the tying triple and then a Game 6 walk-off homer in the 2011 World Series?
+A. Lance Berkman
+B. Albert Pujols
+C. David Freese
+D. Yadier Molina
+Correct: C - David Freese
+Source: https://www.mlb.com/news/greatest-world-series-homers
+
+MLB-R2-012 | EASY | REVIEW STATUS: Pending
+Question: Which Giants ace turned the 2014 World Series into his personal showcase and won series MVP?
+A. Tim Lincecum
+B. Matt Cain
+C. Jake Peavy
+D. Madison Bumgarner
+Correct: D - Madison Bumgarner
+Source: https://www.mlb.com/news/epic-performance-immortalizes-madison-bumgarner/c-104913210
+
+MLB-R2-013 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Marlins shortstop lined the Game 7 walk-off single that won the 1997 World Series?
+A. Edgar Renteria
+B. Charles Johnson
+C. Gary Sheffield
+D. Moises Alou
+Correct: A - Edgar Renteria
+Source: https://www.mlb.com/news/rewatch-game-7-of-the-1997-world-series
+
+MLB-R2-014 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Twins pinch-hitter drove in the only run of Game 7 with a 10th-inning single in the 1991 World Series?
+A. Dan Gladden
+B. Gene Larkin
+C. Kirby Puckett
+D. Kent Hrbek
+Correct: B - Gene Larkin
+Source: https://www.mlb.com/news/final-moments-of-world-series
+
+MLB-R2-015 | MEDIUM | REVIEW STATUS: Pending
+Question: Which veteran National launched the go-ahead home run off the right-field foul pole in Game 7 of the 2019 World Series?
+A. Ryan Zimmerman
+B. Anthony Rendon
+C. Howie Kendrick
+D. Juan Soto
+Correct: C - Howie Kendrick
+Source: https://www.mlb.com/news/howie-kendrick-clutch-again-for-nationals-in-game-7
+
+MLB-R2-016 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Braves slugger hit three World Series home runs and won series MVP in 2021?
+A. Freddie Freeman
+B. Austin Riley
+C. Eddie Rosario
+D. Jorge Soler
+Correct: D - Jorge Soler
+Source: https://www.mlb.com/news/jorge-soler-receives-world-series-ring
+
+MLB-R2-017 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Cardinals slugger became the only player to hit two grand slams in one inning in 1999?
+A. Fernando Tatis
+B. Mark McGwire
+C. Ray Lankford
+D. Jim Edmonds
+Correct: A - Fernando Tatis
+Source: https://www.mlb.com/news/fernando-tatis-grand-slam-game-streaming-on-mlb
+
+MLB-R2-018 | MEDIUM | REVIEW STATUS: Pending
+Question: Which White Sox speedster entered the 2005 postseason without a regular-season homer, then hit a World Series walk-off in Game 2?
+A. Aaron Rowand
+B. Scott Podsednik
+C. Juan Uribe
+D. Tadahito Iguchi
+Correct: B - Scott Podsednik
+Source: https://www.mlb.com/news/guaranteed-rate-field-best-moments
+
+MLB-R2-019 | MEDIUM | REVIEW STATUS: Pending
+Question: Which White Sox outfielder won 2005 World Series MVP after driving in the clinching run in Game 4?
+A. Paul Konerko
+B. Carl Everett
+C. Jermaine Dye
+D. Scott Podsednik
+Correct: C - Jermaine Dye
+Source: https://www.mlb.com/news/white-sox-2005-world-series-championship-to-re-air
+
+MLB-R2-020 | HARD | REVIEW STATUS: Pending
+Question: Which 20-year-old Angels reliever debuted in September 2002, then earned five wins during that postseason run?
+A. Brendan Donnelly
+B. Troy Percival
+C. Scot Shields
+D. Francisco Rodriguez
+Correct: D - Francisco Rodriguez
+Source: https://www.mlb.com/news/a-look-at-unlikely-world-series-heroes-c299569216
+
+MLB-R2-021 | HARD | REVIEW STATUS: Pending
+Question: Fernando Tatis hit two grand slams in one inning in 1999. Which Dodgers pitcher surrendered both?
+A. Chan Ho Park
+B. Kevin Brown
+C. Orel Hershiser
+D. Hideo Nomo
+Correct: A - Chan Ho Park
+Source: https://www.mlb.com/news/fernando-tatis-grand-slam-game-streaming-on-mlb
+
+MLB-R2-022 | HARD | REVIEW STATUS: Pending
+Question: Which 23-year-old Marlins ace threw a five-hit shutout at Yankee Stadium to clinch the 2003 World Series?
+A. Brad Penny
+B. Josh Beckett
+C. Dontrelle Willis
+D. Carl Pavano
+Correct: B - Josh Beckett
+Source: https://www.mlb.com/news/2003-world-series-recap
+
+MLB-R2-023 | HARD | REVIEW STATUS: Pending
+Question: Which Dodgers ace finished the 1988 regular season with a record 59 consecutive scoreless innings?
+A. Fernando Valenzuela
+B. Bob Welch
+C. Orel Hershiser
+D. Bret Saberhagen
+Correct: C - Orel Hershiser
+Source: https://www.mlb.com/dodgers/news/orel-hershiser-scoreless-inning-streak-record
+
+MLB-R2-024 | HARD | REVIEW STATUS: Pending
+Question: Which pair shared 2001 World Series MVP honors after Arizona dethroned the three-time defending champion Yankees?
+A. Luis Gonzalez and Matt Williams
+B. Roger Clemens and Mariano Rivera
+C. Mark Grace and Tony Womack
+D. Randy Johnson and Curt Schilling
+Correct: D - Randy Johnson and Curt Schilling
+Source: https://www.mlb.com/news/2001-world-series-recap
+
+MLB-R2-025 | HARD | REVIEW STATUS: Pending
+Question: The 2024 World Series was the first to feature opposing 50-homer hitters. Which pair made that history?
+A. Shohei Ohtani and Aaron Judge
+B. Mookie Betts and Juan Soto
+C. Freddie Freeman and Giancarlo Stanton
+D. Teoscar Hernandez and Anthony Volpe
+Correct: A - Shohei Ohtani and Aaron Judge
+Source: https://www.mlb.com/news/best-baseball-moments-2024
+
+NBA - 15 QUESTIONS
+------------------
+
+NBA-R2-001 | EASY | REVIEW STATUS: Pending
+Question: Which Warriors superstar finally captured his first NBA Finals MVP award in 2022?
+A. Stephen Curry
+B. Klay Thompson
+C. Draymond Green
+D. Andrew Wiggins
+Correct: A - Stephen Curry
+Source: https://cdn.nba.com/teams/uploads/sites/1610612744/2022/10/Golden_State_Warriors_2022_23_Media_Guide.pdf
+
+NBA-R2-002 | EASY | REVIEW STATUS: Pending
+Question: Which Nuggets center won 2023 NBA Finals MVP after Denver claimed its first championship?
+A. Jamal Murray
+B. Nikola Jokic
+C. Aaron Gordon
+D. Michael Porter Jr.
+Correct: B - Nikola Jokic
+Source: https://www.nba.com/news/finals-mvp-resume-nikola-jokic-2023
+
+NBA-R2-003 | EASY | REVIEW STATUS: Pending
+Question: Which Celtics wing won both Eastern Conference finals MVP and NBA Finals MVP during Boston's 2024 title run?
+A. Jayson Tatum
+B. Jrue Holiday
+C. Jaylen Brown
+D. Derrick White
+Correct: C - Jaylen Brown
+Source: https://api-hub.nba.com/news/history-season-review-2023-24
+
+NBA-R2-004 | EASY | REVIEW STATUS: Pending
+Question: Which 7-foot-4 Spurs phenom was the unanimous 2024 NBA Rookie of the Year?
+A. Chet Holmgren
+B. Brandon Miller
+C. Scoot Henderson
+D. Victor Wembanyama
+Correct: D - Victor Wembanyama
+Source: https://www.nba.com/news/2023-24-all-rookie-teams-announced
+
+NBA-R2-005 | EASY | REVIEW STATUS: Pending
+Question: Which Heat sharpshooter buried the backpedaling corner three that saved Game 6 of the 2013 NBA Finals?
+A. Ray Allen
+B. Mike Miller
+C. Shane Battier
+D. Mario Chalmers
+Correct: A - Ray Allen
+Source: https://www.nba.com/news/history-finals-moments-index
+
+NBA-R2-006 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Cavaliers guard hit the go-ahead three over Stephen Curry late in Game 7 of the 2016 NBA Finals?
+A. J.R. Smith
+B. Kyrie Irving
+C. Matthew Dellavedova
+D. Iman Shumpert
+Correct: B - Kyrie Irving
+Source: https://www.nba.com/news/history-finals-moments-index
+
+NBA-R2-007 | MEDIUM | REVIEW STATUS: Pending
+Question: With just 0.4 seconds left in a 2004 playoff game, which Lakers guard stunned San Antonio with a turnaround jumper?
+A. Gary Payton
+B. Kobe Bryant
+C. Derek Fisher
+D. Rick Fox
+Correct: C - Derek Fisher
+Source: https://www.nba.com/news/10-best-games-of-last-25-years-nba
+
+NBA-R2-008 | MEDIUM | REVIEW STATUS: Pending
+Question: Which sixth-seeded team repeated as NBA champion in 1995 after acquiring Clyde Drexler midseason?
+A. Indiana Pacers
+B. Phoenix Suns
+C. New York Knicks
+D. Houston Rockets
+Correct: D - Houston Rockets
+Source: https://www.nba.com/news/history-season-review-1994-95
+
+NBA-R2-009 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Pistons guard won 2004 NBA Finals MVP after Detroit shut down the star-studded Lakers?
+A. Chauncey Billups
+B. Richard Hamilton
+C. Ben Wallace
+D. Tayshaun Prince
+Correct: A - Chauncey Billups
+Source: https://www.nba.com/news/history-top-moments-pistons-shock-nba-world-win-championship-in-2004
+
+NBA-R2-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Heat star produced a 40-point triple-double against the Lakers in Game 3 of the 2020 NBA Finals?
+A. Bam Adebayo
+B. Jimmy Butler
+C. Goran Dragic
+D. Tyler Herro
+Correct: B - Jimmy Butler
+Source: https://www.nba.com/news/jimmy-butler-triple-double-finals
+
+NBA-R2-011 | HARD | REVIEW STATUS: Pending
+Question: Which two guards traded 50-point performances for opposing teams in Game 4 of a 2020 first-round series?
+A. Damian Lillard and Luka Doncic
+B. James Harden and Chris Paul
+C. Donovan Mitchell and Jamal Murray
+D. Jayson Tatum and Kemba Walker
+Correct: C - Donovan Mitchell and Jamal Murray
+Source: https://www.nba.com/news/donovan-mitchell-jamal-murray-historic-50-points
+
+NBA-R2-012 | HARD | REVIEW STATUS: Pending
+Question: Which 2023 champion became the first player to lead an entire postseason in total points, rebounds, and assists?
+A. LeBron James
+B. Tim Duncan
+C. Giannis Antetokounmpo
+D. Nikola Jokic
+Correct: D - Nikola Jokic
+Source: https://www.nba.com/news/nikola-jokic-2023-bill-russell-nba-finals-mvp-award
+
+NBA-R2-013 | HARD | REVIEW STATUS: Pending
+Question: Which Spurs rookie became only the sixth first-year player ever selected to an NBA All-Defensive team?
+A. Victor Wembanyama
+B. Tim Duncan
+C. Kawhi Leonard
+D. David Robinson
+Correct: A - Victor Wembanyama
+Source: https://www.nba.com/news/2023-24-all-rookie-teams-announced
+
+NBA-R2-014 | HARD | REVIEW STATUS: Pending
+Question: Which Cavaliers star scored his team's final 25 points in a double-overtime Game 5 win over Detroit in the 2007 Eastern Conference finals?
+A. Larry Hughes
+B. LeBron James
+C. Daniel Gibson
+D. Zydrunas Ilgauskas
+Correct: B - LeBron James
+Source: https://www.nba.com/news/10-best-games-of-last-25-years-nba
+
+NBA-R2-015 | HARD | REVIEW STATUS: Pending
+Question: Which Warriors star set a then-NBA record with 13 made threes against New Orleans in November 2016?
+A. Klay Thompson
+B. Kevin Durant
+C. Stephen Curry
+D. Draymond Green
+Correct: C - Stephen Curry
+Source: https://www.nba.com/news/curry-record-3-pointers
+
+CBB - 15 QUESTIONS
+------------------
+
+CBB-R2-001 | EASY | REVIEW STATUS: Pending
+Question: Which 9 seed stunned top-seeded Kansas after Ali Farokhmanesh buried a fearless late three in the 2010 second round?
+A. Northern Iowa
+B. Butler
+C. Cornell
+D. Saint Mary's
+Correct: A - Northern Iowa
+Source: https://www.ncaa.com/news/basketball-men/article/2020-11-03/13-best-clutch-march-madness-shots-2008
+
+CBB-R2-002 | EASY | REVIEW STATUS: Pending
+Question: Which Florida guard scored 34 points against Auburn in the 2025 Final Four before leading the Gators to the title?
+A. Will Richard
+B. Walter Clayton Jr.
+C. Alijah Martin
+D. Denzel Aberdeen
+Correct: B - Walter Clayton Jr.
+Source: https://www.ncaa.com/news/basketball-men/article/2025-04-08/floridas-comeback-title-win-encapsulates-2024-25-season-and-journey-nutshell
+
+CBB-R2-003 | EASY | REVIEW STATUS: Pending
+Question: Which Gonzaga freshman banked in a 37-foot overtime buzzer-beater to eliminate UCLA in the 2021 Final Four?
+A. Drew Timme
+B. Corey Kispert
+C. Jalen Suggs
+D. Andrew Nembhard
+Correct: C - Jalen Suggs
+Source: https://www.ncaa.com/news/basketball-men/article/2021-09-29/jalen-suggs-college-basketball-stats-best-moments-quotes
+
+CBB-R2-004 | EASY | REVIEW STATUS: Pending
+Question: Which San Diego State guard hit the 2023 Final Four buzzer-beater that sent the Aztecs to their first national title game?
+A. Matt Bradley
+B. Darrion Trammell
+C. Jaedon LeDee
+D. Lamont Butler
+Correct: D - Lamont Butler
+Source: https://www.ncaa.com/news/basketball-men/article/2023-04-01/san-diego-states-final-four-magic-was-just-latest-unprecedented-march-madness
+
+CBB-R2-005 | EASY | REVIEW STATUS: Pending
+Question: Which UMBC guard scored 28 points as the Retrievers became the first 16 seed to beat a 1 seed in 2018?
+A. Jairus Lyles
+B. K.J. Maura
+C. Joe Sherburne
+D. Arkel Lamar
+Correct: A - Jairus Lyles
+Source: https://www.ncaa.com/video/basketball-men/2018-03-17/mbk-ncaa-tournament-performance-jairus-lyles-umbc
+
+CBB-R2-006 | MEDIUM | REVIEW STATUS: Pending
+Question: Which team erased a 15-point deficit in the final four minutes to beat Arizona in the 2005 Elite Eight?
+A. Louisville
+B. Illinois
+C. Michigan State
+D. North Carolina
+Correct: B - Illinois
+Source: https://www.ncaa.com/news/basketball-men/article/2020-04-07/looking-back-lllinois-improbable-comeback-against-arizona
+
+CBB-R2-007 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Michigan guard hit a deep tying three during the Wolverines' 14-point comeback against Kansas in the 2013 Sweet 16?
+A. Tim Hardaway Jr.
+B. Nik Stauskas
+C. Trey Burke
+D. Glenn Robinson III
+Correct: C - Trey Burke
+Source: https://www.ncaa.com/news/basketball-men/article/2020-05-11/2013-ncaa-tournament-bracket-scores-stats-records
+
+CBB-R2-008 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Purdue guard poured in 42 points against Virginia in the 2019 Elite Eight?
+A. Ryan Cline
+B. Dakota Mathias
+C. Jaden Ivey
+D. Carsen Edwards
+Correct: D - Carsen Edwards
+Source: https://www.ncaa.com/news/basketball-men/article/2019-03-31/purdues-carsen-edwards-had-42-points-virginia-somehow
+
+CBB-R2-009 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Virginia forward hit a buzzer-beating jumper to force overtime against Purdue in the 2019 Elite Eight?
+A. Mamadi Diakite
+B. De'Andre Hunter
+C. Kyle Guy
+D. Ty Jerome
+Correct: A - Mamadi Diakite
+Source: https://www.ncaa.com/news/basketball-men/article/2019-03-30/virginia-beats-purdue-ot-advance-final-four
+
+CBB-R2-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which team rallied from 12 points down to beat Houston in the 2025 national championship game?
+A. Duke
+B. Florida
+C. Auburn
+D. Alabama
+Correct: B - Florida
+Source: https://www.ncaa.com/news/basketball-men/article/2025-04-08/floridas-comeback-title-win-encapsulates-2024-25-season-and-journey-nutshell
+
+CBB-R2-011 | HARD | REVIEW STATUS: Pending
+Question: Which Virginia guard calmly made three free throws with 0.6 seconds left to beat Auburn in the 2019 Final Four?
+A. Ty Jerome
+B. De'Andre Hunter
+C. Kyle Guy
+D. Kihei Clark
+Correct: C - Kyle Guy
+Source: https://www.ncaa.com/news/basketball-men/article/2019-11-05/virginia-mens-basketball-2019-20-season-begins-week
+
+CBB-R2-012 | HARD | REVIEW STATUS: Pending
+Question: Which Kentucky freshman hit game-winning threes in three straight 2014 tournament games against Louisville, Michigan, and Wisconsin?
+A. James Young
+B. Andrew Harrison
+C. Julius Randle
+D. Aaron Harrison
+Correct: D - Aaron Harrison
+Source: https://www.ncaa.com/news/basketball-men/article/2014-04-06/notes-and-quotes-final-four
+
+CBB-R2-013 | HARD | REVIEW STATUS: Pending
+Question: Which Morehead State guard buried a top-of-the-key three with 4.4 seconds left to upset Louisville in 2011?
+A. Demonte Harper
+B. Kenneth Faried
+C. Terrance Hill
+D. Sam Goodman
+Correct: A - Demonte Harper
+Source: https://www.ncaa.com/news/basketball-men/article/2020-11-03/13-best-clutch-march-madness-shots-2008
+
+CBB-R2-014 | HARD | REVIEW STATUS: Pending
+Question: Which Kentucky guard hit the toe-behind-the-line three that forced overtime against Michigan State in the 2005 Elite Eight?
+A. Rajon Rondo
+B. Patrick Sparks
+C. Kelenna Azubuike
+D. Chuck Hayes
+Correct: B - Patrick Sparks
+Source: https://www.ncaa.com/news/basketball-men/article/2020-04-07/looking-back-lllinois-improbable-comeback-against-arizona
+
+CBB-R2-015 | HARD | REVIEW STATUS: Pending
+Question: Which team erased a 20-point first-half deficit against West Virginia to reach the 2005 Final Four?
+A. Illinois
+B. Kentucky
+C. Louisville
+D. Michigan State
+Correct: C - Louisville
+Source: https://www.ncaa.com/news/basketball-men/article/2020-04-07/looking-back-lllinois-improbable-comeback-against-arizona
+
+NFL - 15 QUESTIONS
+------------------
+
+NFL-R2-001 | EASY | REVIEW STATUS: Pending
+Question: Which Broncos linebacker terrorized Carolina with 2.5 sacks and two forced fumbles to win Super Bowl 50 MVP?
+A. Von Miller
+B. DeMarcus Ware
+C. Danny Trevathan
+D. Brandon Marshall
+Correct: A - Von Miller
+Source: https://www.nfl.com/news/broncos-lb-von-miller-named-super-bowl-50-mvp-0ap3000000634374
+
+NFL-R2-002 | EASY | REVIEW STATUS: Pending
+Question: Which Vikings running back shredded the Chargers for an NFL-record 296 rushing yards in 2007?
+A. LaDainian Tomlinson
+B. Adrian Peterson
+C. Jamal Lewis
+D. Chris Johnson
+Correct: B - Adrian Peterson
+Source: https://www.nfl.com/news/quick-take-peterson-runs-over-chargers-09000d5d803e004c
+
+NFL-R2-003 | EASY | REVIEW STATUS: Pending
+Question: Which team outlasted Kansas City 54-51 in the unforgettable 2018 Monday night shootout?
+A. New England Patriots
+B. Denver Broncos
+C. Los Angeles Rams
+D. Los Angeles Chargers
+Correct: C - Los Angeles Rams
+Source: https://www.nfl.com/news/rams-outlast-chiefs-in-high-scoring-instant-classic-0ap3000000990523
+
+NFL-R2-004 | EASY | REVIEW STATUS: Pending
+Question: Which Eagles quarterback tied the NFL single-game record with seven touchdown passes against the Raiders in 2013?
+A. Michael Vick
+B. Carson Wentz
+C. Donovan McNabb
+D. Nick Foles
+Correct: D - Nick Foles
+Source: https://www.nfl.com/news/eagles-nick-foles-i-slowed-things-down-in-7-td-game-0ap2000000276485
+
+NFL-R2-005 | EASY | REVIEW STATUS: Pending
+Question: Which Rams linebacker made the tackle at the 1-yard line that ended Super Bowl XXXIV (34)?
+A. Mike Jones
+B. London Fletcher
+C. Kevin Carter
+D. Grant Wistrom
+Correct: A - Mike Jones
+Source: https://www.nfl.com/100/originals/100-greatest/detail.html?slug=plays-11
+
+NFL-R2-006 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Ravens kicker drilled a then-NFL-record 66-yard field goal off the crossbar to beat Detroit in 2021?
+A. Matt Prater
+B. Justin Tucker
+C. Brandon McManus
+D. Harrison Butker
+Correct: B - Justin Tucker
+Source: https://www.nfl.com/news/ravens-kicker-justin-tucker-nfl-record-66-yard-field-goal-lions
+
+NFL-R2-007 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Broncos receiver set an NFL single-game record with 21 catches against Indianapolis in 2009?
+A. Demaryius Thomas
+B. Rod Smith
+C. Brandon Marshall
+D. Eric Decker
+Correct: C - Brandon Marshall
+Source: https://static.clubs.nfl.com/image/upload/raiders/hxxs8m1cxonmzqsij02y.pdf
+
+NFL-R2-008 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Chargers cornerback returned a missed field goal an NFL-record 109 yards in 2007?
+A. Quentin Jammer
+B. Darren Sproles
+C. Eric Weddle
+D. Antonio Cromartie
+Correct: D - Antonio Cromartie
+Source: https://www.nfl.com/news/quick-take-peterson-runs-over-chargers-09000d5d803e004c
+
+NFL-R2-009 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Rams defender scored on both a fumble return and an interception return during the 54-51 win over Kansas City in 2018?
+A. Samson Ebukam
+B. Aaron Donald
+C. Dante Fowler Jr.
+D. Marcus Peters
+Correct: A - Samson Ebukam
+Source: https://www.nfl.com/news/rams-outlast-chiefs-in-high-scoring-instant-classic-0ap3000000990523
+
+NFL-R2-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Whose 295-yard game had stood as the NFL rushing record before Adrian Peterson reached 296 in 2007?
+A. Walter Payton
+B. Jamal Lewis
+C. Corey Dillon
+D. O.J. Simpson
+Correct: B - Jamal Lewis
+Source: https://www.nfl.com/news/quick-take-peterson-runs-over-chargers-09000d5d803e004c
+
+NFL-R2-011 | HARD | REVIEW STATUS: Pending
+Question: Which Rams tight end caught the game-winning touchdown in the 2018 54-51 classic against Kansas City?
+A. Tyler Higbee
+B. Robert Woods
+C. Gerald Everett
+D. Josh Reynolds
+Correct: C - Gerald Everett
+Source: https://www.nfl.com/news/rams-outlast-chiefs-in-high-scoring-instant-classic-0ap3000000990523
+
+NFL-R2-012 | HARD | REVIEW STATUS: Pending
+Question: Nick Foles threw seven touchdown passes in only three quarters against which team in 2013?
+A. Dallas Cowboys
+B. New York Giants
+C. Washington
+D. Oakland Raiders
+Correct: D - Oakland Raiders
+Source: https://www.nfl.com/news/eagles-nick-foles-i-slowed-things-down-in-7-td-game-0ap2000000276485
+
+NFL-R2-013 | HARD | REVIEW STATUS: Pending
+Question: Which Titans receiver was tackled one yard short on the final play of Super Bowl XXXIV (34)?
+A. Kevin Dyson
+B. Derrick Mason
+C. Frank Wycheck
+D. Chris Sanders
+Correct: A - Kevin Dyson
+Source: https://www.nfl.com/100/originals/100-greatest/detail.html?slug=plays-11
+
+NFL-R2-014 | HARD | REVIEW STATUS: Pending
+Question: Which quarterback lost two fumbles forced by Von Miller during Super Bowl 50?
+A. Peyton Manning
+B. Cam Newton
+C. Jake Delhomme
+D. Teddy Bridgewater
+Correct: B - Cam Newton
+Source: https://www.nfl.com/news/broncos-lb-von-miller-named-super-bowl-50-mvp-0ap3000000634374
+
+NFL-R2-015 | HARD | REVIEW STATUS: Pending
+Question: Adrian Peterson set the NFL rushing record in a 2007 game that also featured a 109-yard missed-field-goal return. Which team produced that return?
+A. Minnesota Vikings
+B. Denver Broncos
+C. San Diego Chargers
+D. Oakland Raiders
+Correct: C - San Diego Chargers
+Source: https://www.nfl.com/news/quick-take-peterson-runs-over-chargers-09000d5d803e004c
+
+CFB - 15 QUESTIONS
+------------------
+
+CFB-R2-001 | EASY | REVIEW STATUS: Pending
+Question: Which program completed back-to-back national championships by crushing TCU to finish the 2022 season unbeaten?
+A. Georgia
+B. Alabama
+C. Clemson
+D. Ohio State
+Correct: A - Georgia
+Source: https://www.ncaa.com/news/football/article/2023-01-09/undefeated-college-football-teams-2022
+
+CFB-R2-002 | EASY | REVIEW STATUS: Pending
+Question: Which FCS program stunned No. 5 Michigan at the Big House in 2007?
+A. James Madison
+B. Appalachian State
+C. North Dakota State
+D. Montana
+Correct: B - Appalachian State
+Source: https://www.ncaa.com/news/football/article/2017-09-01/appalachian-state-vs-michigan-2007-10-year-anniversary-one-college
+
+CFB-R2-003 | EASY | REVIEW STATUS: Pending
+Question: Which Michigan State player returned a botched punt for the winning touchdown as time expired against Michigan in 2015?
+A. Connor Cook
+B. LJ Scott
+C. Jalen Watts-Jackson
+D. Aaron Burbridge
+Correct: C - Jalen Watts-Jackson
+Source: https://www.ncaa.com/news/football/article/2015-10-17/michigan-state-beats-michigan-last-second-fumble-recovery-td
+
+CFB-R2-004 | EASY | REVIEW STATUS: Pending
+Question: Which program won the first 12-team College Football Playoff, beating Notre Dame for the 2024 season's national title?
+A. Georgia
+B. Texas
+C. Oregon
+D. Ohio State
+Correct: D - Ohio State
+Source: https://www.ncaa.com/news/football/article/2025-01-20/2024-ohio-state-football-schedule-dates-times-tv-channels-scores
+
+CFB-R2-005 | EASY | REVIEW STATUS: Pending
+Question: Which team used a Statue of Liberty play to beat Oklahoma in overtime in the 2007 Fiesta Bowl?
+A. Boise State
+B. TCU
+C. Utah
+D. Hawaii
+Correct: A - Boise State
+Source: https://www.ncaa.com/news/football/article/2015-10-30/college-football-7-greatest-trick-plays-all-time
+
+CFB-R2-006 | MEDIUM | REVIEW STATUS: Pending
+Question: Which former walk-on caught Deshaun Watson's title-winning touchdown with one second left against Alabama in January 2017?
+A. Mike Williams
+B. Hunter Renfrow
+C. Artavis Scott
+D. Jordan Leggett
+Correct: B - Hunter Renfrow
+Source: https://www.ncaa.com/news/football/article/2017-01-10/watch-clemson-wins-championship-last-second-hunter-renfrow-td
+
+CFB-R2-007 | MEDIUM | REVIEW STATUS: Pending
+Question: Which freshman receiver caught Alabama's 41-yard '2nd-and-26' overtime touchdown to beat Georgia for the 2017 season's title?
+A. Jerry Jeudy
+B. Henry Ruggs III
+C. DeVonta Smith
+D. Calvin Ridley
+Correct: C - DeVonta Smith
+Source: https://www.ncaa.com/news/football/article/2018-01-09/alabama-vs-georgia-tides-youngest-deliver-biggest-stage
+
+CFB-R2-008 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Ohio State running back rushed for 246 yards and four touchdowns against Oregon in the first CFP title game?
+A. Carlos Hyde
+B. J.K. Dobbins
+C. Curtis Samuel
+D. Ezekiel Elliott
+Correct: D - Ezekiel Elliott
+Source: https://www.ncaa.com/news/football/article/2015-01-13/ohio-st-beats-oregon-42-20-win-first-national-championship-playoff
+
+CFB-R2-009 | MEDIUM | REVIEW STATUS: Pending
+Question: Which third-string quarterback led Ohio State past Oregon in the first College Football Playoff championship game?
+A. Cardale Jones
+B. Braxton Miller
+C. J.T. Barrett
+D. Kenny Guiton
+Correct: A - Cardale Jones
+Source: https://www.ncaa.com/news/football/article/2015-01-13/ohio-st-beats-oregon-42-20-win-first-national-championship-playoff
+
+CFB-R2-010 | MEDIUM | REVIEW STATUS: Pending
+Question: Which Florida State receiver caught Jameis Winston's title-winning touchdown with 13 seconds left against Auburn in January 2014?
+A. Rashad Greene
+B. Kelvin Benjamin
+C. Kenny Shaw
+D. Nick O'Leary
+Correct: B - Kelvin Benjamin
+Source: https://www.ncaa.com/news/football/article/2018-01-10/georgia-football-bulldog-seniors-leaving-high-standard-after-13-2
+
+CFB-R2-011 | HARD | REVIEW STATUS: Pending
+Question: Which Alabama returner raced 95 yards for a fourth-quarter touchdown in the 2016 national championship win over Clemson?
+A. Eddie Jackson
+B. Cyrus Jones
+C. Kenyan Drake
+D. ArDarius Stewart
+Correct: C - Kenyan Drake
+Source: https://www.ncaa.com/news/football/article/2016-01-11/college-football-playoff-alabama-clemson-highlights-national
+
+CFB-R2-012 | HARD | REVIEW STATUS: Pending
+Question: Which Alabama tight end broke loose for 208 receiving yards and two touchdowns against Clemson in the 2016 national championship game?
+A. Hale Hentges
+B. Irv Smith Jr.
+C. Michael Williams
+D. O.J. Howard
+Correct: D - O.J. Howard
+Source: https://i.turner.ncaa.com/sites/default/files/images/2017/01/05/2017-clemson-alabama-game-notes.pdf
+
+CFB-R2-013 | HARD | REVIEW STATUS: Pending
+Question: Which Tennessee receiver caught Tee Martin's BCS-record 79-yard touchdown pass in the first BCS Championship Game?
+A. Peerless Price
+B. Cedrick Wilson
+C. Jermaine Copeland
+D. Marcus Nash
+Correct: A - Peerless Price
+Source: https://www.ncaa.com/news/football/article/2013-12-16/history-bcs-championship
+
+CFB-R2-014 | HARD | REVIEW STATUS: Pending
+Question: Which Ohio State returner opened the 2007 BCS title game with a 93-yard kickoff touchdown before Florida took control?
+A. Santonio Holmes
+B. Ted Ginn Jr.
+C. Brian Hartline
+D. Anthony Gonzalez
+Correct: B - Ted Ginn Jr.
+Source: https://www.ncaa.com/news/football/article/2013-12-16/history-bcs-championship
+
+CFB-R2-015 | HARD | REVIEW STATUS: Pending
+Question: Which backup quarterback replaced an injured Tua Tagovailoa and led Alabama's fourth-quarter comeback over Georgia in the 2018 SEC Championship Game?
+A. Mac Jones
+B. Blake Barnett
+C. Jalen Hurts
+D. Jake Coker
+Correct: C - Jalen Hurts
+Source: https://www.ncaa.com/news/ncaa/article/2018-12-19/most-dramatic-college-sports-comebacks-2018-year
+
