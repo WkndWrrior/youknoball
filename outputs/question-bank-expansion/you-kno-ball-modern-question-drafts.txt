@@ -2,8 +2,8 @@ YOU KNO BALL - MODERN QUESTION EXPANSION REVIEW
 ================================================
 
 Status: REVIEW ONLY - NOT IMPLEMENTED
-Total drafts: 110
-Categories: NHL 25, MLB 25, NBA 15, CBB 15, NFL 15, CFB 15
+Total drafts: 109
+Categories: NHL 25, MLB 25, NBA 14, CBB 15, NFL 15, CFB 15
 Era guidance: Focused on 1980-present, with no pre-1980 selections in this round.
 Review status for every question: Pending
 
@@ -465,7 +465,7 @@ D. Teoscar Hernandez and Anthony Volpe
 Correct: A - Shohei Ohtani and Aaron Judge
 Source: https://www.mlb.com/news/best-baseball-moments-2024
 
-NBA - 15 QUESTIONS
+NBA - 14 QUESTIONS
 ------------------
 
 NBA-R2-001 | EASY | REVIEW STATUS: Pending
@@ -593,15 +593,6 @@ C. Daniel Gibson
 D. Zydrunas Ilgauskas
 Correct: B - LeBron James
 Source: https://www.nba.com/news/10-best-games-of-last-25-years-nba
-
-NBA-R2-015 | HARD | REVIEW STATUS: Pending
-Question: Which Warriors star set a then-NBA record with 13 made threes against New Orleans in November 2016?
-A. Klay Thompson
-B. Kevin Durant
-C. Stephen Curry
-D. Draymond Green
-Correct: C - Stephen Curry
-Source: https://www.nba.com/news/curry-record-3-pointers
 
 CBB - 15 QUESTIONS
 ------------------
@@ -991,7 +982,7 @@ Correct: D - O.J. Howard
 Source: https://i.turner.ncaa.com/sites/default/files/images/2017/01/05/2017-clemson-alabama-game-notes.pdf
 
 CFB-R2-013 | HARD | REVIEW STATUS: Pending
-Question: Which Tennessee receiver caught Tee Martin's BCS-record 79-yard touchdown pass in the first BCS Championship Game?
+Question: In the first BCS National Championship Game after the 1998 season, which Tennessee receiver caught Tee Martin's 79-yard touchdown against Florida State, a play that still holds the BCS title-game record for longest touchdown reception?
 A. Peerless Price
 B. Cedrick Wilson
 C. Jermaine Copeland
@@ -1016,4 +1007,3 @@ C. Jalen Hurts
 D. Jake Coker
 Correct: C - Jalen Hurts
 Source: https://www.ncaa.com/news/ncaa/article/2018-12-19/most-dramatic-college-sports-comebacks-2018-year
-
