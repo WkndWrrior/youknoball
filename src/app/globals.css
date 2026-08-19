@@ -22,6 +22,11 @@
 
 html {
   background: var(--background);
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar {
+  display: none;
 }
 
 body {
