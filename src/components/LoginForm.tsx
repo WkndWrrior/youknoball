@@ -15,6 +15,7 @@ import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 type LoginFormProps = {
   callbackError: string | null;
+  redirectPath: string;
 };
 
 function getRedirectUrl(pathname: string) {
@@ -66,7 +67,7 @@ const authModeDetails: Record<
   },
 };
 
-export function LoginForm({ callbackError }: LoginFormProps) {
+export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
@@ -89,7 +90,8 @@ export function LoginForm({ callbackError }: LoginFormProps) {
       }
 
       const client = supabaseBrowser();
-      const redirectTo = getRedirectUrl("/auth/callback");
+      const callbackPath = `/auth/callback?next=${encodeURIComponent(redirectPath)}`;
+      const redirectTo = getRedirectUrl(callbackPath);
 
       if (mode === "signin") {
         const { error: signInError } = await client.auth.signInWithPassword({
@@ -101,7 +103,7 @@ export function LoginForm({ callbackError }: LoginFormProps) {
           throw signInError;
         }
 
-        router.replace("/play");
+        router.replace(redirectPath);
         return;
       }
 

@@ -21,9 +21,10 @@ import {
 } from "@/lib/server/dailyChallengeRepository";
 import {
   createPublicSupabaseServerClient,
-  createSessionSupabaseServerClient,
-  getSupabaseSessionFromRequest,
+  getVerifiedSupabaseSessionFromRequest,
+  type ServerSupabaseClient,
 } from "@/lib/server/supabaseServer";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +68,7 @@ async function buildSavedAttemptResponse(
   challengeQuestions: Awaited<
     ReturnType<typeof getChallengeResolutionForDate>
   >["questions"],
-  sessionClient: ReturnType<typeof createSessionSupabaseServerClient>,
+  sessionClient: ServerSupabaseClient,
 ) {
   const graded = gradeAttempt(challengeQuestions, storedAttempt.answers);
   const [stats, profile] = await Promise.all([
@@ -156,9 +157,9 @@ export async function POST(request: NextRequest) {
 
     const graded = gradeAttempt(challengeQuestions, answers);
     const shareText = buildShareText(date, graded);
-    const session = getSupabaseSessionFromRequest(request);
+    const auth = await getVerifiedSupabaseSessionFromRequest(request);
 
-    if (!session) {
+    if (!auth) {
       return NextResponse.json({
         message: "Guest attempt scored.",
         saved: false,
@@ -177,9 +178,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const sessionClient = createSessionSupabaseServerClient(session.accessToken);
-    const existingAttempt = await findDailyAttemptForUserAndDate(sessionClient, {
-      userId: session.user.id,
+    const sessionClient = auth.client;
+    const adminClient = supabaseAdmin();
+    const existingAttempt = await findDailyAttemptForUserAndDate(adminClient, {
+      userId: auth.user.id,
       challengeDate: date,
       dailyChallengeId,
     });
@@ -202,8 +204,8 @@ export async function POST(request: NextRequest) {
 
     let durationMs: number | null = null;
     try {
-      const attemptStart = await getDailyAttemptStart(sessionClient, {
-        userId: session.user.id,
+      const attemptStart = await getDailyAttemptStart(adminClient, {
+        userId: auth.user.id,
         challengeDate: date,
       });
       durationMs = attemptStart
@@ -215,8 +217,8 @@ export async function POST(request: NextRequest) {
     const leaderboardEligible = isLeaderboardEligibleDuration(durationMs);
 
     try {
-      const savedAttempt = await createDailyAttempt(sessionClient, {
-        userId: session.user.id,
+      const savedAttempt = await createDailyAttempt(adminClient, {
+        userId: auth.user.id,
         dailyChallengeId,
         challengeDate: date,
         score: graded.score,
@@ -242,9 +244,9 @@ export async function POST(request: NextRequest) {
       }
 
       const existingAttempt = await findDailyAttemptForUserAndDate(
-        sessionClient,
+        adminClient,
         {
-          userId: session.user.id,
+          userId: auth.user.id,
           challengeDate: date,
           dailyChallengeId,
         },
@@ -267,11 +269,10 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to submit attempt right now.";
-    return NextResponse.json({ message }, { status: 500 });
+  } catch {
+    return NextResponse.json(
+      { message: "Unable to submit attempt right now." },
+      { status: 500 },
+    );
   }
 }

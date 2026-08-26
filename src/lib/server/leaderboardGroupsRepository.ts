@@ -49,7 +49,7 @@ type LeaderboardGroupMemberRow = {
 
 const GROUP_COLUMNS = "id,name,invite_code,owner_user_id,created_at";
 const MEMBER_COLUMNS = "group_id,user_id,role,joined_at";
-const GROUP_INVITE_CODE_LENGTH = 8;
+const GROUP_INVITE_CODE_LENGTH = 16;
 
 function toGroup(row: LeaderboardGroupRow): LeaderboardGroup {
   return {
@@ -74,6 +74,15 @@ function isDuplicateError(error: unknown) {
   );
 }
 
+function isMissingRpcError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "PGRST202"
+  );
+}
+
 function throwIfError(error: unknown, message: string) {
   if (error) {
     throw new Error(message);
@@ -91,18 +100,46 @@ export async function createLeaderboardGroupForOwner(
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const inviteCode = generateInviteCode();
-    const { data, error } = await client
-      .from("leaderboard_groups")
-      .insert({
-        name: input.name,
-        owner_user_id: input.ownerUserId,
-        invite_code: inviteCode,
-      })
-      .select(GROUP_COLUMNS)
-      .single();
+    const { data, error } = await client.rpc(
+      "create_leaderboard_group_for_owner",
+      {
+        p_owner_user_id: input.ownerUserId,
+        p_name: input.name,
+        p_invite_code: inviteCode,
+      },
+    );
 
     if (isDuplicateError(error)) {
       continue;
+    }
+
+    if (isMissingRpcError(error)) {
+      const { data: fallbackData, error: fallbackError } = await client
+        .from("leaderboard_groups")
+        .insert({
+          name: input.name,
+          owner_user_id: input.ownerUserId,
+          invite_code: inviteCode,
+        })
+        .select(GROUP_COLUMNS)
+        .single();
+
+      if (isDuplicateError(fallbackError)) {
+        continue;
+      }
+
+      throwIfError(fallbackError, "Unable to create group.");
+      const fallbackGroup = fallbackData as unknown as LeaderboardGroupRow;
+      const { error: memberError } = await client
+        .from("leaderboard_group_members")
+        .insert({
+          group_id: fallbackGroup.id,
+          user_id: input.ownerUserId,
+          role: "owner",
+        });
+
+      throwIfError(memberError, "Unable to create group membership.");
+      return toGroup(fallbackGroup);
     }
 
     throwIfError(error, "Unable to create group.");
@@ -113,16 +150,6 @@ export async function createLeaderboardGroupForOwner(
   if (!groupRow) {
     throw new Error("Unable to create group.");
   }
-
-  const { error: memberError } = await client
-    .from("leaderboard_group_members")
-    .insert({
-      group_id: groupRow.id,
-      user_id: input.ownerUserId,
-      role: "owner",
-    });
-
-  throwIfError(memberError, "Unable to create group membership.");
 
   return toGroup(groupRow);
 }

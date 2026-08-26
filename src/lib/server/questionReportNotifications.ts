@@ -21,6 +21,7 @@ type FetchLike = (
     method: "POST";
     headers: Record<string, string>;
     body: string;
+    signal: AbortSignal;
   },
 ) => Promise<{
   ok: boolean;
@@ -125,19 +126,28 @@ export async function sendQuestionReportNotification(
     return { sent: false, reason: "question_not_found" };
   }
 
-  const response = await fetchImpl("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from: config.from,
-      to: config.to,
-      subject: `Question reported: ${question.sport} ${question.difficulty}`,
-      text: buildQuestionReportEmailText(report, question),
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  let response: Awaited<ReturnType<FetchLike>>;
+
+  try {
+    response = await fetchImpl("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from: config.from,
+        to: config.to,
+        subject: `Question reported: ${question.sport} ${question.difficulty}`,
+        text: buildQuestionReportEmailText(report, question),
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const detail = response.text ? await response.text() : "";

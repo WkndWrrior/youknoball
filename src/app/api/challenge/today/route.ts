@@ -12,9 +12,9 @@ import {
 } from "@/lib/server/dailyChallengeRepository";
 import {
   createPublicSupabaseServerClient,
-  createSessionSupabaseServerClient,
-  getSupabaseSessionFromRequest,
+  getVerifiedSupabaseSessionFromRequest,
 } from "@/lib/server/supabaseServer";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -37,12 +37,13 @@ export async function GET(request?: NextRequest) {
     }
 
     let timer = null;
-    const session = request ? getSupabaseSessionFromRequest(request) : null;
-    if (session) {
+    const auth = request
+      ? await getVerifiedSupabaseSessionFromRequest(request)
+      : null;
+    if (auth) {
       try {
-        const sessionClient = createSessionSupabaseServerClient(session.accessToken);
-        const attemptStart = await getOrCreateDailyAttemptStart(sessionClient, {
-          userId: session.user.id,
+        const attemptStart = await getOrCreateDailyAttemptStart(supabaseAdmin(), {
+          userId: auth.user.id,
           challengeDate: date,
           dailyChallengeId,
         });

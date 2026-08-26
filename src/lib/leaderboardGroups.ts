@@ -62,7 +62,7 @@ export function normalizeLeaderboardGroupName(
 export function normalizeGroupInviteCode(rawValue: string) {
   const value = rawValue.trim().toUpperCase();
 
-  if (!/^[A-Z0-9]{6,12}$/.test(value)) {
+  if (!/^[A-Z0-9]{6,32}$/.test(value)) {
     return null;
   }
 

@@ -10,6 +10,7 @@ export type PasswordConfirmationValidationResult =
     };
 
 const authModes: AuthMode[] = ["signin", "signup", "magic-link"];
+const defaultAuthRedirectPath = "/play";
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase();
@@ -17,6 +18,23 @@ function normalizeText(value: string) {
 
 function isNonEmpty(value: string) {
   return value.trim().length > 0;
+}
+
+export function normalizeAuthRedirectPath(
+  rawPath: string | null | undefined,
+) {
+  const path = rawPath?.trim();
+  if (
+    !path ||
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    path.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(path)
+  ) {
+    return defaultAuthRedirectPath;
+  }
+
+  return path;
 }
 
 export function normalizeAuthEmail(rawEmail: string | null | undefined) {

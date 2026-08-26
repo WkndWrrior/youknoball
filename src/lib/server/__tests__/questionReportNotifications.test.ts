@@ -48,7 +48,7 @@ describe("question report notifications", () => {
     const fetchMock = vi.fn();
 
     const result = await sendQuestionReportNotification(
-      { tag: "admin" },
+      { tag: "admin" } as never,
       report,
       fetchMock,
     );
@@ -68,7 +68,7 @@ describe("question report notifications", () => {
     });
 
     const result = await sendQuestionReportNotification(
-      { tag: "admin" },
+      { tag: "admin" } as never,
       report,
       fetchMock,
     );
@@ -82,6 +82,7 @@ describe("question report notifications", () => {
       "https://api.resend.com/emails",
       expect.objectContaining({
         method: "POST",
+        signal: expect.any(AbortSignal),
         headers: {
           authorization: "Bearer resend-key",
           "content-type": "application/json",

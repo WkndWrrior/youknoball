@@ -5,34 +5,33 @@ import {
   createLeaderboardGroupForOwner,
   listLeaderboardGroupsForUser,
 } from "@/lib/server/leaderboardGroupsRepository";
-import { getSupabaseSessionFromRequest } from "@/lib/server/supabaseServer";
+import { getVerifiedSupabaseSessionFromRequest } from "@/lib/server/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = getSupabaseSessionFromRequest(request);
-    if (!session) {
+    const auth = await getVerifiedSupabaseSessionFromRequest(request);
+    if (!auth) {
       return NextResponse.json({ message: "You must be signed in." }, { status: 401 });
     }
 
     const groups = await listLeaderboardGroupsForUser(
       supabaseAdmin(),
-      session.user.id,
+      auth.user.id,
     );
 
     return NextResponse.json({ groups });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load groups.";
-    return NextResponse.json({ message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ message: "Unable to load groups." }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const session = getSupabaseSessionFromRequest(request);
-    if (!session) {
+    const auth = await getVerifiedSupabaseSessionFromRequest(request);
+    if (!auth) {
       return NextResponse.json({ message: "You must be signed in." }, { status: 401 });
     }
 
@@ -48,13 +47,12 @@ export async function POST(request: NextRequest) {
     }
 
     const group = await createLeaderboardGroupForOwner(supabaseAdmin(), {
-      ownerUserId: session.user.id,
+      ownerUserId: auth.user.id,
       name: value,
     });
 
     return NextResponse.json({ group });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to create group.";
-    return NextResponse.json({ message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ message: "Unable to create group." }, { status: 500 });
   }
 }

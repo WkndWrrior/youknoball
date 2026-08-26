@@ -134,7 +134,7 @@ describe("August 2026 question review migration", () => {
       const textFallbackPattern = [
         update.priorText,
         ...("additionalPriorTexts" in update
-          ? update.additionalPriorTexts
+          ? (update.additionalPriorTexts ?? [])
           : []),
       ]
         .map(

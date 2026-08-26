@@ -1,14 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createPublicSupabaseServerClient = vi.fn();
-const createSessionSupabaseServerClient = vi.fn();
-const getSupabaseSessionFromRequest = vi.fn();
+const getVerifiedSupabaseSessionFromRequest = vi.fn();
 const supabaseAdmin = vi.fn();
 
 vi.mock("@/lib/server/supabaseServer", () => ({
   createPublicSupabaseServerClient,
-  createSessionSupabaseServerClient,
-  getSupabaseSessionFromRequest,
+  getVerifiedSupabaseSessionFromRequest,
 }));
 
 vi.mock("@/lib/supabaseAdmin", () => ({
@@ -135,8 +133,7 @@ describe("GET /api/challenge/today", () => {
     vi.resetModules();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
-    getSupabaseSessionFromRequest.mockReturnValue(null);
-    createSessionSupabaseServerClient.mockReturnValue({ tag: "session" });
+    getVerifiedSupabaseSessionFromRequest.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -223,6 +220,12 @@ describe("GET /api/challenge/today", () => {
       }),
     });
     const adminClient = createClientMock({
+      daily_attempt_starts: createThenableQuery({
+        data: {
+          started_at: "2026-04-01T11:59:30.000Z",
+        },
+        error: null,
+      }),
       daily_challenges: createThenableQuery({
         data: {
           id: "challenge_1",
@@ -264,9 +267,9 @@ describe("GET /api/challenge/today", () => {
     });
 
     createPublicSupabaseServerClient.mockReturnValue(publicClient);
-    createSessionSupabaseServerClient.mockReturnValue(sessionClient);
-    getSupabaseSessionFromRequest.mockReturnValue({
+    getVerifiedSupabaseSessionFromRequest.mockResolvedValue({
       accessToken: "access-token",
+      client: sessionClient,
       user: { id: "user-123" },
     });
     supabaseAdmin.mockReturnValue(adminClient);
@@ -275,7 +278,8 @@ describe("GET /api/challenge/today", () => {
     const response = await GET(new Request("http://localhost/api/challenge/today") as never);
 
     expect(response.status).toBe(200);
-    expect(createSessionSupabaseServerClient).toHaveBeenCalledWith("access-token");
+    expect(adminClient.from).toHaveBeenCalledWith("daily_attempt_starts");
+    expect(sessionClient.from).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
       status: "ready",
       timer: {

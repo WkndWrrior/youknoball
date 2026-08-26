@@ -2,15 +2,15 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { normalizeGroupInviteCode } from "@/lib/leaderboardGroups";
 import { joinLeaderboardGroupByInviteCode } from "@/lib/server/leaderboardGroupsRepository";
-import { getSupabaseSessionFromRequest } from "@/lib/server/supabaseServer";
+import { getVerifiedSupabaseSessionFromRequest } from "@/lib/server/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = getSupabaseSessionFromRequest(request);
-    if (!session) {
+    const auth = await getVerifiedSupabaseSessionFromRequest(request);
+    if (!auth) {
       return NextResponse.json({ message: "You must be signed in." }, { status: 401 });
     }
 
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const group = await joinLeaderboardGroupByInviteCode(supabaseAdmin(), {
-      userId: session.user.id,
+      userId: auth.user.id,
       inviteCode,
     });
 
@@ -35,8 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ group });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to join group.";
-    return NextResponse.json({ message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ message: "Unable to join group." }, { status: 500 });
   }
 }

@@ -6,6 +6,7 @@ import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
 const createQuestionReport = vi.fn();
 const sendQuestionReportNotification = vi.fn();
 const supabaseAdmin = vi.fn();
+const getVerifiedSupabaseSessionFromRequest = vi.fn();
 
 vi.mock("@/lib/server/questionReportsRepository", () => ({
   createQuestionReport,
@@ -17,6 +18,10 @@ vi.mock("@/lib/server/questionReportNotifications", () => ({
 
 vi.mock("@/lib/supabaseAdmin", () => ({
   supabaseAdmin,
+}));
+
+vi.mock("@/lib/server/supabaseServer", () => ({
+  getVerifiedSupabaseSessionFromRequest,
 }));
 
 const questionId = "00000000-0000-4000-8000-000000000001";
@@ -50,6 +55,14 @@ function buildRequest(body: unknown, sessionCookie?: string) {
   });
 }
 
+function buildRawRequest(body: string, contentType: string) {
+  return new NextRequest("http://localhost/api/question-reports", {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body,
+  });
+}
+
 describe("POST /api/question-reports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -60,6 +73,7 @@ describe("POST /api/question-reports", () => {
       question_id: questionId,
     });
     sendQuestionReportNotification.mockResolvedValue({ sent: true });
+    getVerifiedSupabaseSessionFromRequest.mockResolvedValue(null);
   });
 
   it("stores a guest report with normalized values", async () => {
@@ -101,6 +115,9 @@ describe("POST /api/question-reports", () => {
   });
 
   it("attaches the signed-in user when a valid session cookie exists", async () => {
+    getVerifiedSupabaseSessionFromRequest.mockResolvedValue({
+      user: { id: "verified-user" },
+    });
     const { POST } = await import("@/app/api/question-reports/route");
     const response = await POST(
       buildRequest(
@@ -118,7 +135,7 @@ describe("POST /api/question-reports", () => {
       { tag: "admin" },
       expect.objectContaining({
         questionId,
-        reporterUserId: "user-123",
+        reporterUserId: "verified-user",
         context: "daily_challenge",
         reason: "wrong_answer",
         note: null,
@@ -128,7 +145,7 @@ describe("POST /api/question-reports", () => {
       { tag: "admin" },
       expect.objectContaining({
         reportId: "report-1",
-        reporterUserId: "user-123",
+        reporterUserId: "verified-user",
       }),
     );
   });
@@ -167,5 +184,26 @@ describe("POST /api/question-reports", () => {
     await expect(response.json()).resolves.toEqual({
       message: "Invalid question report.",
     });
+  });
+
+  it("rejects non-JSON request bodies", async () => {
+    const { POST } = await import("@/app/api/question-reports/route");
+    const response = await POST(buildRawRequest("question=bad", "text/plain"));
+
+    expect(response.status).toBe(415);
+    expect(createQuestionReport).not.toHaveBeenCalled();
+  });
+
+  it("rejects request bodies larger than 32 KiB", async () => {
+    const { POST } = await import("@/app/api/question-reports/route");
+    const response = await POST(
+      buildRawRequest(
+        JSON.stringify({ note: "x".repeat(33 * 1024) }),
+        "application/json",
+      ),
+    );
+
+    expect(response.status).toBe(413);
+    expect(createQuestionReport).not.toHaveBeenCalled();
   });
 });

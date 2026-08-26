@@ -122,6 +122,40 @@ describe("GET /auth/callback", () => {
     expect(response.cookies.get(supabaseAuthStorageKey)?.value).toBe("session-cookie");
   });
 
+  it("returns successful sign-ins to a validated internal path", async () => {
+    const adminClient = createAdminClientMock();
+    createAuthClientMock({ cookieValue: "session-cookie" });
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    const { GET } = await import("@/app/auth/callback/route");
+    const response = await GET(
+      buildRequest({
+        code: "signin-code",
+        next: "/admin/daily-review/2026-08-20",
+      }),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "http://localhost/admin/daily-review/2026-08-20",
+    );
+  });
+
+  it("rejects external return paths", async () => {
+    const adminClient = createAdminClientMock();
+    createAuthClientMock({ cookieValue: "session-cookie" });
+    supabaseAdmin.mockReturnValue(adminClient);
+
+    const { GET } = await import("@/app/auth/callback/route");
+    const response = await GET(
+      buildRequest({
+        code: "signin-code",
+        next: "https://evil.example/steal",
+      }),
+    );
+
+    expect(response.headers.get("location")).toBe("http://localhost/play");
+  });
+
   it("redirects recovery links to /reset-password", async () => {
     const adminClient = createAdminClientMock();
     const authClient = createAuthClientMock({

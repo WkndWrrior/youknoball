@@ -28,6 +28,9 @@ describe("leaderboard group helpers", () => {
 
   it("normalizes invite codes for URLs and API requests", () => {
     expect(normalizeGroupInviteCode(" ab12cd34 ")).toBe("AB12CD34");
+    expect(normalizeGroupInviteCode(" a1b2c3d4e5f60718 ")).toBe(
+      "A1B2C3D4E5F60718",
+    );
     expect(normalizeGroupInviteCode("bad-code")).toBeNull();
     expect(normalizeGroupInviteCode("ABC")).toBeNull();
   });

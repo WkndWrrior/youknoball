@@ -13,9 +13,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.95.3",
+    "@supabase/supabase-js": "^2.112.3",
     "cheerio": "^1.2.0",
-    "next": "16.1.6",
+    "next": "16.3.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "undici": "^7.29.0"
@@ -27,7 +27,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "16.3.1",
     "jsdom": "^27.4.0",
     "tailwindcss": "^4",
     "typescript": "^5",

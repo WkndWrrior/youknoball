@@ -5,6 +5,7 @@ import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
 
 const joinLeaderboardGroupByInviteCode = vi.fn();
 const supabaseAdmin = vi.fn();
+const getVerifiedSupabaseSessionFromRequest = vi.fn();
 
 vi.mock("@/lib/server/leaderboardGroupsRepository", () => ({
   joinLeaderboardGroupByInviteCode,
@@ -12,6 +13,10 @@ vi.mock("@/lib/server/leaderboardGroupsRepository", () => ({
 
 vi.mock("@/lib/supabaseAdmin", () => ({
   supabaseAdmin,
+}));
+
+vi.mock("@/lib/server/supabaseServer", () => ({
+  getVerifiedSupabaseSessionFromRequest,
 }));
 
 function buildRequest(body: unknown, sessionCookie?: string) {
@@ -43,6 +48,9 @@ describe("POST /api/groups/join", () => {
     vi.clearAllMocks();
     vi.resetModules();
     supabaseAdmin.mockReturnValue({ tag: "admin" });
+    getVerifiedSupabaseSessionFromRequest.mockResolvedValue({
+      user: { id: "verified-user" },
+    });
   });
 
   it("joins the signed-in player by invite code", async () => {
@@ -61,7 +69,7 @@ describe("POST /api/groups/join", () => {
     expect(joinLeaderboardGroupByInviteCode).toHaveBeenCalledWith(
       { tag: "admin" },
       {
-        userId: "user-123",
+        userId: "verified-user",
         inviteCode: "AB12CD34",
       },
     );

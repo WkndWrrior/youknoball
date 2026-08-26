@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
+import { normalizeAuthRedirectPath } from "@/lib/authFlow";
 
 const oneYearSeconds = 60 * 60 * 24 * 365;
 
@@ -34,8 +35,10 @@ function getOtpType(raw: string | null) {
   return allowed.includes(value as EmailOtpType) ? (value as EmailOtpType) : null;
 }
 
-function getRedirectPath(otpType: EmailOtpType | null) {
-  return otpType === "recovery" ? "/reset-password" : "/play";
+function getRedirectPath(otpType: EmailOtpType | null, nextPath: string | null) {
+  return otpType === "recovery"
+    ? "/reset-password"
+    : normalizeAuthRedirectPath(nextPath);
 }
 
 function getInvalidLinkError(otpType: EmailOtpType | null) {
@@ -75,7 +78,8 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const otpType = getOtpType(searchParams.get("type"));
-  const redirectUrl = new URL(getRedirectPath(otpType), request.url);
+  const nextPath = searchParams.get("next");
+  const redirectUrl = new URL(getRedirectPath(otpType, nextPath), request.url);
   const config = getSupabasePublicConfig();
 
   if (!config) {

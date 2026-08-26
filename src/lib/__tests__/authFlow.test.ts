@@ -5,8 +5,24 @@ import {
   getSignupVerificationMessage,
   normalizeAuthEmail,
   normalizeAuthMode,
+  normalizeAuthRedirectPath,
   validatePasswordConfirmation,
 } from "@/lib/authFlow";
+
+describe("normalizeAuthRedirectPath", () => {
+  it("allows internal paths and rejects external or ambiguous redirects", () => {
+    expect(normalizeAuthRedirectPath("/admin/daily-review/2026-08-20")).toBe(
+      "/admin/daily-review/2026-08-20",
+    );
+    expect(normalizeAuthRedirectPath(" /groups/AB12CD34?tab=board ")).toBe(
+      "/groups/AB12CD34?tab=board",
+    );
+    expect(normalizeAuthRedirectPath("https://evil.example/steal")).toBe("/play");
+    expect(normalizeAuthRedirectPath("//evil.example/steal")).toBe("/play");
+    expect(normalizeAuthRedirectPath("/\\evil.example/steal")).toBe("/play");
+    expect(normalizeAuthRedirectPath(null)).toBe("/play");
+  });
+});
 
 describe("normalizeAuthMode", () => {
   it("normalizes supported auth modes and falls back to signin", () => {

@@ -6,7 +6,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://youknowball.com"),
+  metadataBase: new URL("https://youknoball.com"),
   title: {
     default: "YouKnowBall",
     template: "%s | YouKnowBall",

@@ -8,7 +8,7 @@ import {
 } from "react";
 import { describe, expect, it } from "vitest";
 
-import RootLayout from "@/app/layout";
+import RootLayout, { metadata } from "@/app/layout";
 import { SiteFooter } from "@/components/SiteFooter";
 
 type ElementProps = {
@@ -66,6 +66,10 @@ function renderLayout() {
 }
 
 describe("RootLayout structure", () => {
+  it("uses the production You Kno Ball domain for metadata URLs", () => {
+    expect(metadata.metadataBase?.toString()).toBe("https://youknoball.com/");
+  });
+
   it("preserves the brand and responsive primary navigation", () => {
     const { root } = renderLayout();
     const body = directChildren(root.props.children).find(

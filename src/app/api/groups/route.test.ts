@@ -6,6 +6,7 @@ import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
 const createLeaderboardGroupForOwner = vi.fn();
 const listLeaderboardGroupsForUser = vi.fn();
 const supabaseAdmin = vi.fn();
+const getVerifiedSupabaseSessionFromRequest = vi.fn();
 
 vi.mock("@/lib/server/leaderboardGroupsRepository", () => ({
   createLeaderboardGroupForOwner,
@@ -14,6 +15,10 @@ vi.mock("@/lib/server/leaderboardGroupsRepository", () => ({
 
 vi.mock("@/lib/supabaseAdmin", () => ({
   supabaseAdmin,
+}));
+
+vi.mock("@/lib/server/supabaseServer", () => ({
+  getVerifiedSupabaseSessionFromRequest,
 }));
 
 function buildSessionCookie() {
@@ -47,9 +52,15 @@ describe("/api/groups", () => {
     vi.clearAllMocks();
     vi.resetModules();
     supabaseAdmin.mockReturnValue({ tag: "admin" });
+    getVerifiedSupabaseSessionFromRequest.mockResolvedValue({
+      user: { id: "verified-user" },
+      client: { tag: "session" },
+      accessToken: "access-token",
+    });
   });
 
   it("requires auth to list groups", async () => {
+    getVerifiedSupabaseSessionFromRequest.mockResolvedValue(null);
     const { GET } = await import("@/app/api/groups/route");
     const response = await GET(buildRequest("GET", undefined, ""));
 
@@ -76,7 +87,7 @@ describe("/api/groups", () => {
     expect(response.status).toBe(200);
     expect(listLeaderboardGroupsForUser).toHaveBeenCalledWith(
       { tag: "admin" },
-      "user-123",
+      "verified-user",
     );
     await expect(response.json()).resolves.toMatchObject({
       groups: [{ name: "Saturday Crew", inviteCode: "AB12CD34" }],
@@ -99,7 +110,7 @@ describe("/api/groups", () => {
     expect(createLeaderboardGroupForOwner).toHaveBeenCalledWith(
       { tag: "admin" },
       {
-        ownerUserId: "user-123",
+        ownerUserId: "verified-user",
         name: "Saturday Crew",
       },
     );

@@ -70,4 +70,33 @@ export function getSupabaseSessionFromRequest(request: NextRequest) {
   );
 }
 
+export async function getVerifiedSupabaseSessionFromRequest(
+  request: NextRequest,
+) {
+  const session = getSupabaseSessionFromRequest(request);
+  if (!session) {
+    return null;
+  }
+
+  try {
+    const client = createSessionSupabaseServerClient(session.accessToken);
+    const {
+      data: { user },
+      error,
+    } = await client.auth.getUser();
+
+    if (error || !user?.id) {
+      return null;
+    }
+
+    return {
+      accessToken: session.accessToken,
+      client,
+      user,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export type ServerSupabaseClient = SupabaseClient;

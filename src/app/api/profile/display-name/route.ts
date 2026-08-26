@@ -2,17 +2,14 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { normalizeDisplayName } from "@/lib/profile";
 import { upsertPlayerDisplayName } from "@/lib/server/dailyChallengeRepository";
-import {
-  createSessionSupabaseServerClient,
-  getSupabaseSessionFromRequest,
-} from "@/lib/server/supabaseServer";
+import { getVerifiedSupabaseSessionFromRequest } from "@/lib/server/supabaseServer";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = getSupabaseSessionFromRequest(request);
-    if (!session) {
+    const auth = await getVerifiedSupabaseSessionFromRequest(request);
+    if (!auth) {
       return NextResponse.json({ message: "You must be signed in." }, { status: 401 });
     }
 
@@ -28,9 +25,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: error }, { status: 400 });
     }
 
-    const client = createSessionSupabaseServerClient(session.accessToken);
-    const profile = await upsertPlayerDisplayName(client, {
-      userId: session.user.id,
+    const profile = await upsertPlayerDisplayName(auth.client, {
+      userId: auth.user.id,
       displayName: value,
     });
 
@@ -39,9 +35,10 @@ export async function POST(request: NextRequest) {
       displayName: profile.display_name,
       leaderboardEligible: Boolean(profile.display_name?.trim()),
     });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unable to save display name.";
-    return NextResponse.json({ message }, { status: 500 });
+  } catch {
+    return NextResponse.json(
+      { message: "Unable to save display name." },
+      { status: 500 },
+    );
   }
 }

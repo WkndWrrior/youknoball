@@ -6,6 +6,8 @@ import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
 
 const createSessionSupabaseServerClient = vi.fn();
 const createPublicSupabaseServerClient = vi.fn();
+const getVerifiedSupabaseSessionFromRequest = vi.fn();
+const supabaseAdmin = vi.fn();
 const getChallengeResolutionForDate = vi.fn();
 const createDailyAttempt = vi.fn();
 const findDailyAttemptForUserAndDate = vi.fn();
@@ -22,8 +24,13 @@ vi.mock("@/lib/server/supabaseServer", async () => {
     ...actual,
     createPublicSupabaseServerClient,
     createSessionSupabaseServerClient,
+    getVerifiedSupabaseSessionFromRequest,
   };
 });
+
+vi.mock("@/lib/supabaseAdmin", () => ({
+  supabaseAdmin,
+}));
 
 vi.mock("@/lib/server/dailyChallengeRepository", () => ({
   getChallengeResolutionForDate,
@@ -135,6 +142,16 @@ describe("POST /api/attempt/submit", () => {
     });
     createPublicSupabaseServerClient.mockReturnValue({ tag: "public" });
     createSessionSupabaseServerClient.mockReturnValue({ tag: "session" });
+    supabaseAdmin.mockReturnValue({ tag: "admin" });
+    getVerifiedSupabaseSessionFromRequest.mockImplementation(async (request) =>
+      request.cookies.get(supabaseAuthStorageKey)
+        ? {
+            accessToken: "access-token",
+            client: { tag: "session" },
+            user: { id: "user-123" },
+          }
+        : null,
+    );
     getPlayerProfile.mockResolvedValue({ display_name: null });
     getPlayerStats.mockResolvedValue({
       averageScore: 4,
@@ -211,7 +228,7 @@ describe("POST /api/attempt/submit", () => {
       "2026-04-01",
     );
     expect(createDailyAttempt).toHaveBeenCalledWith(
-      { tag: "session" },
+      { tag: "admin" },
       {
         userId: "user-123",
         dailyChallengeId: "challenge-1",
@@ -284,7 +301,7 @@ describe("POST /api/attempt/submit", () => {
 
     expect(response.status).toBe(200);
     expect(createDailyAttempt).toHaveBeenCalledWith(
-      { tag: "session" },
+      { tag: "admin" },
       expect.objectContaining({
         durationMs: 3_000,
         leaderboardEligible: false,
@@ -337,7 +354,7 @@ describe("POST /api/attempt/submit", () => {
 
     expect(response.status).toBe(200);
     expect(createDailyAttempt).toHaveBeenCalledWith(
-      { tag: "session" },
+      { tag: "admin" },
       expect.objectContaining({
         durationMs: 90_000,
         leaderboardEligible: true,
@@ -388,7 +405,7 @@ describe("POST /api/attempt/submit", () => {
 
     expect(response.status).toBe(200);
     expect(createDailyAttempt).toHaveBeenCalledWith(
-      { tag: "session" },
+      { tag: "admin" },
       expect.objectContaining({
         durationMs: null,
         leaderboardEligible: false,
@@ -439,7 +456,7 @@ describe("POST /api/attempt/submit", () => {
       "2026-04-01",
     );
     expect(findDailyAttemptForUserAndDate).toHaveBeenCalledWith(
-      { tag: "session" },
+      { tag: "admin" },
       {
         userId: "user-123",
         dailyChallengeId: "challenge-1",

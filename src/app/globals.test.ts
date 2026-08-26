@@ -7,9 +7,9 @@ const stylesheet = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf
 
 describe("global scrollbar styling", () => {
   it("hides only the root page scrollbar", () => {
-    expect(stylesheet).toMatch(/html\s*\{[^}]*scrollbar-width:\s*none;/s);
+    expect(stylesheet).toMatch(/html\s*\{[\s\S]*?scrollbar-width:\s*none;/);
     expect(stylesheet).toMatch(
-      /html::-(?:webkit-)?scrollbar\s*\{[^}]*display:\s*none;/s,
+      /html::-(?:webkit-)?scrollbar\s*\{[\s\S]*?display:\s*none;/,
     );
     expect(stylesheet).not.toMatch(/\*::-(?:webkit-)?scrollbar/);
   });
