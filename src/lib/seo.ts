@@ -12,19 +12,6 @@ type CategorySeo = {
   canonical: `/categories/${SportCategorySlug}`;
 };
 
-export const publicRoutes = [
-  "/",
-  "/play",
-  "/categories",
-  "/categories/nba",
-  "/categories/nfl",
-  "/categories/cfb",
-  "/categories/cbb",
-  "/categories/nhl",
-  "/categories/mlb",
-  "/leaderboard",
-] as const;
-
 export const categorySeo = {
   nba: {
     title: "NBA Trivia Quiz",
@@ -63,3 +50,11 @@ export const categorySeo = {
     canonical: "/categories/mlb",
   },
 } as const satisfies Record<SportCategorySlug, CategorySeo>;
+
+export const publicRoutes = [
+  "/",
+  "/play",
+  "/categories",
+  ...Object.values(categorySeo).map(({ canonical }) => canonical),
+  "/leaderboard",
+] as const;

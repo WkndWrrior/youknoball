@@ -23,18 +23,28 @@ describe("SEO contract", () => {
   });
 
   it("lists every public indexable route", () => {
-    expect(publicRoutes).toEqual([
-      "/",
-      "/play",
-      "/categories",
+    const categoryCanonicals = Object.values(categorySeo).map(
+      ({ canonical }) => canonical,
+    );
+
+    expect(categoryCanonicals).toEqual([
       "/categories/nba",
       "/categories/nfl",
       "/categories/cfb",
       "/categories/cbb",
       "/categories/nhl",
       "/categories/mlb",
+    ]);
+    expect(publicRoutes).toEqual([
+      "/",
+      "/play",
+      "/categories",
+      ...categoryCanonicals,
       "/leaderboard",
     ]);
+    categoryCanonicals.forEach((canonical) => {
+      expect(publicRoutes).toContain(canonical);
+    });
   });
 
   it("defines approved metadata for every supported category", () => {
