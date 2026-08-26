@@ -32,6 +32,10 @@ vi.mock("@/lib/supabaseAdmin", () => ({
   supabaseAdmin,
 }));
 
+vi.mock("@/lib/date", () => ({
+  getTodayIsoDate: () => "2026-04-01",
+}));
+
 vi.mock("@/lib/server/dailyChallengeRepository", () => ({
   getChallengeResolutionForDate,
   createDailyAttempt,
@@ -104,7 +108,7 @@ const todayChallenge = [
   },
 ];
 
-function buildRequest(sessionCookie?: string) {
+function buildRequest(sessionCookie?: string, date = "2026-04-01") {
   const headers = new Headers({
     "content-type": "application/json",
   });
@@ -120,7 +124,7 @@ function buildRequest(sessionCookie?: string) {
     method: "POST",
     headers,
     body: JSON.stringify({
-      date: "2026-04-01",
+      date,
       answers: {
         q1: "A",
         q2: "B",
@@ -165,6 +169,17 @@ describe("POST /api/attempt/submit", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("rejects submissions for a date other than today's challenge", async () => {
+    const { POST } = await import("@/app/api/attempt/submit/route");
+    const response = await POST(buildRequest(undefined, "2026-03-31"));
+
+    expect(response.status).toBe(400);
+    expect(getChallengeResolutionForDate).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      message: "Only today's challenge can be submitted.",
+    });
   });
 
   it("scores a guest attempt without saving it", async () => {

@@ -103,7 +103,7 @@ const REUSABLE_QUESTION_COLUMNS = [
 ].join(",");
 
 const RECENT_HISTORY_CHALLENGE_LIMIT = 30;
-const GENERATED_CHALLENGE_STATUS = "published";
+const RECENT_CHALLENGE_STATUSES = ["generated", "published"] as const;
 const GENERATED_CHALLENGE_METHOD = "auto";
 const GENERATED_CHALLENGE_RULES_VERSION = "v1";
 const GENERATED_CHALLENGE_STALE_AFTER_MS = 2 * 60 * 1000;
@@ -733,7 +733,7 @@ async function loadRecentQuestionIds(adminClient: ReturnType<typeof supabaseAdmi
   const { data: recentChallenges, error: recentChallengesError } = await adminClient
     .from("daily_challenges")
     .select("id,challenge_date")
-    .eq("status", GENERATED_CHALLENGE_STATUS)
+    .in("status", [...RECENT_CHALLENGE_STATUSES])
     .order("challenge_date", { ascending: false })
     .limit(RECENT_HISTORY_CHALLENGE_LIMIT);
 

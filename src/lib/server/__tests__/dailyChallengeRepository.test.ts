@@ -421,6 +421,10 @@ describe("prepareDailyChallengeDraftForDate", () => {
       candidates: reusableQuestionRows,
       recentQuestionIds: [],
     });
+    expect(recentChallengesQuery.in).toHaveBeenCalledWith("status", [
+      "generated",
+      "published",
+    ]);
     expect(adminClient.rpc).toHaveBeenCalledWith(
       "prepare_daily_challenge_draft",
       {

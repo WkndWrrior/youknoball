@@ -10,6 +10,7 @@ import {
   type LeaderboardStatus,
   parseSubmittedAnswers,
 } from "@/lib/dailyChallenge";
+import { getTodayIsoDate } from "@/lib/date";
 import {
   createDailyAttempt,
   findDailyAttemptForUserAndDate,
@@ -119,6 +120,13 @@ export async function POST(request: NextRequest) {
     if (!isValidIsoDate(date)) {
       return NextResponse.json(
         { message: "Invalid date. Expected format: YYYY-MM-DD." },
+        { status: 400 },
+      );
+    }
+
+    if (date !== getTodayIsoDate()) {
+      return NextResponse.json(
+        { message: "Only today's challenge can be submitted." },
         { status: 400 },
       );
     }
