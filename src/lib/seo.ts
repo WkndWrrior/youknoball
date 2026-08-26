@@ -1,5 +1,16 @@
+import type { SportCategorySlug } from "@/lib/categories";
+
 export const siteName = "YouKnoBall";
 export const siteUrl = "https://youknoball.com";
+export const homepageTitle = `${siteName} | Daily Sports Trivia`;
+export const homepageDescription =
+  "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.";
+
+type CategorySeo = {
+  title: string;
+  description: string;
+  canonical: `/categories/${SportCategorySlug}`;
+};
 
 export const publicRoutes = [
   "/",
@@ -51,4 +62,4 @@ export const categorySeo = {
       "Test your MLB knowledge with a free five-question trivia quiz covering players, teams, records, pennant races, and World Series moments.",
     canonical: "/categories/mlb",
   },
-} as const;
+} as const satisfies Record<SportCategorySlug, CategorySeo>;

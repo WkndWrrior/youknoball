@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   categorySeo,
+  homepageDescription,
+  homepageTitle,
   publicRoutes,
   siteName,
   siteUrl,
@@ -11,6 +13,13 @@ describe("SEO contract", () => {
   it("uses the canonical site identity", () => {
     expect(siteName).toBe("YouKnoBall");
     expect(siteUrl).toBe("https://youknoball.com");
+  });
+
+  it("defines the approved homepage metadata", () => {
+    expect(homepageTitle).toBe("YouKnoBall | Daily Sports Trivia");
+    expect(homepageDescription).toBe(
+      "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.",
+    );
   });
 
   it("lists every public indexable route", () => {
