@@ -3,16 +3,17 @@ import Link from "next/link";
 
 import { AuthButton } from "@/components/AuthButton";
 import { SiteFooter } from "@/components/SiteFooter";
+import { siteName, siteUrl } from "@/lib/seo";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://youknoball.com"),
+  metadataBase: new URL(siteUrl),
   title: {
-    default: "YouKnowBall",
-    template: "%s | YouKnowBall",
+    default: `${siteName} | Daily Sports Trivia`,
+    template: `%s | ${siteName}`,
   },
   description:
-    "YouKnowBall is the fast, competitive daily sports trivia game with one five-question challenge every day.",
+    "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.",
 };
 
 export default function RootLayout({
@@ -31,7 +32,7 @@ export default function RootLayout({
                 href="/"
               >
                 <span className="block text-xl font-semibold uppercase tracking-[0.08em] text-[#ff7a18]">
-                  You Kno Ball
+                  YouKnoBall
                 </span>
                 <span className="font-display text-sm tracking-[0.08em] text-white sm:text-lg">
                   Daily sports trivia

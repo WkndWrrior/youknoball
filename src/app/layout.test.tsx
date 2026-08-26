@@ -66,8 +66,15 @@ function renderLayout() {
 }
 
 describe("RootLayout structure", () => {
-  it("uses the production You Kno Ball domain for metadata URLs", () => {
+  it("uses the approved root SEO metadata", () => {
     expect(metadata.metadataBase?.toString()).toBe("https://youknoball.com/");
+    expect(metadata.title).toEqual({
+      default: "YouKnoBall | Daily Sports Trivia",
+      template: "%s | YouKnoBall",
+    });
+    expect(metadata.description).toBe(
+      "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.",
+    );
   });
 
   it("preserves the brand and responsive primary navigation", () => {
@@ -92,7 +99,8 @@ describe("RootLayout structure", () => {
     expect(hrefs).toContain("/groups");
     expect(hrefs).toContain("/categories");
     expect(hrefs).not.toContain("/categories/nba");
-    expect(headerText).toContain("You Kno Ball");
+    expect(headerText).toContain("YouKnoBall");
+    expect(headerText).not.toContain("You Kno Ball");
     expect(headerText).toContain("Daily sports trivia");
     expect(headerText).toContain("Categories");
     expect(headerText).toContain("Board");
@@ -120,7 +128,7 @@ describe("RootLayout structure", () => {
     );
 
     const brand = headerElements.find(
-      (element) => textContent(element) === "You Kno Ball",
+      (element) => textContent(element) === "YouKnoBall",
     );
     expect(brand && classTokens(brand)).toEqual(
       expect.arrayContaining([
