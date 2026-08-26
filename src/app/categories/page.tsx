@@ -1,4 +1,13 @@
+import type { Metadata } from "next";
+
 import { SportCategoryGrid } from "@/components/SportCategoryGrid";
+
+export const metadata: Metadata = {
+  title: "Sports Trivia Quizzes",
+  description:
+    "Choose an NBA, NFL, college football, college basketball, NHL, or MLB trivia quiz on YouKnoBall and play five fresh questions whenever.",
+  alternates: { canonical: "/categories" },
+};
 
 export default function CategoriesPage() {
   return (

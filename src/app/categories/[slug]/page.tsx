@@ -1,13 +1,36 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { SportQuiz } from "@/components/SportQuiz";
 import { getCategoryBySlug } from "@/lib/categories";
+import { categorySeo } from "@/lib/seo";
 
 type CategoryPageProps = {
   params: Promise<{
     slug: string;
   }>;
 };
+
+export async function generateMetadata({
+  params,
+}: CategoryPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const category = getCategoryBySlug(slug);
+
+  if (!category) {
+    return {
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const seo = categorySeo[category.slug];
+
+  return {
+    title: seo.title,
+    description: seo.description,
+    alternates: { canonical: seo.canonical },
+  };
+}
 
 export default async function CategoryPage({ params }: CategoryPageProps) {
   const { slug } = await params;

@@ -1,9 +1,14 @@
+import type { Metadata } from "next";
+
 import { LeaderboardTable } from "@/components/LeaderboardTable";
 import { getLeaderboardEntries } from "@/lib/server/dailyChallengeRepository";
 import { createPublicSupabaseServerClient } from "@/lib/server/supabaseServer";
 
-export const metadata = {
-  title: "Leaderboard",
+export const metadata: Metadata = {
+  title: "Sports Trivia Leaderboard",
+  description:
+    "See how you rank against other YouKnoBall players by average Daily Challenge score, completion time, total plays, and recent results.",
+  alternates: { canonical: "/leaderboard" },
 };
 
 export default async function LeaderboardPage() {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 
@@ -9,6 +10,13 @@ import {
   getSupabaseSessionFromCookieValue,
 } from "@/lib/server/supabaseServer";
 import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
+import { homepageDescription, homepageTitle } from "@/lib/seo";
+
+export const metadata: Metadata = {
+  title: { absolute: homepageTitle },
+  description: homepageDescription,
+  alternates: { canonical: "/" },
+};
 
 const signedOutHeroSubtext =
   "Play today’s all-sports challenge as a guest. Sign in to save your score, climb the leaderboard, and see where you rank when the day settles.";
