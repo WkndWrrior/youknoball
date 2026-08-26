@@ -1,7 +1,3 @@
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import * as homePage from "@/app/page";
@@ -10,6 +6,7 @@ import {
   generateMetadata as generateCategoryMetadata,
 } from "@/app/categories/[slug]/page";
 import * as leaderboardPage from "@/app/leaderboard/page";
+import * as playLayout from "@/app/play/layout";
 import { categorySeo, homepageDescription, homepageTitle } from "@/lib/seo";
 
 describe("public page SEO metadata", () => {
@@ -30,20 +27,13 @@ describe("public page SEO metadata", () => {
     });
   });
 
-  it("provides approved metadata for the client-rendered play page", async () => {
-    const layoutPath = path.join(process.cwd(), "src/app/play/layout.tsx");
-
-    expect(existsSync(layoutPath)).toBe(true);
-    if (!existsSync(layoutPath)) return;
-
-    const source = await readFile(layoutPath, "utf8");
-
-    expect(source).toContain("export const metadata: Metadata");
-    expect(source).toContain('title: "Daily Sports Trivia Challenge"');
-    expect(source).toContain(
-      "Play today’s free five-question sports trivia challenge, test your all-sports knowledge, and compete on the YouKnoBall leaderboard.",
-    );
-    expect(source).toContain('alternates: { canonical: "/play" }');
+  it("provides approved metadata for the client-rendered play page", () => {
+    expect(playLayout.metadata).toEqual({
+      title: "Daily Sports Trivia Challenge",
+      description:
+        "Play today’s free five-question sports trivia challenge, test your all-sports knowledge, and compete on the YouKnoBall leaderboard.",
+      alternates: { canonical: "/play" },
+    });
   });
 
   it.each(Object.entries(categorySeo))(
