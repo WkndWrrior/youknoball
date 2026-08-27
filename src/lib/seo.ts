@@ -5,6 +5,16 @@ export const siteUrl = "https://youknoball.com";
 export const homepageTitle = `${siteName} | Daily Sports Trivia`;
 export const homepageDescription =
   "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.";
+export const websiteStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: siteName,
+  url: `${siteUrl}/`,
+} as const;
+
+export function serializeStructuredData(value: unknown) {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
 
 type CategorySeo = {
   title: string;

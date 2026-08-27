@@ -10,7 +10,12 @@ import {
   getSupabaseSessionFromCookieValue,
 } from "@/lib/server/supabaseServer";
 import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
-import { homepageDescription, homepageTitle } from "@/lib/seo";
+import {
+  homepageDescription,
+  homepageTitle,
+  serializeStructuredData,
+  websiteStructuredData,
+} from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: { absolute: homepageTitle },
@@ -41,7 +46,14 @@ export default async function Home() {
   }
 
   return (
-    <main className="px-4 pt-5 pb-6 sm:px-6 sm:pt-6 sm:pb-10">
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: serializeStructuredData(websiteStructuredData),
+        }}
+      />
+      <main className="px-4 pt-5 pb-6 sm:px-6 sm:pt-6 sm:pb-10">
       <section
         data-home-section="daily-hero"
         className="mx-auto flex min-h-[calc(100svh-10rem)] w-full max-w-6xl items-center overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.045] p-6 shadow-[0_30px_120px_rgba(0,0,0,0.45)] sm:min-h-[calc(100svh-10rem)] sm:rounded-[2.75rem] sm:p-10 lg:min-h-[calc(100svh-10rem)] lg:p-12"
@@ -112,6 +124,7 @@ export default async function Home() {
         </div>
         <LeaderboardTable compact entries={leaderboardEntries} />
       </section>
-    </main>
+      </main>
+    </>
   );
 }

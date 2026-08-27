@@ -5,8 +5,10 @@ import {
   homepageDescription,
   homepageTitle,
   publicRoutes,
+  serializeStructuredData,
   siteName,
   siteUrl,
+  websiteStructuredData,
 } from "@/lib/seo";
 
 describe("SEO contract", () => {
@@ -19,6 +21,21 @@ describe("SEO contract", () => {
     expect(homepageTitle).toBe("YouKnoBall | Daily Sports Trivia");
     expect(homepageDescription).toBe(
       "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.",
+    );
+  });
+
+  it("defines and safely serializes the homepage WebSite schema", () => {
+    expect(websiteStructuredData).toEqual({
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      name: "YouKnoBall",
+      url: "https://youknoball.com/",
+    });
+    expect(JSON.parse(serializeStructuredData(websiteStructuredData))).toEqual(
+      websiteStructuredData,
+    );
+    expect(serializeStructuredData({ value: "<script>" })).toBe(
+      '{"value":"\\u003cscript>"}',
     );
   });
 

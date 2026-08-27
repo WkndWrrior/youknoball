@@ -61,4 +61,15 @@ describe("home page layout", () => {
     );
     expect(source).toContain("SportCategoryCards");
   });
+
+  it("renders exactly one static WebSite JSON-LD script", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "src/app/page.tsx"),
+      "utf8",
+    );
+
+    expect(source.match(/<script\b/g) ?? []).toHaveLength(1);
+    expect(source).toContain('type="application/ld+json"');
+    expect(source).toContain("serializeStructuredData(websiteStructuredData)");
+  });
 });
