@@ -7,7 +7,14 @@ import {
 } from "@/app/categories/[slug]/page";
 import * as leaderboardPage from "@/app/leaderboard/page";
 import * as playLayout from "@/app/play/layout";
-import { categorySeo, homepageDescription, homepageTitle } from "@/lib/seo";
+import * as feedbackPage from "@/app/feedback/page";
+import {
+  categorySeo,
+  homepageDescription,
+  homepageTitle,
+  publicRoutes,
+  siteUrl,
+} from "@/lib/seo";
 
 describe("public page SEO metadata", () => {
   it("gives the homepage an absolute title and self-referencing canonical", () => {
@@ -65,6 +72,53 @@ describe("public page SEO metadata", () => {
       description:
         "See how you rank against other YouKnoBall players by average Daily Challenge score, completion time, total plays, and recent results.",
       alternates: { canonical: "/leaderboard" },
+    });
+  });
+});
+
+describe("crawl controls", () => {
+  it("allows public crawling while excluding only API, admin, and auth routes", async () => {
+    const { default: robots } = await import("@/app/robots");
+
+    expect(robots()).toEqual({
+      rules: {
+        userAgent: "*",
+        allow: "/",
+        disallow: ["/api/", "/admin/", "/auth/"],
+      },
+      host: siteUrl,
+      sitemap: `${siteUrl}/sitemap.xml`,
+    });
+  });
+
+  it("publishes exactly the ten approved public URLs in the sitemap", async () => {
+    const { default: sitemap } = await import("@/app/sitemap");
+
+    expect(sitemap()).toEqual(
+      publicRoutes.map((route) => ({
+        url: `${siteUrl}${route}`,
+      })),
+    );
+    expect(sitemap()).toHaveLength(10);
+  });
+
+  it.each([
+    ["login", () => import("@/app/login/layout")],
+    ["reset-password", () => import("@/app/reset-password/layout")],
+    ["groups and descendants", () => import("@/app/groups/layout")],
+    ["admin and descendants", () => import("@/app/admin/layout")],
+  ])("marks %s noindex and nofollow", async (_route, loadLayout) => {
+    const { metadata } = await loadLayout();
+
+    expect(metadata).toEqual({
+      robots: { index: false, follow: false },
+    });
+  });
+
+  it("marks feedback noindex and nofollow while preserving its title", () => {
+    expect(feedbackPage.metadata).toEqual({
+      title: "Feedback",
+      robots: { index: false, follow: false },
     });
   });
 });

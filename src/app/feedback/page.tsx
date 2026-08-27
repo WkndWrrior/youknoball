@@ -5,6 +5,7 @@ import { normalizeFeedbackSourcePath } from "@/lib/feedback";
 
 export const metadata: Metadata = {
   title: "Feedback",
+  robots: { index: false, follow: false },
 };
 
 type FeedbackPageProps = {
