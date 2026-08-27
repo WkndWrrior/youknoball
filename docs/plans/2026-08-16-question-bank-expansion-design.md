@@ -13,7 +13,7 @@ Create a review-only Excel workbook containing 150 new sports trivia questions w
 
 ## Content Standards
 
-- Apply the You Kno Ball trivia-writing skill: every question must stand alone, have one unambiguous answer, avoid answer leakage, and use concise mobile-friendly wording.
+- Apply the YouKnoBall trivia-writing skill: every question must stand alone, have one unambiguous answer, avoid answer leakage, and use concise mobile-friendly wording.
 - Add personality through fair context such as stakes, era, venue, streak, title run, or signature moment.
 - Prefer stable historical facts. Use authoritative league, team, school, governing-body, Hall of Fame, or reputable statistical sources.
 - Compare draft topics and wording against the current question bank and against the other new drafts to prevent duplicates.

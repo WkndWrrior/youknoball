@@ -2,11 +2,11 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Produce a review-only Excel workbook with 25 sourced, non-duplicate questions for each of You Kno Ball's six sports categories.
+**Goal:** Produce a review-only Excel workbook with 25 sourced, non-duplicate questions for each of YouKnoBall's six sports categories.
 
 **Architecture:** Treat the current Supabase question bank as the duplicate baseline, prepare a structured 150-row draft dataset, validate content and difficulty constraints, then generate and render-check a workbook with one summary sheet and six sport sheets. The workbook is an offline review artifact and does not write questions back to Supabase.
 
-**Tech Stack:** Supabase read-only query, authoritative web sources, You Kno Ball trivia-question-writing skill, JavaScript, `@oai/artifact-tool`, Excel `.xlsx`.
+**Tech Stack:** Supabase read-only query, authoritative web sources, YouKnoBall trivia-question-writing skill, JavaScript, `@oai/artifact-tool`, Excel `.xlsx`.
 
 ---
 

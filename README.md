@@ -1,6 +1,6 @@
-# YouKnowBall
+# YouKnoBall
 
-YouKnowBall is a Next.js + Supabase trivia app for the daily sports challenge, player attempts, and leaderboard tracking.
+YouKnoBall is a Next.js + Supabase trivia app for the daily sports challenge, player attempts, and leaderboard tracking.
 
 ## Local Development
 

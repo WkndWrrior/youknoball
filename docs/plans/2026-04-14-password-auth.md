@@ -218,7 +218,7 @@ Expected: PASS.
 - Send one magic-link fallback email.
 - Send one recovery email.
 
-Expected: all messages come from the branded sender and use YouKnowBall copy.
+Expected: all messages come from the branded sender and use YouKnoBall copy.
 
 ### Task 10: Run full verification
 

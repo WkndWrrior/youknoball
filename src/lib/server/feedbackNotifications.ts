@@ -81,7 +81,7 @@ function buildFeedbackEmailText(feedback: FeedbackNotificationInput) {
   const feedbackType = FEEDBACK_TYPE_LABELS[feedback.feedbackType];
 
   return [
-    "A player submitted feedback for You Kno Ball.",
+    "A player submitted feedback for YouKnoBall.",
     "",
     `Submission ID: ${feedback.submissionId}`,
     `Feedback type: ${feedbackType}`,

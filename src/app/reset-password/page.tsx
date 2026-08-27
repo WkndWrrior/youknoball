@@ -91,7 +91,7 @@ export default function ResetPasswordPage() {
           Choose a new password.
         </h1>
         <p className="mt-4 max-w-xl text-base leading-7 text-white/72">
-          Set a fresh password for your YouKnowBall account, then continue back to
+          Set a fresh password for your YouKnoBall account, then continue back to
           your saved scores and leaderboard progress.
         </p>
 

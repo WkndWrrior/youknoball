@@ -61,7 +61,7 @@ describe("question report notifications", () => {
   it("sends a Resend email with report and question details", async () => {
     vi.stubEnv("RESEND_API_KEY", "resend-key");
     vi.stubEnv("QUESTION_REPORT_EMAIL_TO", "teddy@example.com");
-    vi.stubEnv("QUESTION_REPORT_EMAIL_FROM", "You Kno Ball <alerts@example.com>");
+    vi.stubEnv("QUESTION_REPORT_EMAIL_FROM", "YouKnoBall <alerts@example.com>");
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ id: "email-1" }),
@@ -92,7 +92,7 @@ describe("question report notifications", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body).toMatchObject({
-      from: "You Kno Ball <alerts@example.com>",
+      from: "YouKnoBall <alerts@example.com>",
       to: ["teddy@example.com"],
       subject: "Question reported: NBA medium",
     });

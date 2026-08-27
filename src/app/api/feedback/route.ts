@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      message: "Thanks for helping us make You Kno Ball better.",
+      message: "Thanks for helping us make YouKnoBall better.",
     });
   } catch {
     return NextResponse.json(

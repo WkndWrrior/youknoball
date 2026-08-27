@@ -17,7 +17,7 @@ import { FeedbackForm } from "@/components/FeedbackForm";
 import { MAX_FEEDBACK_EMAIL_LENGTH } from "@/lib/feedback";
 
 const DEFAULT_SUCCESS_MESSAGE =
-  "Thanks for helping us make You Kno Ball better.";
+  "Thanks for helping us make YouKnoBall better.";
 const GENERIC_ERROR_MESSAGE = "Unable to send feedback.";
 
 type ResponseOptions = {

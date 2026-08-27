@@ -119,7 +119,7 @@ function buildMessage(
     (error) => `Job error (${error.phase}/${error.code}): ${error.message}`,
   );
   const text = [
-    `You Kno Ball Daily 5 review for ${displayDate(run.challengeDate)}`,
+    `YouKnoBall Daily 5 review for ${displayDate(run.challengeDate)}`,
     "",
     heading,
     `Run status: ${run.status}`,
@@ -241,7 +241,7 @@ export async function sendDailyQuestionReviewBudgetBlockNotification(
     safeHttpsUrl(process.env.NEXT_PUBLIC_SITE_URL?.trim()) ??
     safeHttpsUrl(input.siteUrlFallback?.trim());
   const lines = [
-    `You Kno Ball Daily 5 review for ${date} was blocked by the monthly budget gate.`,
+    `YouKnoBall Daily 5 review for ${date} was blocked by the monthly budget gate.`,
     "",
     "No OpenAI verification calls were made.",
     `Reason: ${input.reason}`,

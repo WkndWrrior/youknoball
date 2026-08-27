@@ -33,7 +33,7 @@ Add tests that assert:
 
 Run: `npm test -- src/lib/__tests__/seo.test.ts src/app/layout.test.tsx`
 
-Expected: FAIL because `src/lib/seo.ts` does not exist and old brand spellings remain.
+Expected: FAIL because `src/lib/seo.ts` does not exist and noncanonical brand variants remain.
 
 **Step 3: Implement the shared SEO contract**
 
@@ -172,17 +172,17 @@ git commit -m "feat: add homepage website schema"
 ### Task 5: Complete Brand Normalization
 
 **Files:**
-- Modify: application and test files returned by `rg -l 'YouKnowBall|You Kno Ball' src README.md docs`
+- Modify: application and test files returned by `rg -l 'You(Know| Kno )Ball' src README.md docs`
 
 **Step 1: Write the failing brand scan**
 
-Run: `rg -n 'YouKnowBall|You Kno Ball' src README.md docs --glob '!docs/plans/2026-08-26-seo-foundation-design.md' --glob '!docs/plans/2026-08-26-seo-foundation.md'`
+Run: `rg -n 'You(Know| Kno )Ball' src README.md docs`
 
 Expected: matches in share text, feedback copy, notification emails, tests, README, and historical documentation.
 
 **Step 2: Replace product-name literals**
 
-Replace only the two outdated display spellings with `YouKnoBall`. Do not change lowercase domain names, package identifiers, paths, or unrelated prose.
+Replace only noncanonical display-name variants with `YouKnoBall`. Do not change lowercase domain names, package identifiers, paths, or unrelated prose.
 
 **Step 3: Update affected tests**
 
@@ -190,7 +190,7 @@ Change expected share text, API messages, email subjects/bodies, and visible cop
 
 **Step 4: Verify the brand scan and tests**
 
-Run: `rg -n 'YouKnowBall|You Kno Ball' src README.md docs`
+Run: `rg -n 'You(Know| Kno )Ball' src README.md docs`
 
 Expected: no matches.
 

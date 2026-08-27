@@ -58,7 +58,7 @@ The primary form is email/password based.
 
 ### Verification email
 
-Verification is link-based and branded as YouKnowBall.
+Verification is link-based and branded as YouKnoBall.
 
 The message should make the value explicit:
 
@@ -131,7 +131,7 @@ Required settings:
   - magic link
   - password recovery
 
-The templates should be branded as YouKnowBall instead of generic Supabase mail.
+The templates should be branded as YouKnoBall instead of generic Supabase mail.
 
 ## Multi-Device Policy
 

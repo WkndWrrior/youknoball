@@ -154,7 +154,7 @@ describe("daily question review notifications", () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.stubEnv("RESEND_API_KEY", "resend-key");
-    vi.stubEnv("QUESTION_REPORT_EMAIL_FROM", "You Kno Ball <alerts@example.com>");
+    vi.stubEnv("QUESTION_REPORT_EMAIL_FROM", "YouKnoBall <alerts@example.com>");
     vi.stubEnv("QUESTION_REPORT_EMAIL_TO", "owner@example.com, second@example.com");
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://youknoball.com");
     fetchMock.mockResolvedValue({
@@ -174,7 +174,7 @@ describe("daily question review notifications", () => {
     expect(result).toEqual({ sent: true, providerMessageId: "email-123" });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body).toMatchObject({
-      from: "You Kno Ball <alerts@example.com>",
+      from: "YouKnoBall <alerts@example.com>",
       to: ["owner@example.com", "second@example.com"],
       subject: "Daily 5 review all clear: August 13, 2026",
     });

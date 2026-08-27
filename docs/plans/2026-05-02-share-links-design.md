@@ -2,7 +2,7 @@
 
 ## Goal
 
-Let players share a completed YouKnowBall daily result through the phone share sheet, direct X/Facebook links, and the existing copy fallback.
+Let players share a completed YouKnoBall daily result through the phone share sheet, direct X/Facebook links, and the existing copy fallback.
 
 ## Scope
 
@@ -22,7 +22,7 @@ Create a small client-safe sharing helper module that builds canonical share pay
 
 ## Platform Notes
 
-The Web Share API is the broadest path for Messages, Instagram, Snapchat, Facebook, and other installed apps on mobile devices. X has a stable web intent URL for prefilled posts. Facebook web sharing is URL-centered, so YouKnowBall should rely on the shared page metadata instead of trying to prefill arbitrary result text.
+The Web Share API is the broadest path for Messages, Instagram, Snapchat, Facebook, and other installed apps on mobile devices. X has a stable web intent URL for prefilled posts. Facebook web sharing is URL-centered, so YouKnoBall should rely on the shared page metadata instead of trying to prefill arbitrary result text.
 
 ## UX
 

@@ -59,9 +59,6 @@ describe("home page layout", () => {
     expect(source).not.toContain("More lanes");
     expect(source).not.toContain("Daily challenge first.");
     expect(source).not.toContain("Category universes next.");
-    expect(source).not.toContain(
-      "These category tracks are where YouKnowBall expands once the core loop is humming.",
-    );
     expect(source).toContain("SportCategoryCards");
   });
 

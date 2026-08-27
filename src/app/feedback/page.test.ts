@@ -20,7 +20,7 @@ describe("feedback page", () => {
     expect(source).toContain('title: "Feedback"');
     expect(source).toContain(">Feedback</h1>");
     expect(source).toContain(
-      "Tell us what would make You Kno Ball better.",
+      "Tell us what would make YouKnoBall better.",
     );
     expect(source).toContain("<FeedbackForm sourcePath={sourcePath} />");
     expect(source).not.toContain("rounded-[2rem]");

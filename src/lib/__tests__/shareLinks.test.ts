@@ -8,7 +8,7 @@ import {
   buildXShareUrl,
 } from "@/lib/shareLinks";
 
-const shareText = "YouKnowBall Daily Challenge 2026-05-02\n4/5\n🟩🟩⬜🟩🟩";
+const shareText = "YouKnoBall Daily Challenge 2026-05-02\n4/5\n🟩🟩⬜🟩🟩";
 
 describe("share link helpers", () => {
   it("builds the canonical public share URL", () => {
@@ -28,7 +28,7 @@ describe("share link helpers", () => {
 
   it("builds native share data without duplicating the URL in text", () => {
     expect(buildNativeShareData(shareText, "https://youknoball.com/play")).toEqual({
-      title: "YouKnowBall Daily Challenge",
+      title: "YouKnoBall Daily Challenge",
       text: shareText,
       url: "https://youknoball.com/play",
     });

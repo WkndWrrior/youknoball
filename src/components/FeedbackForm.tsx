@@ -21,7 +21,7 @@ const feedbackTypeLabels: Record<FeedbackType, string> = {
 };
 
 const defaultSuccessMessage =
-  "Thanks for helping us make You Kno Ball better.";
+  "Thanks for helping us make YouKnoBall better.";
 const genericErrorMessage = "Unable to send feedback.";
 
 function limitCodePoints(value: string, maxCodePoints: number) {

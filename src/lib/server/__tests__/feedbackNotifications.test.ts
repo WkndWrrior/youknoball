@@ -42,7 +42,7 @@ describe("feedback notifications", () => {
     );
     vi.stubEnv(
       "QUESTION_REPORT_EMAIL_FROM",
-      "You Kno Ball <alerts@example.com>",
+      "YouKnoBall <alerts@example.com>",
     );
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
 
@@ -62,7 +62,7 @@ describe("feedback notifications", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body).toMatchObject({
-      from: "You Kno Ball <alerts@example.com>",
+      from: "YouKnoBall <alerts@example.com>",
       to: ["first@example.com", "second@example.com"],
       subject: "Player feedback: Bug",
     });
@@ -96,7 +96,7 @@ describe("feedback notifications", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.text).toBe(
       [
-        "A player submitted feedback for You Kno Ball.",
+        "A player submitted feedback for YouKnoBall.",
         "",
         `Submission ID: ${feedback.submissionId}`,
         "Feedback type: Bug",

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Improve the full ready-question bank using the established You Kno Ball trivia voice while preserving factual accuracy, answer fairness, mobile readability, and intended difficulty.
+Improve the full ready-question bank using the established YouKnoBall trivia voice while preserving factual accuracy, answer fairness, mobile readability, and intended difficulty.
 
 ## Scope
 

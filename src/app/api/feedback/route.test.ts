@@ -161,7 +161,7 @@ describe("POST /api/feedback", () => {
       reporterUserId: null,
     });
     await expect(response.json()).resolves.toEqual({
-      message: "Thanks for helping us make You Kno Ball better.",
+      message: "Thanks for helping us make YouKnoBall better.",
     });
   });
 
@@ -205,7 +205,7 @@ describe("POST /api/feedback", () => {
       },
     );
     await expect(response.json()).resolves.toEqual({
-      message: "Thanks for helping us make You Kno Ball better.",
+      message: "Thanks for helping us make YouKnoBall better.",
     });
   });
 
@@ -422,7 +422,7 @@ describe("POST /api/feedback", () => {
     expect(sendFeedbackNotification).toHaveBeenCalledOnce();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      message: "Thanks for helping us make You Kno Ball better.",
+      message: "Thanks for helping us make YouKnoBall better.",
     });
   });
 
@@ -440,7 +440,7 @@ describe("POST /api/feedback", () => {
     expect(createFeedbackSubmission).toHaveBeenCalledOnce();
     expect(sendFeedbackNotification).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
-      message: "Thanks for helping us make You Kno Ball better.",
+      message: "Thanks for helping us make YouKnoBall better.",
     });
   });
 

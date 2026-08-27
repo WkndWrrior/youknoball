@@ -100,7 +100,6 @@ describe("RootLayout structure", () => {
     expect(hrefs).toContain("/categories");
     expect(hrefs).not.toContain("/categories/nba");
     expect(headerText).toContain("YouKnoBall");
-    expect(headerText).not.toContain("You Kno Ball");
     expect(headerText).toContain("Daily sports trivia");
     expect(headerText).toContain("Categories");
     expect(headerText).toContain("Board");

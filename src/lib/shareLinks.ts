@@ -1,5 +1,5 @@
 export const defaultSharePath = "/play";
-export const shareTitle = "YouKnowBall Daily Challenge";
+export const shareTitle = "YouKnoBall Daily Challenge";
 
 export function buildShareUrl(siteUrl: string, pathname = defaultSharePath) {
   const trimmedSiteUrl = siteUrl.trim().replace(/\/+$/, "");

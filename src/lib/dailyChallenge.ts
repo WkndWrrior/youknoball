@@ -266,7 +266,7 @@ export function buildShareText(date: string, gradedAttempt: GradedAttempt) {
     .join("");
 
   return [
-    `YouKnowBall Daily Challenge ${date}`,
+    `YouKnoBall Daily Challenge ${date}`,
     `${gradedAttempt.score}/${gradedAttempt.total}`,
     emojiBar,
   ].join("\n");

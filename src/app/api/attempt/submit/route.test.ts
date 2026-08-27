@@ -199,7 +199,7 @@ describe("POST /api/attempt/submit", () => {
         score: 4,
         total: 5,
       },
-      shareText: ["YouKnowBall Daily Challenge 2026-04-01", "4/5", "🟩🟩⬜🟩🟩"].join(
+      shareText: ["YouKnoBall Daily Challenge 2026-04-01", "4/5", "🟩🟩⬜🟩🟩"].join(
         "\n",
       ),
     });

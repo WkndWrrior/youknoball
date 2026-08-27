@@ -7,7 +7,7 @@ Establish a consistent, crawlable SEO foundation for YouKnoBall without changing
 ## Branding
 
 - Use `YouKnoBall` for every user-facing and operational reference to the product.
-- Replace `YouKnowBall` and `You Kno Ball` in application copy, emails, tests, and current documentation.
+- Replace noncanonical historical display-name variants in application copy, emails, tests, and current documentation.
 - Keep technical identifiers unchanged where spelling is structural, including `youknoball.com`, package names, URLs, and file paths.
 - The externally configured email sender display name should also use `YouKnoBall`.
 

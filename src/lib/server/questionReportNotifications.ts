@@ -85,7 +85,7 @@ function buildQuestionReportEmailText(
   }
 
   return [
-    "A player reported a You Kno Ball question.",
+    "A player reported a YouKnoBall question.",
     "",
     `Report ID: ${report.reportId ?? "unknown"}`,
     `Reason: ${labelReason(report.reason)}`,

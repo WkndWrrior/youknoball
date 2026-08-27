@@ -26,7 +26,7 @@ export default async function FeedbackPage({
         <header className="mb-6">
           <h1 className="font-display text-4xl font-black uppercase text-white sm:text-5xl">Feedback</h1>
           <p className="mt-2 text-sm leading-6 text-white/60 sm:text-base">
-            Tell us what would make You Kno Ball better.
+            Tell us what would make YouKnoBall better.
           </p>
         </header>
         <FeedbackForm sourcePath={sourcePath} />

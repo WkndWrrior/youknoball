@@ -243,7 +243,7 @@ Mirror the question-report route test style and cover:
 - Invalid and honeypot payloads return 400 before persistence.
 - Database failure returns 500.
 - Notification failure still returns 200 after persistence.
-- Success returns `Thanks for helping us make You Kno Ball better.`
+- Success returns `Thanks for helping us make YouKnoBall better.`
 
 **Step 2: Run the test to verify it fails**
 

@@ -116,7 +116,7 @@ describe("buildShareText", () => {
     });
 
     expect(buildShareText("2026-04-01", graded)).toBe(
-      ["YouKnowBall Daily Challenge 2026-04-01", "3/5", "🟩🟩⬜⬜🟩"].join("\n"),
+      ["YouKnoBall Daily Challenge 2026-04-01", "3/5", "🟩🟩⬜⬜🟩"].join("\n"),
     );
   });
 });
