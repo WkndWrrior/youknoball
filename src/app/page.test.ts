@@ -4,7 +4,7 @@ import path from "node:path";
 import { Children, isValidElement, type ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 
-import { WebsiteStructuredData } from "@/app/page";
+import { WebsiteStructuredData } from "@/components/WebsiteStructuredData";
 
 describe("home page layout", () => {
   it("puts the daily challenge hero before category sections and leaderboard", async () => {

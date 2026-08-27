@@ -4,18 +4,14 @@ import { cookies } from "next/headers";
 
 import { LeaderboardTable } from "@/components/LeaderboardTable";
 import { SportCategoryCards } from "@/components/SportCategoryCards";
+import { WebsiteStructuredData } from "@/components/WebsiteStructuredData";
 import { getLeaderboardEntries } from "@/lib/server/dailyChallengeRepository";
 import {
   createPublicSupabaseServerClient,
   getSupabaseSessionFromCookieValue,
 } from "@/lib/server/supabaseServer";
 import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
-import {
-  homepageDescription,
-  homepageTitle,
-  serializeStructuredData,
-  websiteStructuredData,
-} from "@/lib/seo";
+import { homepageDescription, homepageTitle } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: { absolute: homepageTitle },
@@ -28,17 +24,6 @@ const signedOutHeroSubtext =
 
 const signedInHeroSubtext =
   "Prove that you kno ball. Climb the leaderboard and see where you rank when the day settles.";
-
-export function WebsiteStructuredData() {
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{
-        __html: serializeStructuredData(websiteStructuredData),
-      }}
-    />
-  );
-}
 
 export default async function Home() {
   const client = createPublicSupabaseServerClient();
