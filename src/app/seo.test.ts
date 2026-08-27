@@ -12,7 +12,6 @@ import {
   categorySeo,
   homepageDescription,
   homepageTitle,
-  publicRoutes,
   siteUrl,
 } from "@/lib/seo";
 
@@ -94,11 +93,18 @@ describe("crawl controls", () => {
   it("publishes exactly the ten approved public URLs in the sitemap", async () => {
     const { default: sitemap } = await import("@/app/sitemap");
 
-    expect(sitemap()).toEqual(
-      publicRoutes.map((route) => ({
-        url: `${siteUrl}${route}`,
-      })),
-    );
+    expect(sitemap()).toEqual([
+      { url: "https://youknoball.com/" },
+      { url: "https://youknoball.com/play" },
+      { url: "https://youknoball.com/categories" },
+      { url: "https://youknoball.com/categories/nba" },
+      { url: "https://youknoball.com/categories/nfl" },
+      { url: "https://youknoball.com/categories/cfb" },
+      { url: "https://youknoball.com/categories/cbb" },
+      { url: "https://youknoball.com/categories/nhl" },
+      { url: "https://youknoball.com/categories/mlb" },
+      { url: "https://youknoball.com/leaderboard" },
+    ]);
     expect(sitemap()).toHaveLength(10);
   });
 
