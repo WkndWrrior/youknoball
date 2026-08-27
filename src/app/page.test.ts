@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { Children, isValidElement, type ReactElement } from "react";
 import { describe, expect, it } from "vitest";
+
+import { WebsiteStructuredData } from "@/app/page";
 
 describe("home page layout", () => {
   it("puts the daily challenge hero before category sections and leaderboard", async () => {
@@ -62,14 +65,24 @@ describe("home page layout", () => {
     expect(source).toContain("SportCategoryCards");
   });
 
-  it("renders exactly one static WebSite JSON-LD script", async () => {
-    const source = await readFile(
-      path.join(process.cwd(), "src/app/page.tsx"),
-      "utf8",
-    );
+  it("renders exactly one static WebSite JSON-LD script", () => {
+    const elements = Children.toArray(WebsiteStructuredData());
 
-    expect(source.match(/<script\b/g) ?? []).toHaveLength(1);
-    expect(source).toContain('type="application/ld+json"');
-    expect(source).toContain("serializeStructuredData(websiteStructuredData)");
+    expect(elements).toHaveLength(1);
+    expect(isValidElement(elements[0])).toBe(true);
+
+    const script = elements[0] as ReactElement<{
+      type: string;
+      dangerouslySetInnerHTML: { __html: string };
+    }>;
+
+    expect(script.type).toBe("script");
+    expect(script.props.type).toBe("application/ld+json");
+    expect(JSON.parse(script.props.dangerouslySetInnerHTML.__html)).toEqual({
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      name: "YouKnoBall",
+      url: "https://youknoball.com/",
+    });
   });
 });

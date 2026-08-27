@@ -29,6 +29,17 @@ const signedOutHeroSubtext =
 const signedInHeroSubtext =
   "Prove that you kno ball. Climb the leaderboard and see where you rank when the day settles.";
 
+export function WebsiteStructuredData() {
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{
+        __html: serializeStructuredData(websiteStructuredData),
+      }}
+    />
+  );
+}
+
 export default async function Home() {
   const client = createPublicSupabaseServerClient();
   const cookieStore = await cookies();
@@ -47,12 +58,7 @@ export default async function Home() {
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: serializeStructuredData(websiteStructuredData),
-        }}
-      />
+      <WebsiteStructuredData />
       <main className="px-4 pt-5 pb-6 sm:px-6 sm:pt-6 sm:pb-10">
       <section
         data-home-section="daily-hero"
