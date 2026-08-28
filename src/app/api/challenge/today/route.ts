@@ -18,7 +18,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request?: NextRequest) {
+export async function GET(request: NextRequest) {
   const date = getTodayIsoDate();
 
   try {
@@ -37,9 +37,7 @@ export async function GET(request?: NextRequest) {
     }
 
     let timer = null;
-    const auth = request
-      ? await getVerifiedSupabaseSessionFromRequest(request)
-      : null;
+    const auth = await getVerifiedSupabaseSessionFromRequest(request);
     if (auth) {
       try {
         const attemptStart = await getOrCreateDailyAttemptStart(supabaseAdmin(), {

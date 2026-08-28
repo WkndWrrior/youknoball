@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 const createPublicSupabaseServerClient = vi.fn();
 const getVerifiedSupabaseSessionFromRequest = vi.fn();
@@ -127,6 +128,10 @@ const legacyChallenge = fullChallenge.map((question) => ({
   ...question,
 }));
 
+function routeRequest() {
+  return new NextRequest("http://localhost/api/challenge/today");
+}
+
 describe("GET /api/challenge/today", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -187,7 +192,7 @@ describe("GET /api/challenge/today", () => {
     supabaseAdmin.mockReturnValue(adminClient);
 
     const { GET } = await import("@/app/api/challenge/today/route");
-    const response = await GET();
+    const response = await GET(routeRequest());
 
     expect(response.status).toBe(200);
     expect(publicClient.from).not.toHaveBeenCalled();
@@ -275,7 +280,7 @@ describe("GET /api/challenge/today", () => {
     supabaseAdmin.mockReturnValue(adminClient);
 
     const { GET } = await import("@/app/api/challenge/today/route");
-    const response = await GET(new Request("http://localhost/api/challenge/today") as never);
+    const response = await GET(routeRequest());
 
     expect(response.status).toBe(200);
     expect(adminClient.from).toHaveBeenCalledWith("daily_attempt_starts");
@@ -307,7 +312,7 @@ describe("GET /api/challenge/today", () => {
     supabaseAdmin.mockReturnValue(adminClient);
 
     const { GET } = await import("@/app/api/challenge/today/route");
-    const response = await GET();
+    const response = await GET(routeRequest());
 
     expect(response.status).toBe(200);
     expect(publicClient.from).not.toHaveBeenCalledWith("daily_challenge_questions");
@@ -343,7 +348,7 @@ describe("GET /api/challenge/today", () => {
     supabaseAdmin.mockReturnValue(adminClient);
 
     const { GET } = await import("@/app/api/challenge/today/route");
-    const response = await GET();
+    const response = await GET(routeRequest());
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({

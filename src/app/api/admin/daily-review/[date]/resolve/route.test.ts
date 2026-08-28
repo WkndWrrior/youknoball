@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createDailyReviewResolveHandler } from "@/app/api/admin/daily-review/[date]/resolve/route";
+import { createDailyReviewResolveHandler } from "@/app/api/admin/daily-review/[date]/resolve/handler";
 
 const itemId = "00000000-0000-4000-8000-000000000010";
 const replacementId = "00000000-0000-4000-8000-000000000099";

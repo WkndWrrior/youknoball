@@ -3,10 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  createDailyQuestionReviewCronHandler,
   GET,
   POST,
 } from "@/app/api/cron/daily-question-review/route";
+import { createDailyQuestionReviewCronHandler } from "@/app/api/cron/daily-question-review/handler";
 
 const summerNow = new Date("2026-08-12T23:10:00.000Z");
 

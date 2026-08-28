@@ -1,10 +1,8 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createDailyReviewCorrectAnswerHandler,
-  maxDuration,
-} from "@/app/api/admin/daily-review/[date]/correct-answer/route";
+import { createDailyReviewCorrectAnswerHandler } from "@/app/api/admin/daily-review/[date]/correct-answer/handler";
+import { maxDuration } from "@/app/api/admin/daily-review/[date]/correct-answer/route";
 
 const reviewItemId = "00000000-0000-4000-8000-000000000010";
 const userId = "00000000-0000-4000-8000-000000000001";
