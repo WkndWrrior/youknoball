@@ -59,12 +59,6 @@ const authModeDetails: Record<
     submitLabel: "Create account",
     submittingLabel: "Creating account...",
   },
-  "magic-link": {
-    heading: "Magic link fallback",
-    description: "Email yourself a one-time link if you want to avoid a password.",
-    submitLabel: "Send magic link",
-    submittingLabel: "Sending link...",
-  },
 };
 
 export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
@@ -107,35 +101,55 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
         return;
       }
 
-      if (mode === "signup") {
-        const confirmation = validatePasswordConfirmation(password, confirmPassword);
-        if (!confirmation.ok) {
-          throw new Error(getPasswordConfirmationErrorMessage(confirmation.code));
-        }
-
-        const { error: signUpError } = await client.auth.signUp({
-          email: normalizedEmail,
-          password,
-          options: {
-            emailRedirectTo: redirectTo,
-          },
-        });
-
-        if (signUpError) {
-          throw signUpError;
-        }
-
-        setSuccess(getSignupVerificationMessage(normalizedEmail));
-        setEmail(normalizedEmail);
-        setPassword("");
-        setConfirmPassword("");
-        return;
+      const confirmation = validatePasswordConfirmation(password, confirmPassword);
+      if (!confirmation.ok) {
+        throw new Error(getPasswordConfirmationErrorMessage(confirmation.code));
       }
 
-      const { error: otpError } = await client.auth.signInWithOtp({
+      const { error: signUpError } = await client.auth.signUp({
         email: normalizedEmail,
+        password,
         options: {
           emailRedirectTo: redirectTo,
+        },
+      });
+
+      if (signUpError) {
+        throw signUpError;
+      }
+
+      setSuccess(getSignupVerificationMessage(normalizedEmail));
+      setEmail(normalizedEmail);
+      setPassword("");
+      setConfirmPassword("");
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Unable to complete authentication.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function onMagicLink() {
+    setSubmitting(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const normalizedEmail = normalizeAuthEmail(email);
+      if (!normalizedEmail) {
+        throw new Error("Please enter an email.");
+      }
+
+      const callbackPath = `/auth/callback?next=${encodeURIComponent(redirectPath)}`;
+      const { error: otpError } = await supabaseBrowser().auth.signInWithOtp({
+        email: normalizedEmail,
+        options: {
+          emailRedirectTo: getRedirectUrl(callbackPath),
+          shouldCreateUser: false,
         },
       });
 
@@ -143,13 +157,15 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
         throw otpError;
       }
 
-      setSuccess(`Magic link sent to ${normalizedEmail}. Check your inbox.`);
+      setSuccess(
+        "If an account exists for that email, check your inbox for a sign-in link.",
+      );
       setEmail(normalizedEmail);
-    } catch (submitError) {
+    } catch (magicLinkError) {
       setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to send magic link.",
+        magicLinkError instanceof Error
+          ? magicLinkError.message
+          : "Unable to send a sign-in link.",
       );
     } finally {
       setSubmitting(false);
@@ -198,7 +214,6 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
   }
 
   const details = authModeDetails[mode];
-  const showPasswordFields = mode !== "magic-link";
   const showConfirmationField = mode === "signup";
 
   return (
@@ -245,7 +260,7 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
           <div className="flex gap-2 rounded-full border border-white/10 bg-black/30 p-1">
-            {(["signin", "signup", "magic-link"] as const).map((item) => (
+            {(["signin", "signup"] as const).map((item) => (
               <button
                 key={item}
                 type="button"
@@ -257,11 +272,7 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
                 }`}
                 aria-pressed={mode === item}
               >
-                {item === "signin"
-                  ? "Sign in"
-                  : item === "signup"
-                    ? "Create account"
-                    : "Magic link"}
+                {item === "signin" ? "Sign in" : "Create account"}
               </button>
             ))}
           </div>
@@ -285,46 +296,44 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
               required
             />
 
-            {showPasswordFields ? (
-              <div className="space-y-4">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white" htmlFor="password">
+                  Password
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#ff7a18]"
+                  placeholder="Enter your password"
+                  required
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                />
+              </div>
+
+              {showConfirmationField ? (
                 <div>
-                  <label className="block text-sm font-medium text-white" htmlFor="password">
-                    Password
+                  <label
+                    className="block text-sm font-medium text-white"
+                    htmlFor="confirm-password"
+                  >
+                    Confirm password
                   </label>
                   <input
-                    id="password"
+                    id="confirm-password"
                     type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
                     className="mt-2 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#ff7a18]"
-                    placeholder="Enter your password"
+                    placeholder="Repeat your password"
                     required
-                    autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                    autoComplete="new-password"
                   />
                 </div>
-
-                {showConfirmationField ? (
-                  <div>
-                    <label
-                      className="block text-sm font-medium text-white"
-                      htmlFor="confirm-password"
-                    >
-                      Confirm password
-                    </label>
-                    <input
-                      id="confirm-password"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
-                      className="mt-2 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#ff7a18]"
-                      placeholder="Repeat your password"
-                      required
-                      autoComplete="new-password"
-                    />
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+              ) : null}
+            </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               {mode === "signin" ? (
@@ -338,9 +347,7 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
                 </button>
               ) : (
                 <span className="text-sm text-white/45">
-                  {mode === "signup"
-                    ? "Verification email required after signup."
-                    : "Fallback for users who want a link instead of a password."}
+                  Verification email required after signup.
                 </span>
               )}
 
@@ -356,6 +363,24 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
                 {submitting ? details.submittingLabel : details.submitLabel}
               </button>
             </div>
+
+            {mode === "signin" ? (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center gap-3" aria-hidden="true">
+                  <span className="h-px flex-1 bg-white/10" />
+                  <span className="text-xs uppercase text-white/40">or</span>
+                  <span className="h-px flex-1 bg-white/10" />
+                </div>
+                <button
+                  type="button"
+                  onClick={onMagicLink}
+                  disabled={submitting}
+                  className="w-full rounded-full border border-white/15 px-4 py-3 text-sm font-semibold text-white/80 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:text-white/30"
+                >
+                  Email me a sign-in link
+                </button>
+              </div>
+            ) : null}
           </form>
 
           {error ? (
@@ -376,10 +401,8 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
 
           <p className="mt-4 text-xs leading-5 text-white/45">
             {mode === "signin"
-              ? "Use your password, or switch modes for a magic link or new account."
-              : mode === "signup"
-                ? "New accounts require email verification before they save scores."
-                : "Magic links remain available as a fallback path."}
+              ? "Use your password or request a one-time sign-in link."
+              : "New accounts require email verification before they save scores."}
           </p>
         </section>
       </section>
