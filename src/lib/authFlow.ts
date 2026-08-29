@@ -1,4 +1,4 @@
-export type AuthMode = "signin" | "signup" | "magic-link";
+export type AuthMode = "signin" | "signup";
 
 export type PasswordConfirmationValidationResult =
   | {
@@ -9,7 +9,7 @@ export type PasswordConfirmationValidationResult =
       code: "missing_password" | "missing_confirmation" | "password_mismatch";
     };
 
-const authModes: AuthMode[] = ["signin", "signup", "magic-link"];
+const authModes: AuthMode[] = ["signin", "signup"];
 const defaultAuthRedirectPath = "/play";
 
 function normalizeText(value: string) {

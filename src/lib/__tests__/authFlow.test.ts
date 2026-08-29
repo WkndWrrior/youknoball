@@ -28,7 +28,7 @@ describe("normalizeAuthMode", () => {
   it("normalizes supported auth modes and falls back to signin", () => {
     expect(normalizeAuthMode("signin")).toBe("signin");
     expect(normalizeAuthMode(" signup ")).toBe("signup");
-    expect(normalizeAuthMode("MAGIC-LINK")).toBe("magic-link");
+    expect(normalizeAuthMode("MAGIC-LINK")).toBe("signin");
     expect(normalizeAuthMode("unknown")).toBe("signin");
     expect(normalizeAuthMode(null)).toBe("signin");
     expect(normalizeAuthMode(undefined)).toBe("signin");
