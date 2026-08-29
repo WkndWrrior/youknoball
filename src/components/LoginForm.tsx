@@ -153,7 +153,7 @@ export function LoginForm({ callbackError, redirectPath }: LoginFormProps) {
         },
       });
 
-      if (otpError) {
+      if (otpError && otpError.code !== "otp_disabled") {
         throw otpError;
       }
 

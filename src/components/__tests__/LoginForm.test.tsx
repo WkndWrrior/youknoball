@@ -104,6 +104,49 @@ describe("LoginForm", () => {
     ).toBeTruthy();
   });
 
+  it("masks the unknown-account otp_disabled response with the generic success message", async () => {
+    const unknownAccountError = Object.assign(
+      new Error("Signups not allowed for otp"),
+      { code: "otp_disabled" },
+    );
+    signInWithOtpMock.mockResolvedValue({ error: unknownAccountError });
+    renderLoginForm();
+    enterEmail("unknown@example.com");
+
+    fireEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
+
+    expect(
+      await screen.findByText(
+        "If an account exists for that email, check your inbox for a sign-in link.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Signups not allowed for otp")).toBeNull();
+    expect(screen.queryByText("Unable to send a sign-in link.")).toBeNull();
+  });
+
+  it("keeps non-enumeration OTP failures visible", async () => {
+    const rateLimitError = Object.assign(
+      new Error("Too many sign-in links requested. Please try again later."),
+      { code: "over_email_send_rate_limit" },
+    );
+    signInWithOtpMock.mockResolvedValue({ error: rateLimitError });
+    renderLoginForm();
+    enterEmail("player@example.com");
+
+    fireEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
+
+    expect(
+      await screen.findByText(
+        "Too many sign-in links requested. Please try again later.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "If an account exists for that email, check your inbox for a sign-in link.",
+      ),
+    ).toBeNull();
+  });
+
   it("shows inline validation and makes no request when magic-link email is missing", async () => {
     renderLoginForm();
 
