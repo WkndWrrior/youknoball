@@ -8,7 +8,7 @@ import {
 } from "react";
 import { describe, expect, it } from "vitest";
 
-import RootLayout, { metadata } from "@/app/layout";
+import RootLayout, { metadata, viewport } from "@/app/layout";
 import { BrandWordmark } from "@/components/BrandWordmark";
 import { SiteFooter } from "@/components/SiteFooter";
 import {
@@ -84,6 +84,13 @@ describe("RootLayout structure", () => {
     expect(metadata).toMatchObject(
       buildSocialMetadata(homepageTitle, homepageDescription, "/"),
     );
+  });
+
+  it("uses the brand colors for browser chrome", () => {
+    expect(viewport).toEqual({
+      colorScheme: "dark",
+      themeColor: "#ff7a18",
+    });
   });
 
   it("preserves the brand and responsive primary navigation", () => {

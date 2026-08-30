@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 
 import { AuthButton } from "@/components/AuthButton";
@@ -10,6 +10,7 @@ import {
   homepageTitle,
   siteName,
   siteUrl,
+  brandOrange,
 } from "@/lib/seo";
 import "./globals.css";
 
@@ -21,6 +22,11 @@ export const metadata: Metadata = {
   },
   description: homepageDescription,
   ...buildSocialMetadata(homepageTitle, homepageDescription, "/"),
+};
+
+export const viewport: Viewport = {
+  colorScheme: "dark",
+  themeColor: brandOrange,
 };
 
 export default function RootLayout({
