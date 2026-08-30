@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
 
 import { LeaderboardTable } from "@/components/LeaderboardTable";
+import { buildSocialMetadata } from "@/lib/seo";
 import { getLeaderboardEntries } from "@/lib/server/dailyChallengeRepository";
 import { createPublicSupabaseServerClient } from "@/lib/server/supabaseServer";
 
+const title = "Sports Trivia Leaderboard";
+const description =
+  "See how you rank against other YouKnoBall players by average Daily Challenge score, completion time, total plays, and recent results.";
+
 export const metadata: Metadata = {
-  title: "Sports Trivia Leaderboard",
-  description:
-    "See how you rank against other YouKnoBall players by average Daily Challenge score, completion time, total plays, and recent results.",
+  title,
+  description,
   alternates: { canonical: "/leaderboard" },
+  ...buildSocialMetadata(title, description, "/leaderboard"),
 };
 
 export default async function LeaderboardPage() {

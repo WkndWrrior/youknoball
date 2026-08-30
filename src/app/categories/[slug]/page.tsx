@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { SportQuiz } from "@/components/SportQuiz";
 import { getCategoryBySlug } from "@/lib/categories";
-import { categorySeo } from "@/lib/seo";
+import { buildSocialMetadata, categorySeo } from "@/lib/seo";
 
 type CategoryPageProps = {
   params: Promise<{
@@ -29,6 +29,7 @@ export async function generateMetadata({
     title: seo.title,
     description: seo.description,
     alternates: { canonical: seo.canonical },
+    ...buildSocialMetadata(seo.title, seo.description, seo.canonical),
   };
 }
 

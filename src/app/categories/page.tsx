@@ -1,12 +1,17 @@
 import type { Metadata } from "next";
 
 import { SportCategoryGrid } from "@/components/SportCategoryGrid";
+import { buildSocialMetadata } from "@/lib/seo";
+
+const title = "Sports Trivia Quizzes";
+const description =
+  "Choose an NBA, NFL, college football, college basketball, NHL, or MLB trivia quiz on YouKnoBall and play five fresh questions whenever.";
 
 export const metadata: Metadata = {
-  title: "Sports Trivia Quizzes",
-  description:
-    "Choose an NBA, NFL, college football, college basketball, NHL, or MLB trivia quiz on YouKnoBall and play five fresh questions whenever.",
+  title,
+  description,
   alternates: { canonical: "/categories" },
+  ...buildSocialMetadata(title, description, "/categories"),
 };
 
 export default function CategoriesPage() {

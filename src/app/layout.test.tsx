@@ -11,6 +11,11 @@ import { describe, expect, it } from "vitest";
 import RootLayout, { metadata } from "@/app/layout";
 import { BrandWordmark } from "@/components/BrandWordmark";
 import { SiteFooter } from "@/components/SiteFooter";
+import {
+  buildSocialMetadata,
+  homepageDescription,
+  homepageTitle,
+} from "@/lib/seo";
 
 type ElementProps = {
   children?: ReactNode;
@@ -75,6 +80,9 @@ describe("RootLayout structure", () => {
     });
     expect(metadata.description).toBe(
       "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.",
+    );
+    expect(metadata).toMatchObject(
+      buildSocialMetadata(homepageTitle, homepageDescription, "/"),
     );
   });
 

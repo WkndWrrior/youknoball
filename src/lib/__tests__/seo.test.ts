@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   brandBackground,
   brandOrange,
+  buildSocialMetadata,
   categorySeo,
   compactMark,
   homepageDescription,
@@ -33,6 +34,40 @@ describe("SEO contract", () => {
     expect(homepageDescription).toBe(
       "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.",
     );
+  });
+
+  it("builds page-specific social metadata around one shared brand image", () => {
+    expect(
+      buildSocialMetadata(
+        "NBA Trivia Quiz",
+        "Test your NBA knowledge.",
+        "/categories/nba",
+      ),
+    ).toEqual({
+      openGraph: {
+        type: "website",
+        locale: "en_US",
+        siteName: "YouKnoBall",
+        title: "NBA Trivia Quiz | YouKnoBall",
+        description: "Test your NBA knowledge.",
+        url: "https://youknoball.com/categories/nba",
+        images: [
+          {
+            url: "https://youknoball.com/opengraph-image",
+            width: 1200,
+            height: 630,
+            type: "image/png",
+            alt: "YouKnoBall",
+          },
+        ],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: "NBA Trivia Quiz | YouKnoBall",
+        description: "Test your NBA knowledge.",
+        images: ["https://youknoball.com/opengraph-image"],
+      },
+    });
   });
 
   it("defines and safely serializes the homepage WebSite schema", () => {

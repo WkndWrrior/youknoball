@@ -11,12 +11,17 @@ import {
   getSupabaseSessionFromCookieValue,
 } from "@/lib/server/supabaseServer";
 import { supabaseAuthStorageKey } from "@/lib/supabaseAuthShared";
-import { homepageDescription, homepageTitle } from "@/lib/seo";
+import {
+  buildSocialMetadata,
+  homepageDescription,
+  homepageTitle,
+} from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: { absolute: homepageTitle },
   description: homepageDescription,
   alternates: { canonical: "/" },
+  ...buildSocialMetadata(homepageTitle, homepageDescription, "/"),
 };
 
 const signedOutHeroSubtext =

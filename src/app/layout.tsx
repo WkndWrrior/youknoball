@@ -5,6 +5,7 @@ import { AuthButton } from "@/components/AuthButton";
 import { BrandWordmark } from "@/components/BrandWordmark";
 import { SiteFooter } from "@/components/SiteFooter";
 import {
+  buildSocialMetadata,
   homepageDescription,
   homepageTitle,
   siteName,
@@ -19,6 +20,7 @@ export const metadata: Metadata = {
     template: `%s | ${siteName}`,
   },
   description: homepageDescription,
+  ...buildSocialMetadata(homepageTitle, homepageDescription, "/"),
 };
 
 export default function RootLayout({

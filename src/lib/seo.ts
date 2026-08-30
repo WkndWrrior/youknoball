@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+
 import type { SportCategorySlug } from "@/lib/categories";
 
 export const siteName = "YouKnoBall";
@@ -9,6 +11,44 @@ export const brandBackground = "#050505";
 export const homepageTitle = `${siteName} | Daily Sports Trivia`;
 export const homepageDescription =
   "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.";
+export const socialImageUrl = `${siteUrl}/opengraph-image`;
+
+export function buildSocialMetadata(
+  title: string,
+  description: string,
+  canonical: string,
+): Pick<Metadata, "openGraph" | "twitter"> {
+  const socialTitle = title.endsWith(`| ${siteName}`)
+    ? title
+    : `${title} | ${siteName}`;
+
+  return {
+    openGraph: {
+      type: "website",
+      locale: "en_US",
+      siteName,
+      title: socialTitle,
+      description,
+      url: new URL(canonical, `${siteUrl}/`).toString(),
+      images: [
+        {
+          url: socialImageUrl,
+          width: 1200,
+          height: 630,
+          type: "image/png",
+          alt: siteName,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: socialTitle,
+      description,
+      images: [socialImageUrl],
+    },
+  };
+}
+
 export const websiteStructuredData = {
   "@context": "https://schema.org",
   "@type": "WebSite",

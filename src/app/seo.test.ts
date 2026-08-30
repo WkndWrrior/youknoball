@@ -10,6 +10,7 @@ import * as playLayout from "@/app/play/layout";
 import * as feedbackPage from "@/app/feedback/page";
 import {
   categorySeo,
+  buildSocialMetadata,
   homepageDescription,
   homepageTitle,
   siteUrl,
@@ -21,6 +22,7 @@ describe("public page SEO metadata", () => {
       title: { absolute: homepageTitle },
       description: homepageDescription,
       alternates: { canonical: "/" },
+      ...buildSocialMetadata(homepageTitle, homepageDescription, "/"),
     });
   });
 
@@ -30,6 +32,11 @@ describe("public page SEO metadata", () => {
       description:
         "Choose an NBA, NFL, college football, college basketball, NHL, or MLB trivia quiz on YouKnoBall and play five fresh questions whenever.",
       alternates: { canonical: "/categories" },
+      ...buildSocialMetadata(
+        "Sports Trivia Quizzes",
+        "Choose an NBA, NFL, college football, college basketball, NHL, or MLB trivia quiz on YouKnoBall and play five fresh questions whenever.",
+        "/categories",
+      ),
     });
   });
 
@@ -39,6 +46,11 @@ describe("public page SEO metadata", () => {
       description:
         "Play today’s free five-question sports trivia challenge, test your all-sports knowledge, and compete on the YouKnoBall leaderboard.",
       alternates: { canonical: "/play" },
+      ...buildSocialMetadata(
+        "Daily Sports Trivia Challenge",
+        "Play today’s free five-question sports trivia challenge, test your all-sports knowledge, and compete on the YouKnoBall leaderboard.",
+        "/play",
+      ),
     });
   });
 
@@ -51,6 +63,11 @@ describe("public page SEO metadata", () => {
         title: expected.title,
         description: expected.description,
         alternates: { canonical: expected.canonical },
+        ...buildSocialMetadata(
+          expected.title,
+          expected.description,
+          expected.canonical,
+        ),
       });
     },
   );
@@ -71,6 +88,11 @@ describe("public page SEO metadata", () => {
       description:
         "See how you rank against other YouKnoBall players by average Daily Challenge score, completion time, total plays, and recent results.",
       alternates: { canonical: "/leaderboard" },
+      ...buildSocialMetadata(
+        "Sports Trivia Leaderboard",
+        "See how you rank against other YouKnoBall players by average Daily Challenge score, completion time, total plays, and recent results.",
+        "/leaderboard",
+      ),
     });
   });
 });
