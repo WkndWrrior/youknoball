@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AuthButton } from "@/components/AuthButton";
+import { BrandWordmark } from "@/components/BrandWordmark";
 import { SiteFooter } from "@/components/SiteFooter";
 import {
   homepageDescription,
@@ -35,9 +36,7 @@ export default function RootLayout({
                 className="block rounded-2xl px-3 py-2 ring-1 ring-transparent transition-all duration-200 ease-out hover:bg-white/[0.04] hover:ring-[#ff7a18]/70 active:scale-[0.98] active:bg-[#ff7a18]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff7a18]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                 href="/"
               >
-                <span className="block text-xl font-semibold uppercase tracking-[0.08em] text-[#ff7a18]">
-                  {siteName}
-                </span>
+                <BrandWordmark />
                 <span className="font-display text-sm tracking-[0.08em] text-white sm:text-lg">
                   Daily sports trivia
                 </span>

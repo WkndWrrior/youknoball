@@ -9,6 +9,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import RootLayout, { metadata } from "@/app/layout";
+import { BrandWordmark } from "@/components/BrandWordmark";
 import { SiteFooter } from "@/components/SiteFooter";
 
 type ElementProps = {
@@ -99,7 +100,6 @@ describe("RootLayout structure", () => {
     expect(hrefs).toContain("/groups");
     expect(hrefs).toContain("/categories");
     expect(hrefs).not.toContain("/categories/nba");
-    expect(headerText).toContain("YouKnoBall");
     expect(headerText).toContain("Daily sports trivia");
     expect(headerText).toContain("Categories");
     expect(headerText).toContain("Board");
@@ -126,19 +126,12 @@ describe("RootLayout structure", () => {
       expect.arrayContaining(["gap-10", "lg:gap-12"]),
     );
 
-    const brand = headerElements.find(
-      (element) => textContent(element) === "YouKnoBall",
-    );
-    expect(brand && classTokens(brand)).toEqual(
-      expect.arrayContaining([
-        "text-xl",
-        "tracking-[0.08em]",
-        "text-[#ff7a18]",
-      ]),
-    );
+    const brand = headerElements.find((element) => element.type === BrandWordmark);
+    expect(brand).toBeDefined();
 
     const subtitle = headerElements.find(
-      (element) => textContent(element) === "Daily sports trivia",
+      (element) =>
+        element.type === "span" && textContent(element) === "Daily sports trivia",
     );
     const subtitleTokens = subtitle ? classTokens(subtitle) : [];
     expect(subtitleTokens).toEqual(

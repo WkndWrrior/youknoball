@@ -2,6 +2,10 @@ import type { SportCategorySlug } from "@/lib/categories";
 
 export const siteName = "YouKnoBall";
 export const siteUrl = "https://youknoball.com";
+export const visualWordmark = "YOUKNOBALL";
+export const compactMark = "YKB";
+export const brandOrange = "#ff7a18";
+export const brandBackground = "#050505";
 export const homepageTitle = `${siteName} | Daily Sports Trivia`;
 export const homepageDescription =
   "Play YouKnoBall, a free daily five-question sports trivia challenge covering the NBA, NFL, college football, college basketball, NHL, and MLB.";

@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  brandBackground,
+  brandOrange,
   categorySeo,
+  compactMark,
   homepageDescription,
   homepageTitle,
   publicRoutes,
   serializeStructuredData,
   siteName,
   siteUrl,
+  visualWordmark,
   websiteStructuredData,
 } from "@/lib/seo";
 
@@ -15,6 +19,13 @@ describe("SEO contract", () => {
   it("uses the canonical site identity", () => {
     expect(siteName).toBe("YouKnoBall");
     expect(siteUrl).toBe("https://youknoball.com");
+  });
+
+  it("defines the approved visual identity", () => {
+    expect(visualWordmark).toBe("YOUKNOBALL");
+    expect(compactMark).toBe("YKB");
+    expect(brandOrange).toBe("#ff7a18");
+    expect(brandBackground).toBe("#050505");
   });
 
   it("defines the approved homepage metadata", () => {
