@@ -70,6 +70,17 @@ describe("SEO contract", () => {
     });
   });
 
+  it("does not repeat the brand in the approved homepage social title", () => {
+    const metadata = buildSocialMetadata(
+      homepageTitle,
+      homepageDescription,
+      "/",
+    );
+
+    expect(metadata.openGraph?.title).toBe(homepageTitle);
+    expect(metadata.twitter?.title).toBe(homepageTitle);
+  });
+
   it("defines and safely serializes the homepage WebSite schema", () => {
     expect(websiteStructuredData).toEqual({
       "@context": "https://schema.org",

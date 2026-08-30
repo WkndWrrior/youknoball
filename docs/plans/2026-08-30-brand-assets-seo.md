@@ -256,4 +256,3 @@ Expected: no whitespace errors and only approved brand, metadata, copy, test, an
 **Step 5: Complete code review and integration**
 
 Use `superpowers:requesting-code-review`, address findings, rerun verification, then use `superpowers:finishing-a-development-branch`. Merge locally only after the user selects that option; do not push unless requested.
-

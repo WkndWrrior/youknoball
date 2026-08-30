@@ -18,7 +18,7 @@ export function buildSocialMetadata(
   description: string,
   canonical: string,
 ): Pick<Metadata, "openGraph" | "twitter"> {
-  const socialTitle = title.endsWith(`| ${siteName}`)
+  const socialTitle = title === homepageTitle || title.endsWith(`| ${siteName}`)
     ? title
     : `${title} | ${siteName}`;
 
