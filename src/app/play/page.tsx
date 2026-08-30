@@ -538,8 +538,7 @@ export default function PlayPage() {
                 Today&apos;s run.
               </h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-white/70">
-                Five all-sports questions, one score, and a shareable result card when
-                you&apos;re done.
+                Five sports trivia questions, one score, and a result worth sharing.
               </p>
             </div>
             {challenge ? (

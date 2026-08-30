@@ -60,6 +60,7 @@ describe("home page layout", () => {
     expect(source).not.toContain("Daily challenge first.");
     expect(source).not.toContain("Category universes next.");
     expect(source).toContain("SportCategoryCards");
+    expect(source).not.toContain('data-home-section="seo-content"');
   });
 
   it("renders exactly one static WebSite JSON-LD script", () => {

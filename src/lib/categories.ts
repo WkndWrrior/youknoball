@@ -10,7 +10,7 @@ export const sportsCategories: CategoryCard[] = [
     slug: "nba",
     title: "NBA",
     eyebrow: "Shot diet",
-    description: "Daily challenge energy, but tuned for league-pass addicts and playoff overreactors.",
+    description: "NBA trivia for League Pass addicts and playoff overreactors.",
   },
   {
     slug: "cbb",

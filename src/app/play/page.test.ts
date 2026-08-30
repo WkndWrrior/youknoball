@@ -24,6 +24,12 @@ describe("/play share controls", () => {
     expect(source).toContain('result.leaderboardStatus === "timer_unavailable"');
     expect(source).toContain("Copy result");
     expect(source).toContain("Facebook");
+    expect(source).toContain(
+      "Five sports trivia questions, one score, and a result worth sharing.",
+    );
+    expect(source).not.toContain(
+      "Five all-sports questions, one score, and a shareable result card",
+    );
   });
 
   it("exposes a question report control on every daily question card", async () => {

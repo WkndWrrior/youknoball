@@ -21,7 +21,7 @@ export default function CategoriesPage() {
             Choose your category
           </h1>
           <p className="mt-4 text-base leading-7 text-white/70">
-            Pick a sport-specific quiz and run five fresh questions.
+            Pick a sports trivia quiz and run five fresh questions.
           </p>
         </header>
 

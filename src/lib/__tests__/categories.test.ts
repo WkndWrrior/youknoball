@@ -6,6 +6,12 @@ import {
 } from "@/lib/categories";
 
 describe("sportsCategories", () => {
+  it("uses the approved concise NBA trivia copy", () => {
+    expect(sportsCategories.find((category) => category.slug === "nba")?.description).toBe(
+      "NBA trivia for League Pass addicts and playoff overreactors.",
+    );
+  });
+
   it("keeps exact general NFL copy", () => {
     expect(sportsCategories.find((category) => category.slug === "nfl")?.description).toBe(
       "You been watching film huh? That's cool, watch this",

@@ -12,6 +12,12 @@ describe("categories chooser page", () => {
 
     expect(source).toContain('import { SportCategoryGrid } from "@/components/SportCategoryGrid"');
     expect(source).toContain("Choose your category");
+    expect(source).toContain(
+      "Pick a sports trivia quiz and run five fresh questions.",
+    );
+    expect(source).not.toContain(
+      "Pick a sport-specific quiz and run five fresh questions.",
+    );
     expect(source).toContain("SportCategoryGrid");
     expect(source).not.toContain("SportCategoryCards");
     expect(source).not.toContain("SportQuiz");
